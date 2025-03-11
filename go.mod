@@ -10,7 +10,6 @@ replace (
 require (
 	github.com/caarlos0/env/v6 v6.10.1
 	github.com/customeros/customeros/packages/server/customer-os-common-module v0.0.0-20250311090953-282a7c39a08e
-	github.com/customeros/customeros/packages/server/mailstack v0.0.0-20250311082929-ddd6b76cdbbf
 	github.com/customeros/mailsherpa v0.3.9
 	github.com/emersion/go-imap v1.2.1
 	github.com/gin-gonic/gin v1.10.0
@@ -85,6 +84,7 @@ require (
 	github.com/rabbitmq/amqp091-go v1.10.0 // indirect
 	github.com/rdegges/go-ipify v0.0.0-20150526035502-2d94a6a86c40 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/smartystreets/smartystreets-go-sdk v1.21.1 // indirect
 	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect

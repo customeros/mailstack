@@ -57,8 +57,6 @@ github.com/cucumber/messages/go/v21 v21.0.1 h1:wzA0LxwjlWQYZd32VTlAVDTkW6inOFmSM
 github.com/cucumber/messages/go/v21 v21.0.1/go.mod h1:zheH/2HS9JLVFukdrsPWoPdmUtmYQAQPLk7w5vWsk5s=
 github.com/customeros/customeros/packages/server/customer-os-common-module v0.0.0-20250311090953-282a7c39a08e h1:NTbc3Lr9B4x//GtRPWS/MOm+m1/XKqcSlWVZRsifLuA=
 github.com/customeros/customeros/packages/server/customer-os-common-module v0.0.0-20250311090953-282a7c39a08e/go.mod h1:44RJ0aQY2h0vjoWBmnht00ybh7P+h+at4VaM5QI1Ofc=
-github.com/customeros/customeros/packages/server/mailstack v0.0.0-20250311082929-ddd6b76cdbbf h1:N+elEVStQY+8B9RQyn7X979YdOMoaP1bLwRke8CbE6s=
-github.com/customeros/customeros/packages/server/mailstack v0.0.0-20250311082929-ddd6b76cdbbf/go.mod h1:7AIuxePFxLEg9MHuGSKJedf1YT70mGJ9uJgf0yVkwUg=
 github.com/customeros/mailsherpa v0.3.9 h1:i+usip3f5A3IgryzeiYTzZWDxI1fRxp4VxXWGpTDd7c=
 github.com/customeros/mailsherpa v0.3.9/go.mod h1:3PVCXCWUQQ6lTjxFtPs4KlFKteME14hD5GFNiElB7Fk=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
