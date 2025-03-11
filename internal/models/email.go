@@ -4,41 +4,51 @@ import (
 	"strings"
 	"time"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/enum"
 	"github.com/customeros/customeros/packages/server/customer-os-common-module/utils"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+
+	"github.com/customeros/mailstack/internal/enum"
 )
 
 // Email represents a raw email message stored in the database
 type Email struct {
-	ID         string             `gorm:"column:id;type:varchar(50);primaryKey"`
-	MailboxID  string             `gorm:"column:mailbox_id;type:varchar(50);index;not null"`
-	Provider   enum.EmailProvider `gorm:"column:provider;type:varchar(50);index;not null"`
-	Folder     string             `gorm:"column:folder;type:varchar(100);index;not null"`
-	ImapUID    uint32             `gorm:"column:imap_uid;index"`
-	MessageID  string             `gorm:"column:message_id;uniqueIndex;type:varchar(255);not null"`
-	ThreadID   string             `gorm:"column:thread_id;type:varchar(255);index"`
-	InReplyTo  string             `gorm:"column:in_reply_to;type:varchar(255);index"`
-	References pq.StringArray     `gorm:"column:references;type:text[]"`
+	ID         string              `gorm:"column:id;type:varchar(50);primaryKey"`
+	MailboxID  string              `gorm:"column:mailbox_id;type:varchar(50);index;not null"`
+	Provider   enum.EmailProvider  `gorm:"column:provider;type:varchar(50);index;not null"`
+	Direction  enum.EmailDirection `gorm:"column:direction;type:varchar(20);index;not null"`
+	Status     enum.EmailStatus    `gorm:"column:status;type:varchar(20);index"`
+	Folder     string              `gorm:"column:folder;type:varchar(100);index;not null"`
+	ImapUID    uint32              `gorm:"column:imap_uid;index"`
+	MessageID  string              `gorm:"column:message_id;uniqueIndex;type:varchar(255);not null"`
+	ThreadID   string              `gorm:"column:thread_id;type:varchar(255);index"`
+	InReplyTo  string              `gorm:"column:in_reply_to;type:varchar(255);index"`
+	References pq.StringArray      `gorm:"column:references;type:text[]"`
 
 	// Core email metadata
 	Subject      string         `gorm:"column:subject;type:varchar(1000)"`
 	FromAddress  string         `gorm:"column:from_address;type:varchar(255);index"`
 	FromName     string         `gorm:"column:from_name;type:varchar(255)"`
+	FromDomain   string         `gorm:"column:from_domain;type:varchar(255)"`
 	ReplyTo      string         `gorm:"column:reply_to;type:varchar(255);index"`
 	ToAddresses  pq.StringArray `gorm:"column:to_addresses;type:text[]"`
 	CcAddresses  pq.StringArray `gorm:"column:cc_addresses;type:text[]"`
 	BccAddresses pq.StringArray `gorm:"column:bcc_addresses;type:text[]"`
 
-	// Time information
-	SentAt     *time.Time `gorm:"column:sent_at;type:timestamp;index"`
-	ReceivedAt *time.Time `gorm:"column:received_at;type:timestamp;index"`
-
 	// Content
 	BodyText      string `gorm:"column:body_text;type:text"`
 	BodyHTML      string `gorm:"column:body_html;type:text"`
 	HasAttachment bool   `gorm:"column:has_attachment;default:false"`
+
+	// Send Details
+	StatusDetail string `gorm:"column:status_detail;type:text"` // Error message or delivery info
+	SendAttempts int    `gorm:"column:send_attempts;default:0"` // Number of send attempts
+
+	// Time information
+	SentAt        *time.Time `gorm:"column:sent_at;type:timestamp;index"`
+	ReceivedAt    *time.Time `gorm:"column:received_at;type:timestamp;index"`
+	LastAttemptAt *time.Time `gorm:"column:last_attempt_at;type:timestamp"`     // When last send attempt occurred
+	ScheduledFor  *time.Time `gorm:"column:scheduled_for;type:timestamp;index"` // For scheduled sends
 
 	// Extensions and provider-specific data
 	GmailLabels       pq.StringArray `gorm:"column:gmail_labels;type:text[]"`
