@@ -8,24 +8,27 @@ import (
 	"mime/multipart"
 	"net/smtp"
 	"net/textproto"
-	"strings"
 
 	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 type SMTPClient struct {
-	mailbox *models.Mailbox
+	repositories *repository.Repositories
+	mailbox      *models.Mailbox
 }
 
-func NewSMTPClient(mailbox *models.Mailbox) *SMTPClient {
+func NewSMTPClient(repos *repository.Repositories, mailbox *models.Mailbox) *SMTPClient {
 	return &SMTPClient{
-		mailbox: mailbox,
+		repositories: repos,
+		mailbox:      mailbox,
 	}
 }
 
@@ -41,7 +44,8 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// Validate the email
-	if err := s.validateEmail(email); err != nil {
+	err := s.validateEmail(ctx, email)
+	if err != nil {
 		return &SendResult{
 			Success:      false,
 			ErrorMessage: err.Error(),
@@ -49,7 +53,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	}
 
 	// Prepare the email message
-	allRecipients, messageBuffer, err := s.prepareMessage(email, attachments)
+	allRecipients, messageBuffer, err := s.prepareMessage(ctx, email, attachments)
 	if err != nil {
 		return &SendResult{
 			Success:      false,
@@ -58,7 +62,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	}
 
 	// Send the email
-	err = s.sendToServer(email.FromAddress, allRecipients, messageBuffer)
+	err = s.sendToServer(ctx, email.FromAddress, allRecipients, messageBuffer)
 	if err != nil {
 		return &SendResult{
 			Success:      false,
@@ -73,97 +77,85 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 }
 
 // validateEmail performs basic validation on the email
-func (s *SMTPClient) validateEmail(email *models.Email) error {
+func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.validateEmail")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	if email == nil {
-		return fmt.Errorf("email cannot be nil")
+		err := fmt.Errorf("email cannot be nil")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	if email.FromAddress == "" {
-		return fmt.Errorf("from address is required")
+		err := fmt.Errorf("from address is required")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	if email.FromDomain == "" {
 		validation := mailvalidate.ValidateEmailSyntax(email.FromAddress)
 		if !validation.IsValid {
-			return fmt.Errorf("from address is not valid")
+			err := fmt.Errorf("from address is not valid")
+			tracing.TraceErr(span, err)
+			return err
 		}
 		email.FromDomain = validation.Domain
 	}
 
 	if len(email.ToAddresses) == 0 {
-		return fmt.Errorf("at least one recipient is required")
+		err := fmt.Errorf("at least one recipient is required")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	if email.BodyText == "" && email.BodyHTML == "" {
-		return fmt.Errorf("email must have either text or HTML content")
+		err := fmt.Errorf("email must have either text or HTML content")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	if email.Subject == "" {
-		return fmt.Errorf("email must have a subject")
+		err := fmt.Errorf("email must have a subject")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
 }
 
 // prepareMessage builds the email message in proper MIME format
-func (s *SMTPClient) prepareMessage(email *models.Email, attattachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
-	// Collect all recipients
-	allRecipients := collectRecipients(email)
-
-	// Create headers
-	headers := buildHeaders(email)
+func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, attattachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.prepareMessage")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// Create message buffer
 	buffer := bytes.NewBuffer(nil)
 
 	// Build email content
 	var err error
-	if hasRichContent(email) {
-		err = s.buildMultipartMessage(email, headers, attattachments, buffer)
+	if email.HasRichContent() {
+		err = s.buildMultipartMessage(ctx, email, email.BuildHeaders(), attattachments, buffer)
 	} else {
-		err = s.buildPlainTextMessage(email, headers, buffer)
+		err = s.buildPlainTextMessage(email, email.BuildHeaders(), buffer)
 	}
 
 	if err != nil {
+		tracing.TraceErr(span, err)
 		return nil, nil, err
 	}
 
-	return allRecipients, buffer, nil
-}
-
-// collectRecipients gathers all recipients from To, Cc, and Bcc
-func collectRecipients(email *models.Email) []string {
-	return append(append(email.ToAddresses, email.CcAddresses...), email.BccAddresses...)
-}
-
-// buildHeaders creates a map of email headers
-func buildHeaders(email *models.Email) map[string]string {
-	header := make(map[string]string)
-	header["From"] = email.FromAddress
-	header["To"] = strings.Join(email.ToAddresses, ", ")
-	if len(email.CcAddresses) > 0 {
-		header["Cc"] = strings.Join(email.CcAddresses, ", ")
-	}
-	header["Subject"] = email.Subject
-	header["MIME-Version"] = "1.0"
-
-	// Add any custom headers from the email
-	for k, v := range email.Headers {
-		if _, exists := header[k]; !exists {
-			header[k] = v
-		}
-	}
-
-	return header
-}
-
-// hasRichContent returns true if the email has HTML content or attachments
-func hasRichContent(email *models.Email) bool {
-	return email.BodyHTML != "" || email.HasAttachment
+	return email.AllRecepients(), buffer, nil
 }
 
 // buildMultipartMessage creates a multipart MIME message with text, HTML, and attachments
-func (s *SMTPClient) buildMultipartMessage(email *models.Email, headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer) error {
+func (s *SMTPClient) buildMultipartMessage(ctx context.Context, email *models.Email, headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.buildMultipartMessage")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	writer := multipart.NewWriter(buffer)
 	boundary := writer.Boundary()
 	headers["Content-Type"] = "multipart/mixed; boundary=" + boundary
@@ -173,14 +165,16 @@ func (s *SMTPClient) buildMultipartMessage(email *models.Email, headers map[stri
 
 	// Add text part if available
 	if email.BodyText != "" {
-		if err := addTextPart(writer, email.BodyText); err != nil {
+		if err := s.addTextPart(ctx, writer, email.BodyText); err != nil {
+			tracing.TraceErr(span, err)
 			return err
 		}
 	}
 
 	// Add HTML part if available
 	if email.BodyHTML != "" {
-		if err := addHtmlPart(writer, email.BodyHTML); err != nil {
+		if err := s.addHtmlPart(ctx, writer, email.BodyHTML); err != nil {
+			tracing.TraceErr(span, err)
 			return err
 		}
 	}
@@ -191,7 +185,8 @@ func (s *SMTPClient) buildMultipartMessage(email *models.Email, headers map[stri
 	}
 
 	for _, attachment := range attachments {
-		if err := addAttachment(writer, attachment); err != nil {
+		if err := s.addAttachment(ctx, writer, attachment); err != nil {
+			tracing.TraceErr(span, err)
 			return err
 		}
 	}
@@ -220,48 +215,72 @@ func writeHeaders(headers map[string]string, buffer *bytes.Buffer) {
 }
 
 // addTextPart adds a plain text part to a multipart message
-func addTextPart(writer *multipart.Writer, content string) error {
+func (s *SMTPClient) addTextPart(ctx context.Context, writer *multipart.Writer, content string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.addTextPart")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	textPart, err := writer.CreatePart(textproto.MIMEHeader{
 		"Content-Type":              {"text/plain; charset=UTF-8"},
 		"Content-Transfer-Encoding": {"quoted-printable"},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create text part: %w", err)
+		err = fmt.Errorf("failed to create text part: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	_, err = textPart.Write([]byte(content))
 	if err != nil {
-		return fmt.Errorf("failed to write text content: %w", err)
+		err = fmt.Errorf("failed to write text content: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
 }
 
 // addHtmlPart adds an HTML part to a multipart message
-func addHtmlPart(writer *multipart.Writer, content string) error {
+func (s *SMTPClient) addHtmlPart(ctx context.Context, writer *multipart.Writer, content string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.addHtmlPart")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	htmlPart, err := writer.CreatePart(textproto.MIMEHeader{
 		"Content-Type":              {"text/html; charset=UTF-8"},
 		"Content-Transfer-Encoding": {"quoted-printable"},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create HTML part: %w", err)
+		err = fmt.Errorf("failed to create HTML part: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	_, err = htmlPart.Write([]byte(content))
 	if err != nil {
-		return fmt.Errorf("failed to write HTML content: %w", err)
+		err = fmt.Errorf("failed to write HTML content: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
 }
 
 // addAttachment adds an attachment to a multipart message
-func addAttachment(writer *multipart.Writer, attachment *models.EmailAttachment) error {
+func (s *SMTPClient) addAttachment(ctx context.Context, writer *multipart.Writer, attachment *models.EmailAttachment) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.addAttachment")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	if writer == nil {
-		return errors.New("attachment writer cannot be nil")
+		err := errors.New("attachment writer cannot be nil")
+		tracing.TraceErr(span, err)
+		return err
 	}
 	if attachment == nil {
-		return errors.New("attachment is nil")
+		err := errors.New("attachment is nil")
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	attachmentPart, err := writer.CreatePart(textproto.MIMEHeader{
@@ -270,40 +289,58 @@ func addAttachment(writer *multipart.Writer, attachment *models.EmailAttachment)
 		"Content-Transfer-Encoding": {"base64"},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create attachment part: %w", err)
+		err = fmt.Errorf("failed to create attachment part: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	// download content from storage
+	content, err := s.repositories.EmailAttachmentRepository.GetAttachment(ctx, attachment.ID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
 
 	_, err = attachmentPart.Write(content)
 	if err != nil {
-		return fmt.Errorf("failed to write attachment content: %w", err)
+		err = fmt.Errorf("failed to write attachment content: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
 }
 
 // sendToServer sends the prepared email to the SMTP server
-func (s *SMTPClient) sendToServer(from string, recipients []string, buffer *bytes.Buffer) error {
+func (s *SMTPClient) sendToServer(ctx context.Context, from string, recipients []string, buffer *bytes.Buffer) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.sendToServer")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	addr := fmt.Sprintf("%s:%d", s.mailbox.MailboxDomain, s.mailbox.SmtpPort)
 	auth := smtp.PlainAuth("", s.mailbox.SmtpUsername, s.mailbox.SmtpPassword, s.mailbox.SmtpServer)
 
-	// todo make an enum
-	if s.mailbox.SmtpSecurity == "tls" {
-		return s.sendWithExplicitTLS(addr, auth, from, recipients, buffer)
+	if s.mailbox.SmtpSecurity == enum.EmailSecurityTLS {
+		return s.sendWithExplicitTLS(ctx, addr, auth, from, recipients, buffer)
 	}
 
 	// Standard SMTP (may use STARTTLS if server supports it)
 	err := smtp.SendMail(addr, auth, from, recipients, buffer.Bytes())
 	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		err = fmt.Errorf("failed to send email: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
 }
 
 // sendWithExplicitTLS sends an email using explicit TLS connection
-func (s *SMTPClient) sendWithExplicitTLS(addr string, auth smtp.Auth, from string, recipients []string, buffer *bytes.Buffer) error {
+func (s *SMTPClient) sendWithExplicitTLS(ctx context.Context, addr string, auth smtp.Auth, from string, recipients []string, buffer *bytes.Buffer) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.sendWithExplicitTLS")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	// Create TLS config
 	tlsConfig := &tls.Config{
 		ServerName: s.mailbox.SmtpServer,
@@ -312,48 +349,64 @@ func (s *SMTPClient) sendWithExplicitTLS(addr string, auth smtp.Auth, from strin
 	// Connect to the server
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+		err = fmt.Errorf("failed to connect to SMTP server: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 	defer conn.Close()
 
 	// Create SMTP client
 	client, err := smtp.NewClient(conn, s.mailbox.SmtpServer)
 	if err != nil {
-		return fmt.Errorf("failed to create SMTP client: %w", err)
+		err = fmt.Errorf("failed to create SMTP client: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 	defer client.Close()
 
 	// Authenticate
 	if err = client.Auth(auth); err != nil {
-		return fmt.Errorf("SMTP authentication failed: %w", err)
+		err = fmt.Errorf("SMTP authentication failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	// Set sender
 	if err = client.Mail(from); err != nil {
-		return fmt.Errorf("SMTP MAIL command failed: %w", err)
+		err = fmt.Errorf("SMTP MAIL command failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	// Set recipients
 	for _, recipient := range recipients {
 		if err = client.Rcpt(recipient); err != nil {
-			return fmt.Errorf("SMTP RCPT command failed for %s: %w", recipient, err)
+			err = fmt.Errorf("SMTP RCPT command failed for %s: %w", recipient, err)
+			tracing.TraceErr(span, err)
+			return err
 		}
 	}
 
 	// Send data
 	dataWriter, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("SMTP DATA command failed: %w", err)
+		err = fmt.Errorf("SMTP DATA command failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	_, err = dataWriter.Write(buffer.Bytes())
 	if err != nil {
-		return fmt.Errorf("failed to write email data: %w", err)
+		err = fmt.Errorf("failed to write email data: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	err = dataWriter.Close()
 	if err != nil {
-		return fmt.Errorf("failed to close data writer: %w", err)
+		err = fmt.Errorf("failed to close data writer: %w", err)
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return client.Quit()
