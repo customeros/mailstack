@@ -16,23 +16,15 @@ permissions:
   packages: write
 
 jobs:
-  create-release:
+  check-release-needed:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'otter'
     outputs:
-      next_version: ${{ steps.generate_version.outputs.next_version }}
-      should_release: ${{ steps.generate_version.outputs.should_release }}
+      version_bump: ${{ steps.commit_message.outputs.version_bump }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Needed to fetch all tags
-
-      - name: Get latest tag
-        id: get_latest_tag
-        run: |
-          # Get the latest tag, default to v0.0.0 if no tags exist
-          latest_tag=$(git tag -l "v*" | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1 -k2,2n -k3,3n | tail -n 1 || echo "v0.0.0")          
-          echo "latest_tag=${latest_tag}" >> $GITHUB_OUTPUT
 
       - name: Get version info from commits
         id: commit_message
@@ -79,21 +71,30 @@ jobs:
             fi
           fi
 
-      # Early termination if version_bump is skip
-      - name: Check if workflow should be skipped
-        id: check_skip
-        if: steps.commit_message.outputs.version_bump == 'skip'
+  create-release:
+    needs: check-release-needed
+    if: needs.check-release-needed.outputs.version_bump != 'skip'
+    runs-on: ubuntu-latest
+    outputs:
+      next_version: ${{ steps.generate_version.outputs.next_version }}
+      should_release: ${{ steps.generate_version.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to fetch all tags
+
+      - name: Get latest tag
+        id: get_latest_tag
         run: |
-          echo "Workflow is being skipped because no version bump prefix was found in commits"
-          echo "should_release=false" >> $GITHUB_OUTPUT
-          exit 0
+          # Get the latest tag, default to v0.0.0 if no tags exist
+          latest_tag=$(git tag -l "v*" | grep -E 'v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1 -k2,2n -k3,3n | tail -n 1 || echo "v0.0.0")
+          echo "latest_tag=${latest_tag}" >> $GITHUB_OUTPUT
 
       - name: Generate next version
         id: generate_version
-        if: steps.commit_message.outputs.version_bump != 'skip'
         run: |
           latest_tag=${{ steps.get_latest_tag.outputs.latest_tag }}
-          version_bump="${{ steps.commit_message.outputs.version_bump }}"
+          version_bump="${{ needs.check-release-needed.outputs.version_bump }}"
           
           # Debug output
           echo "Latest tag: $latest_tag"
@@ -130,7 +131,7 @@ jobs:
           echo "should_release=true" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.generate_version.outputs.next_version }}
@@ -139,21 +140,21 @@ jobs:
 
       # Set up Docker for the release image
       - name: Set up Docker Buildx
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
             network=host
 
       - name: Set up Go
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           cache: true
 
       - name: Log in to the Container registry
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: docker/login-action@v3.3.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -162,7 +163,7 @@ jobs:
 
       # Build and push image with the new version tag
       - name: Build and push release image
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: docker/build-push-action@v6.13.0
         with:
           context: .
@@ -178,12 +179,12 @@ jobs:
 
       # Save outputs for potential deployment workflows
       - name: Save workflow outputs
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         run: |
           echo "{\"next_version\": \"${{ steps.generate_version.outputs.next_version }}\"}" > workflow-data.json
 
       - name: Upload workflow outputs
-        if: steps.commit_message.outputs.version_bump != 'skip' && steps.generate_version.outputs.should_release == 'true'
+        if: steps.generate_version.outputs.should_release == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: workflow-data
