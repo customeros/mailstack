@@ -74,7 +74,25 @@ func (h *EmailsHandler) Send() gin.HandlerFunc {
 			return
 		}
 
+		// create new email thread
+		threadId, err := h.repositories.EmailThreadRepository.Create(ctx, &models.EmailThread{
+			MailboxID:      emailContainer.Mailbox.ID,
+			Subject:        emailContainer.Email.Subject,
+			Participants:   emailContainer.Email.AllParticipants(),
+			MessageCount:   1,
+			LastMessageID:  emailContainer.Email.MessageID,
+			HasAttachments: emailContainer.Email.HasAttachment,
+			FirstMessageAt: utils.NowPtr(),
+			LastMessageAt:  utils.NowPtr(),
+		})
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
 		// save email record
+		emailContainer.Email.ThreadID = threadId
 		emailContainer.Email.Status = enum.EmailStatusQueued
 		emailContainer.Email.SendAttempts = 1
 		id, err := h.repositories.EmailRepository.Create(ctx, emailContainer.Email)

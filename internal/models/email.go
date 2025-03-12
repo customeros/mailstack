@@ -278,8 +278,28 @@ func (e *Email) BuildHeaders() map[string]string {
 	return header
 }
 
-func (e *Email) AllRecepients() []string {
-	return append(append(e.ToAddresses, e.CcAddresses...), e.BccAddresses...)
+func (e *Email) AllRecipients() []string {
+	// Pre-allocate slice with enough capacity
+	recipients := make([]string, 0, len(e.ToAddresses)+len(e.CcAddresses)+len(e.BccAddresses))
+
+	recipients = append(recipients, e.ToAddresses...)
+	recipients = append(recipients, e.CcAddresses...)
+	recipients = append(recipients, e.BccAddresses...)
+
+	return utils.UniqueEmails(recipients)
+}
+
+// AllParticipants returns all email participants including sender and recipients
+func (e *Email) AllParticipants() []string {
+	// Get all recipients
+	participants := e.AllRecipients()
+
+	// Add sender (FromAddress) if not empty
+	if e.FromAddress != "" {
+		participants = append(participants, e.FromAddress)
+	}
+
+	return utils.UniqueEmails(participants)
 }
 
 func (e *Email) HasRichContent() bool {
