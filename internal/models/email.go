@@ -16,7 +16,6 @@ import (
 type Email struct {
 	ID         string              `gorm:"column:id;type:varchar(50);primaryKey" json:"id"`
 	MailboxID  string              `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
-	Provider   enum.EmailProvider  `gorm:"column:provider;type:varchar(50);index;not null" json:"provider"`
 	Direction  enum.EmailDirection `gorm:"column:direction;type:varchar(20);index;not null" json:"direction"`
 	Status     enum.EmailStatus    `gorm:"column:status;type:varchar(20);index" json:"status"`
 	Folder     string              `gorm:"column:folder;type:varchar(100);index;not null" json:"folder"`
