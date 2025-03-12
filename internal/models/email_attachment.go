@@ -34,8 +34,8 @@ type EmailAttachment struct {
 	ScanTimestamp *time.Time
 
 	// Standard timestamps
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;default:current_timestamp" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp;default:current_timestamp" json:"updatedAt"`
 }
 
 // TableName overrides the table name for EmailAttachment

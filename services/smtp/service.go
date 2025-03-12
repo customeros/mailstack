@@ -186,7 +186,7 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 		return nil, nil, err
 	}
 
-	return email.AllRecepients(), buffer, nil
+	return email.AllRecipients(), buffer, nil
 }
 
 // buildMultipartMessage creates a multipart MIME message with text, HTML, and attachments
