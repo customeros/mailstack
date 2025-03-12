@@ -27,19 +27,6 @@ type MailstackDatabaseConfig struct {
 	SSLMode         string `env:"MAILSTACK_POSTGRES_SSL_MODE"`
 }
 
-type OpenlineDatabaseConfig struct {
-	Host            string `env:"OPENLINE_POSTGRES_HOST,required"`
-	Port            string `env:"OPENLINE_POSTGRES_PORT,required"`
-	User            string `env:"OPENLINE_POSTGRES_USER,required"`
-	DBName          string `env:"OPENLINE_POSTGRES_DB_NAME,required"`
-	Password        string `env:"OPENLINE_POSTGRES_PASSWORD,required"`
-	MaxConn         int    `env:"OPENLINE_POSTGRES_DB_MAX_CONN"`
-	MaxIdleConn     int    `env:"OPENLINE_POSTGRES_DB_MAX_IDLE_CONN"`
-	ConnMaxLifetime int    `env:"OPENLINE_POSTGRES_DB_CONN_MAX_LIFETIME"`
-	LogLevel        string `env:"OPENLINE_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
-	SSLMode         string `env:"OPENLINE_POSTGRES_SSL_MODE"`
-}
-
 type R2StorageConfig struct {
 	AccountID             string `env:"CLOUDFLARE_R2_ACCOUNT_ID,required"`
 	AccessKeyID           string `env:"CLOUDFLARE_R2_ACCESS_KEY_ID,required"`

@@ -113,13 +113,11 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 		tracing.TraceErr(span, err)
 		return err
 	}
-
 	if thread.ID == "" {
 		err := errors.New("thread ID cannot be empty")
 		tracing.TraceErr(span, err)
 		return err
 	}
-
 	span.SetTag("thread_id", thread.ID)
 
 	// Update timestamp
@@ -143,7 +141,6 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 		tracing.TraceErr(span, err)
 		return err
 	}
-
 	if !exists {
 		tx.Rollback()
 		err := fmt.Errorf("thread with ID %s not found", thread.ID)
@@ -151,23 +148,51 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 		return err
 	}
 
-	// Update only specific fields
-	result := tx.Model(&models.EmailThread{}).
-		Where("id = ?", thread.ID).
-		Updates(map[string]interface{}{
-			"subject":         thread.Subject,
-			"participants":    thread.Participants,
-			"message_count":   thread.MessageCount,
-			"last_message_id": thread.LastMessageID,
-			"has_attachments": thread.HasAttachments,
-			"last_message_at": thread.LastMessageAt,
-			"updated_at":      thread.UpdatedAt,
-		})
+	// Build updates map with only non-empty fields
+	updates := map[string]interface{}{
+		"updated_at": thread.UpdatedAt, // Always update the timestamp
+	}
 
-	if result.Error != nil {
-		tx.Rollback()
-		tracing.TraceErr(span, result.Error)
-		return result.Error
+	// Only include fields that should be updated
+	if thread.Subject != "" {
+		updates["subject"] = thread.Subject
+	}
+	if len(thread.Participants) > 0 {
+		updates["participants"] = thread.Participants
+	}
+	if thread.MessageCount > 0 {
+		updates["message_count"] = thread.MessageCount
+	}
+	if thread.LastMessageID != "" {
+		updates["last_message_id"] = thread.LastMessageID
+	}
+
+	// Boolean value - need to check if it's explicitly being set to true
+	// HasAttachments is a bit special - we typically only want to set it to true if it's true
+	// We don't want to revert an existing true value to false
+	if thread.HasAttachments {
+		updates["has_attachments"] = true
+	}
+
+	// Conditionally include time pointers only if they're not nil
+	if thread.LastMessageAt != nil {
+		updates["last_message_at"] = thread.LastMessageAt
+	}
+	if thread.FirstMessageAt != nil {
+		updates["first_message_at"] = thread.FirstMessageAt
+	}
+
+	// Only perform the update if we have fields to update
+	if len(updates) > 1 { // More than just updated_at
+		result := tx.Model(&models.EmailThread{}).
+			Where("id = ?", thread.ID).
+			Updates(updates)
+
+		if result.Error != nil {
+			tx.Rollback()
+			tracing.TraceErr(span, result.Error)
+			return result.Error
+		}
 	}
 
 	// Commit the transaction

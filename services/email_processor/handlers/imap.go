@@ -73,6 +73,8 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 
 	email := models.Email{
 		MailboxID:  mailboxID,
+		Direction:  enum.EmailInbound,
+		Status:     enum.EmailStatusReceived,
 		Folder:     folder,
 		ImapUID:    msg.Uid,
 		ReceivedAt: utils.NowPtr(),
@@ -85,6 +87,13 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	attachments := h.processMessageContent(&email, msg)
 
 	err := h.emailFilterService.ScanEmail(ctx, &email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// attach message to thread
+	err = h.attachMessageToThread(ctx, &email)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -106,6 +115,244 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	if email.Classification == enum.EmailOK {
 		return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
 	}
+	return nil
+}
+
+func (h *IMAPHandler) attachMessageToThread(ctx context.Context, email *models.Email) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.attachMessageToThread")
+	defer span.Finish()
+
+	// Step 1: Try to find existing thread by headers and references
+	threadID, err := h.findExistingThread(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Step 2: Process based on whether we found a thread
+	if threadID != "" {
+		// Attach to existing thread
+		email.ThreadID = threadID
+		if err := h.updateThreadMetadata(ctx, email, threadID); err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+	} else {
+		// Create new thread
+		threadID, err = h.createNewThread(ctx, email)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+		email.ThreadID = threadID
+
+		// Record missing parents if applicable
+		if err := h.recordMissingParents(ctx, email); err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// findExistingThread attempts to find an existing thread for the email
+func (h *IMAPHandler) findExistingThread(ctx context.Context, email *models.Email) (string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.findExistingThread")
+	defer span.Finish()
+
+	// Case 1: Check if this is a parent to a missing parent message
+	if email.ReplyTo == "" && len(email.References) == 0 {
+		orphan, err := h.repositories.OrphanEmailRepository.GetByMessageID(ctx, email.MessageID)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return "", err
+		}
+
+		if orphan != nil && orphan.ThreadID != "" && orphan.MailboxID == email.MailboxID {
+			// Clean up orphan records for this thread
+			if err := h.repositories.OrphanEmailRepository.DeleteByThreadID(ctx, email.ThreadID); err != nil {
+				tracing.TraceErr(span, err)
+				return "", err
+			}
+			return orphan.ThreadID, nil
+		}
+		// No matching orphan found
+		return "", nil
+	}
+
+	// Case 2: Check based on ReplyTo
+	if email.ReplyTo != "" {
+		threadID, err := h.findThreadByMessageID(ctx, email.ReplyTo)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return "", err
+		}
+		if threadID != "" {
+			return threadID, nil
+		}
+	}
+
+	// Case 3: Check based on References
+	if len(email.References) > 0 {
+		for _, messageID := range email.References {
+			threadID, err := h.findThreadByMessageID(ctx, messageID)
+			if err != nil {
+				tracing.TraceErr(span, err)
+				return "", err
+			}
+			if threadID != "" {
+				return threadID, nil
+			}
+		}
+	}
+
+	// Case 4: Try subject-based matching as a fallback
+	normalizedSubject := utils.NormalizeEmailSubject(email.Subject)
+	if normalizedSubject != "" {
+		threadID, err := h.findThreadBySubjectAndParticipants(ctx, normalizedSubject, email.MailboxID, email.AllParticipants())
+		if err != nil {
+			tracing.TraceErr(span, err)
+			// Just log this error and continue - subject matching is a best-effort fallback
+			span.LogKV("warning", "subject-based thread matching failed", "error", err.Error())
+		} else if threadID != "" {
+			return threadID, nil
+		}
+	}
+
+	// No existing thread found
+	return "", nil
+}
+
+// findThreadByMessageID finds a thread containing a specific message ID
+func (h *IMAPHandler) findThreadByMessageID(ctx context.Context, messageID string) (string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.findThreadByMessageID")
+	defer span.Finish()
+	span.SetTag("message_id", messageID)
+
+	message, err := h.repositories.EmailRepository.GetByMessageID(ctx, messageID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", err
+	}
+	if message == nil {
+		return "", nil
+	}
+	return message.ThreadID, nil
+}
+
+// findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
+func (h *IMAPHandler) findThreadBySubjectAndParticipants(ctx context.Context, subject string, mailboxID string, participants []string) (string, error) {
+	// This is a placeholder for the subject-based matching
+	// TODO add a method to the repository to find threads by subject and mailbox
+	return "", nil
+}
+
+// updateThreadMetadata updates thread metadata with data from the new email
+func (h *IMAPHandler) updateThreadMetadata(ctx context.Context, email *models.Email, threadID string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.updateThreadMetadata")
+	defer span.Finish()
+
+	// Get current thread
+	threadRecord, err := h.repositories.EmailThreadRepository.GetByID(ctx, threadID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if threadRecord == nil {
+		err = errors.New("thread record is unexpectedly nil")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Update message count
+	threadRecord.MessageCount++
+
+	// Update attachments flag
+	if email.HasAttachment {
+		threadRecord.HasAttachments = true
+	}
+
+	// Update timestamps, safely handling nil cases
+	if email.SentAt != nil {
+		// Update first message time if this message is earlier
+		if threadRecord.FirstMessageAt == nil || email.SentAt.Before(*threadRecord.FirstMessageAt) {
+			threadRecord.FirstMessageAt = email.SentAt
+		}
+
+		// Update last message time if this message is later
+		if threadRecord.LastMessageAt == nil || email.SentAt.After(*threadRecord.LastMessageAt) {
+			threadRecord.LastMessageAt = email.SentAt
+			threadRecord.LastMessageID = email.MessageID
+		}
+	}
+
+	// Update participants
+	newParticipants := email.AllParticipants()
+	for _, participant := range newParticipants {
+		if !utils.IsStringInSlice(participant, threadRecord.Participants) {
+			threadRecord.Participants = append(threadRecord.Participants, participant)
+		}
+	}
+
+	// Save thread updates
+	return h.repositories.EmailThreadRepository.Update(ctx, threadRecord)
+}
+
+// createNewThread creates a new thread for the email
+func (h *IMAPHandler) createNewThread(ctx context.Context, email *models.Email) (string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.createNewThread")
+	defer span.Finish()
+
+	threadID, err := h.repositories.EmailThreadRepository.Create(ctx, &models.EmailThread{
+		MailboxID:      email.MailboxID,
+		Subject:        email.Subject,
+		Participants:   email.AllParticipants(),
+		MessageCount:   1,
+		LastMessageID:  email.MessageID,
+		HasAttachments: email.HasAttachment,
+		FirstMessageAt: email.ReceivedAt,
+		LastMessageAt:  email.ReceivedAt,
+	})
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", err
+	}
+
+	return threadID, nil
+}
+
+// recordMissingParents records referenced messages that are missing
+func (h *IMAPHandler) recordMissingParents(ctx context.Context, email *models.Email) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.recordMissingParents")
+	defer span.Finish()
+
+	// Record ReplyTo as missing parent if it exists
+	if email.ReplyTo != "" {
+		if _, err := h.repositories.OrphanEmailRepository.Create(ctx, &models.OrphanEmail{
+			MessageID:    email.ReplyTo,
+			ReferencedBy: email.MessageID,
+			ThreadID:     email.ThreadID,
+			MailboxID:    email.MailboxID,
+		}); err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+	}
+
+	// Record References as missing parents
+	for _, messageID := range email.References {
+		if _, err := h.repositories.OrphanEmailRepository.Create(ctx, &models.OrphanEmail{
+			MessageID:    messageID,
+			ReferencedBy: email.MessageID,
+			ThreadID:     email.ThreadID,
+			MailboxID:    email.MailboxID,
+		}); err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+	}
+
 	return nil
 }
 

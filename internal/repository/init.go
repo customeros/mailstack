@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/config"
@@ -15,6 +17,7 @@ type Repositories struct {
 	EmailThreadRepository     interfaces.EmailThreadRepository
 	MailboxRepository         interfaces.MailboxRepository
 	MailboxSyncRepository     interfaces.MailboxSyncRepository
+	OrphanEmailRepository     interfaces.OrphanEmailRepository
 }
 
 func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
@@ -32,15 +35,34 @@ func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *R
 		EmailThreadRepository:     NewEmailThreadRepository(mailstackDB),
 		MailboxRepository:         NewMailboxRepository(mailstackDB),
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
+		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
 	}
 }
 
-func MigrateDB(mailstackDB *gorm.DB) error {
-	return mailstackDB.AutoMigrate(
+func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {
+	db, err := mailstackDB.DB()
+	if err != nil {
+		return err
+	}
+
+	// Temporarily reduce pool size during migration
+	db.SetMaxOpenConns(5)
+
+	err = mailstackDB.AutoMigrate(
 		&models.Email{},
 		&models.EmailAttachment{},
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
+		&models.OrphanEmail{},
 	)
+
+	db.Close()
+
+	db, _ = mailstackDB.DB()
+	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
+	db.SetMaxOpenConns(dbConfig.MaxConn)
+	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Hour)
+
+	return err
 }

@@ -51,13 +51,13 @@ func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	// SetMaxIdleConns sets the maximum number of connections in the idle connection pool
-	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxIdleConns(dbConfig.MaxIdleConn)
 
 	// SetMaxOpenConns sets the maximum number of open connections to the database
-	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetMaxOpenConns(dbConfig.MaxConn)
 
 	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Hour)
 
 	return db, nil
 }
