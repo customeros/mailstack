@@ -3,8 +3,9 @@ package models
 import (
 	"time"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/utils"
 	"gorm.io/gorm"
+
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 // EmailAttachment represents an attachment to an email
@@ -44,7 +45,7 @@ func (EmailAttachment) TableName() string {
 
 func (e *EmailAttachment) BeforeCreate(tx *gorm.DB) error {
 	if e.ID == "" {
-		e.ID = utils.GenerateNanoIdWithPrefix("atch", 21)
+		e.ID = utils.GenerateNanoIDWithPrefix("atch", 21)
 	}
 	e.CreatedAt = utils.Now()
 	return nil

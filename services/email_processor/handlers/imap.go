@@ -8,11 +8,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/dto"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/model"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/services/events"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/utils"
 	"github.com/customeros/mailsherpa/mailvalidate"
 	go_imap "github.com/emersion/go-imap"
 	"github.com/jhillyerd/enmime"
@@ -20,10 +15,14 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/services/events"
 )
 
 // IMAPHandler processes events from IMAP sources
@@ -106,7 +105,7 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 
 	// Publish event for downstream processing
 	if email.Classification == enum.EmailOK {
-		return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, model.EMAIL, dto.EmailReceived{})
+		return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
 	}
 	return nil
 }

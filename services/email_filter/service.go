@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/customeros/mailsherpa/domaincheck"
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
@@ -14,6 +13,7 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type emailFilterService struct{}

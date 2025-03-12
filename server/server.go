@@ -10,8 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/logger"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
@@ -19,7 +17,9 @@ import (
 	"github.com/customeros/mailstack/api"
 	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/internal"
+	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
 	"github.com/customeros/mailstack/services/email_processor"
 )

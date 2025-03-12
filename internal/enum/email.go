@@ -59,9 +59,10 @@ func (t EmailStatus) String() string {
 type EmailSecurity string
 
 const (
-	EmailSecurityNone EmailSecurity = "none"
-	EmailSecuritySSL  EmailSecurity = "ssl"
-	EmailSecurityTLS  EmailSecurity = "tls"
+	EmailSecurityNone     EmailSecurity = "none"
+	EmailSecuritySSL      EmailSecurity = "ssl"
+	EmailSecurityTLS      EmailSecurity = "tls"
+	EmailSecurityStartTLS EmailSecurity = "startTLS"
 )
 
 func (t EmailSecurity) String() string {

@@ -47,6 +47,11 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			mailboxes.DELETE("/:id", handlers.RemoveMailbox(s.IMAPService))
 		}
 
-		// Other API endpoints can go here
+		// Email endpoints
+		emails := api.Group("/emails")
+		{
+			emails.POST("", handlers.Send(repos))
+		}
+
 	}
 }
