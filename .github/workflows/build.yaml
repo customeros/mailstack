@@ -2,9 +2,9 @@ name: mailstack
 
 on:
   push:
-    branches: ['main']
+    branches: ['otter']
   pull_request:
-    branches: ['main']
+    branches: ['otter']
   release:
     types: [created, edited]
 
@@ -59,7 +59,7 @@ jobs:
         with:
           context: .
           file: ./deployments/Containerfile
-          push: ${{ github.ref_name == 'main' || github.event_name == 'release' }}
+          push: ${{ github.ref_name == 'otter' || github.event_name == 'release' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
