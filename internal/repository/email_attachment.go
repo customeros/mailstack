@@ -94,8 +94,8 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 	return r.db.WithContext(ctx).Save(attachment).Error
 }
 
-// GetData retrieves the attachment data from storage
-func (r *emailAttachmentRepository) GetData(ctx context.Context, id string) ([]byte, error) {
+// GetAttachment retrieves the attachment data from storage
+func (r *emailAttachmentRepository) GetAttachment(ctx context.Context, id string) ([]byte, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.GetData")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)

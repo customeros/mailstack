@@ -51,3 +51,19 @@ const (
 	EmailStatusFailed    EmailStatus = "failed"
 	EmailStatusBounced   EmailStatus = "bounced"
 )
+
+func (t EmailStatus) String() string {
+	return string(t)
+}
+
+type EmailSecurity string
+
+const (
+	EmailSecurityNone EmailSecurity = "none"
+	EmailSecuritySSL  EmailSecurity = "ssl"
+	EmailSecurityTLS  EmailSecurity = "tls"
+)
+
+func (t EmailSecurity) String() string {
+	return string(t)
+}

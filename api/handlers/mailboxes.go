@@ -31,6 +31,7 @@ func AddMailbox(imapService interfaces.IMAPService, mailboxRepository interfaces
 		var config models.Mailbox
 		err := c.ShouldBindJSON(&config)
 		if err != nil {
+			tracing.TraceErr(span, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

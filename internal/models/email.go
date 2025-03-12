@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -199,4 +200,76 @@ func (e *Email) Headers() (*EmailHeaders, error) {
 	headers.DMARC = getString("DMARC-Result")
 
 	return headers, nil
+}
+
+// BuildHeaders creates a map of headers for an outgoing email
+func (e *Email) BuildHeaders() map[string]string {
+	header := make(map[string]string)
+
+	// Build "From" with name if available
+	if e.FromName != "" {
+		header["From"] = fmt.Sprintf("%s <%s>", e.FromName, e.FromAddress)
+	} else {
+		header["From"] = e.FromAddress
+	}
+
+	header["To"] = strings.Join(e.ToAddresses, ", ")
+
+	if len(e.CcAddresses) > 0 {
+		header["Cc"] = strings.Join(e.CcAddresses, ", ")
+	}
+
+	header["Subject"] = e.Subject
+	header["MIME-Version"] = "1.0"
+
+	// Set Message-ID
+	if e.MessageID != "" {
+		header["Message-ID"] = e.MessageID
+	}
+
+	// Set In-Reply-To and References if this is a reply
+	if e.InReplyTo != "" {
+		header["In-Reply-To"] = e.InReplyTo
+
+		// Build References header
+		// RFC 5322 recommends including the original message ID in the references
+		references := e.References
+		if len(references) == 0 {
+			references = pq.StringArray{e.InReplyTo}
+		}
+		header["References"] = strings.Join(references, " ")
+	}
+
+	// Set Reply-To if specified
+	if e.ReplyTo != "" {
+		header["Reply-To"] = e.ReplyTo
+	}
+
+	// Add custom headers from RawHeaders if any
+	if e.RawHeaders != nil {
+		for k, v := range e.RawHeaders {
+			// Skip headers we've already set
+			if _, exists := header[k]; !exists {
+				// Handle different value types (string or []string)
+				switch value := v.(type) {
+				case string:
+					header[k] = value
+				case []string:
+					if len(value) > 0 {
+						header[k] = strings.Join(value, ", ")
+					}
+				}
+			}
+		}
+	}
+
+	return header
+}
+
+func (e *Email) AllRecepients() []string {
+	return append(append(e.ToAddresses, e.CcAddresses...), e.BccAddresses...)
+}
+
+func (e *Email) HasRichContent() bool {
+	return e.BodyHTML != "" || e.HasAttachment
 }

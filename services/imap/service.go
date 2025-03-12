@@ -17,6 +17,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 )
@@ -188,7 +189,7 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 	s.wg.Add(1)
 	defer s.wg.Done()
 
-	log.Printf("[%s] Starting mailbox monitoring with folders: %v", mailboxID, config.Folders)
+	log.Printf("[%s] Starting mailbox monitoring with folders: %v", mailboxID, config.SyncFolders)
 
 	// Use simple reconnection logic
 	backoff := time.Second
@@ -262,12 +263,12 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 		backoff = time.Second
 
 		// Log the folders being processed
-		attemptSpan.LogKV("folders", fmt.Sprintf("%v", config.Folders))
+		attemptSpan.LogKV("folders", fmt.Sprintf("%v", config.SyncFolders))
 
 		// Process each folder sequentially for easier debugging
 		var folderError error
 
-		for _, folder := range config.Folders {
+		for _, folder := range config.SyncFolders {
 			folderName := string(folder)
 
 			// Create a span just for this folder processing
@@ -370,7 +371,7 @@ func (s *IMAPService) connectSimple(ctx context.Context, config *models.Mailbox)
 	var c *client.Client
 	var err error
 
-	if config.ImapTLS {
+	if config.ImapSecurity == enum.EmailSecurityTLS {
 		tlsConfig := &tls.Config{
 			ServerName: config.ImapServer,
 		}
