@@ -4,9 +4,10 @@ import (
 	"log"
 
 	"github.com/caarlos0/env/v6"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/logger"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/joho/godotenv"
+
+	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type Config struct {

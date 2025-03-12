@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/opentracing/opentracing-go"
@@ -20,6 +19,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type IMAPService struct {

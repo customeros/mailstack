@@ -28,3 +28,12 @@ func GenerateMessageID(domain, metadata string) string {
 	localPart := fmt.Sprintf("%d.%s%s", timestamp, id, hashComponent)
 	return fmt.Sprintf("<%s@%s>", localPart, domain)
 }
+
+func GenerateNanoIDWithPrefix(prefix string, length int) string {
+	alphabet := "abcdefghijklmnopqrstuvwxyz0123456789"
+	id, err := gonanoid.Generate(alphabet, length)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s_%s", prefix, id)
+}

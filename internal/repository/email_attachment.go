@@ -6,21 +6,20 @@ import (
 	"fmt"
 	"time"
 
-	common_interfaces "github.com/customeros/customeros/packages/server/customer-os-common-module/interfaces"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type emailAttachmentRepository struct {
 	db      *gorm.DB
-	storage common_interfaces.StorageService
+	storage interfaces.StorageService
 }
 
-func NewEmailAttachmentRepository(db *gorm.DB, storageService common_interfaces.StorageService) interfaces.EmailAttachmentRepository {
+func NewEmailAttachmentRepository(db *gorm.DB, storageService interfaces.StorageService) interfaces.EmailAttachmentRepository {
 	return &emailAttachmentRepository{
 		db:      db,
 		storage: storageService,

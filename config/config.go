@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/logger"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
+	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type AppConfig struct {

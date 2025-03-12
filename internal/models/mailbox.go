@@ -4,11 +4,11 @@ package models
 import (
 	"time"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/utils"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/internal/enum"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 // Mailbox represents an email account configuration with provider-specific settings
@@ -79,7 +79,7 @@ func (Mailbox) TableName() string {
 
 func (m *Mailbox) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
-		m.ID = utils.GenerateNanoIdWithPrefix("mbox", 16)
+		m.ID = utils.GenerateNanoIDWithPrefix("mbox", 16)
 	}
 	return nil
 }

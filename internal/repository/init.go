@@ -1,12 +1,12 @@
 package repository
 
 import (
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/services/storage"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/services/storage"
 )
 
 type Repositories struct {

@@ -3,11 +3,10 @@ package email_processor
 import (
 	"context"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/services/events"
-
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/services/email_processor/handlers"
+	"github.com/customeros/mailstack/services/events"
 )
 
 type Processor struct {

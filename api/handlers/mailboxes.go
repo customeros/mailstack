@@ -3,12 +3,12 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/common"
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/gin-gonic/gin"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 // ListMailboxes returns all configured mailboxes
@@ -26,7 +26,7 @@ func AddMailbox(imapService interfaces.IMAPService, mailboxRepository interfaces
 		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(c.Request.Context(), "AddMailbox", c.Request.Header)
 		defer span.Finish()
 		tracing.TagComponentRest(span)
-		tracing.TagTenant(span, common.GetTenantFromContext(ctx))
+		tracing.TagTenant(span, utils.GetTenantFromContext(ctx))
 
 		var config models.Mailbox
 		err := c.ShouldBindJSON(&config)
@@ -58,7 +58,7 @@ func RemoveMailbox(imapService interfaces.IMAPService) gin.HandlerFunc {
 		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(c.Request.Context(), "RemoveMailbox", c.Request.Header)
 		defer span.Finish()
 		tracing.TagComponentRest(span)
-		tracing.TagTenant(span, common.GetTenantFromContext(ctx))
+		tracing.TagTenant(span, utils.GetTenantFromContext(ctx))
 
 		id := c.Param("id")
 		if err := imapService.RemoveMailbox(ctx, id); err != nil {

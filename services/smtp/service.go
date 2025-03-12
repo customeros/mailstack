@@ -6,10 +6,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/smtp"
 	"net/textproto"
 
-	"github.com/customeros/customeros/packages/server/customer-os-common-module/tracing"
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -17,6 +17,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -72,7 +73,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 
 	return &SendResult{
 		Success:   true,
-		MessageID: utils.GenerateMessageID(s.mailbox.MailboxDomain, ""),
+		MessageID: email.MessageID,
 	}
 }
 
@@ -101,6 +102,11 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 			tracing.TraceErr(span, err)
 			return err
 		}
+		if validation.Domain != s.mailbox.MailboxDomain {
+			err := errors.New("from domain does not match mailbox domain")
+			tracing.TraceErr(span, err)
+			return err
+		}
 		email.FromDomain = validation.Domain
 	}
 
@@ -122,6 +128,10 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 		return err
 	}
 
+	if email.MessageID == "" {
+		email.MessageID = utils.GenerateMessageID(s.mailbox.MailboxDomain, "")
+	}
+
 	return nil
 }
 
@@ -134,12 +144,16 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 	// Create message buffer
 	buffer := bytes.NewBuffer(nil)
 
+	// Generate headers
+	headers := email.BuildHeaders()
+	tracing.LogObjectAsJson(span, "headers", headers)
+
 	// Build email content
 	var err error
 	if email.HasRichContent() {
-		err = s.buildMultipartMessage(ctx, email, email.BuildHeaders(), attattachments, buffer)
+		err = s.buildMultipartMessage(ctx, email, headers, attattachments, buffer)
 	} else {
-		err = s.buildPlainTextMessage(email, email.BuildHeaders(), buffer)
+		err = s.buildPlainTextMessage(email, headers, buffer)
 	}
 
 	if err != nil {
@@ -317,11 +331,11 @@ func (s *SMTPClient) sendToServer(ctx context.Context, from string, recipients [
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
-	addr := fmt.Sprintf("%s:%d", s.mailbox.MailboxDomain, s.mailbox.SmtpPort)
+	addr := fmt.Sprintf("%s:%d", s.mailbox.SmtpServer, s.mailbox.SmtpPort)
 	auth := smtp.PlainAuth("", s.mailbox.SmtpUsername, s.mailbox.SmtpPassword, s.mailbox.SmtpServer)
 
-	if s.mailbox.SmtpSecurity == enum.EmailSecurityTLS {
-		return s.sendWithExplicitTLS(ctx, addr, auth, from, recipients, buffer)
+	if s.mailbox.SmtpSecurity == enum.EmailSecurityStartTLS {
+		return s.sendWithSTARTTLS(ctx, addr, auth, from, recipients, buffer)
 	}
 
 	// Standard SMTP (may use STARTTLS if server supports it)
@@ -335,11 +349,97 @@ func (s *SMTPClient) sendToServer(ctx context.Context, from string, recipients [
 	return nil
 }
 
+func (s *SMTPClient) sendWithSTARTTLS(ctx context.Context, addr string, auth smtp.Auth, from string, recipients []string, buffer *bytes.Buffer) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.sendWithSTARTTLS")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogKV("smtp_server", s.mailbox.SmtpServer)
+	span.LogKV("smtp_port", s.mailbox.SmtpPort)
+	span.LogKV("smtp_username", s.mailbox.SmtpUsername)
+	span.LogKV("from_address", from)
+
+	// Connect to the server without TLS first
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		err = fmt.Errorf("failed to connect to SMTP server: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+	defer conn.Close()
+
+	// Create SMTP client
+	client, err := smtp.NewClient(conn, s.mailbox.SmtpServer)
+	if err != nil {
+		err = fmt.Errorf("failed to create SMTP client: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+	defer client.Close()
+
+	// Start TLS
+	tlsConfig := &tls.Config{
+		ServerName: s.mailbox.SmtpServer,
+	}
+	if err = client.StartTLS(tlsConfig); err != nil {
+		err = fmt.Errorf("failed to start TLS: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Authenticate after TLS is established
+	if err = client.Auth(auth); err != nil {
+		err = fmt.Errorf("SMTP authentication failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Set sender
+	if err = client.Mail(from); err != nil {
+		err = fmt.Errorf("SMTP MAIL command failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Set recipients
+	for _, recipient := range recipients {
+		if err = client.Rcpt(recipient); err != nil {
+			err = fmt.Errorf("SMTP RCPT command failed for %s: %w", recipient, err)
+			tracing.TraceErr(span, err)
+			return err
+		}
+	}
+
+	// Send data
+	dataWriter, err := client.Data()
+	if err != nil {
+		err = fmt.Errorf("SMTP DATA command failed: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	_, err = dataWriter.Write(buffer.Bytes())
+	if err != nil {
+		err = fmt.Errorf("failed to write email data: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	err = dataWriter.Close()
+	if err != nil {
+		err = fmt.Errorf("failed to close data writer: %w", err)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	return client.Quit()
+}
+
 // sendWithExplicitTLS sends an email using explicit TLS connection
 func (s *SMTPClient) sendWithExplicitTLS(ctx context.Context, addr string, auth smtp.Auth, from string, recipients []string, buffer *bytes.Buffer) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.sendWithExplicitTLS")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogKV("address", addr)
 
 	// Create TLS config
 	tlsConfig := &tls.Config{
