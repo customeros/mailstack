@@ -73,7 +73,6 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 
 	email := models.Email{
 		MailboxID:  mailboxID,
-		Provider:   h.determineProvider(ctx, mailboxID),
 		Folder:     folder,
 		ImapUID:    msg.Uid,
 		ReceivedAt: utils.NowPtr(),
@@ -92,7 +91,7 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	}
 
 	// Save the email entity to the database
-	err = h.repositories.EmailRepository.Create(ctx, &email)
+	_, err = h.repositories.EmailRepository.Create(ctx, &email)
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
@@ -466,15 +465,4 @@ func (h *IMAPHandler) determineThreadID(email *models.Email) string {
 
 	// Otherwise use the message ID itself (starting a new thread)
 	return email.MessageID
-}
-
-// Determine email provider based on mailbox configuration
-func (h *IMAPHandler) determineProvider(ctx context.Context, mailboxID string) enum.EmailProvider {
-	// Get the mailbox configuration from repository
-	mailbox, err := h.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
-	if err != nil || mailbox == nil || mailbox.Provider == "" {
-		return ""
-	}
-
-	return mailbox.Provider
 }

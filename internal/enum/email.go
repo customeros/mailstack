@@ -46,6 +46,7 @@ type EmailStatus string
 const (
 	EmailStatusReceived  EmailStatus = "received"
 	EmailStatusDraft     EmailStatus = "draft"
+	EmailStatusQueued    EmailStatus = "queued"
 	EmailStatusScheduled EmailStatus = "scheduled"
 	EmailStatusSent      EmailStatus = "sent"
 	EmailStatusFailed    EmailStatus = "failed"

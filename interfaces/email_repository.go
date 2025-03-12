@@ -7,7 +7,7 @@ import (
 )
 
 type EmailRepository interface {
-	Create(ctx context.Context, email *models.Email) error
+	Create(ctx context.Context, email *models.Email) (string, error)
 	GetByID(ctx context.Context, id string) (*models.Email, error)
 	GetByUID(ctx context.Context, mailboxID, folder string, uid uint32) (*models.Email, error)
 	GetByMessageID(ctx context.Context, messageID string) (*models.Email, error)

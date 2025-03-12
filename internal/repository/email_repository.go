@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
@@ -22,7 +24,7 @@ func NewEmailRepository(db *gorm.DB) interfaces.EmailRepository {
 	}
 }
 
-func (r *emailRepository) Create(ctx context.Context, email *models.Email) error {
+func (r *emailRepository) Create(ctx context.Context, email *models.Email) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.Create")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)
@@ -36,23 +38,23 @@ func (r *emailRepository) Create(ctx context.Context, email *models.Email) error
 	if err == nil {
 		// Email already exists
 		span.SetTag("duplicate", true)
-		return nil
+		return existingEmail.ID, nil // Return the ID of the existing email
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		// Some other error occurred
 		tracing.TraceErr(span, err)
-		return err
+		return "", err
 	}
 
 	// Create the email if it doesn't exist
 	result := r.db.WithContext(ctx).Create(email)
 	if result.Error != nil {
 		tracing.TraceErr(span, result.Error)
-		return result.Error
+		return "", result.Error
 	}
 
-	return nil
+	return email.ID, nil
 }
 
 // GetByID retrieves an email by its ID
@@ -230,5 +232,81 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)
 
-	return r.db.WithContext(ctx).Save(email).Error
+	if email == nil {
+		err := errors.New("email cannot be nil")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	if email.ID == "" {
+		err := errors.New("email ID cannot be empty")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Update timestamp
+	email.UpdatedAt = time.Now()
+
+	// Start a transaction
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		tracing.TraceErr(span, tx.Error)
+		return tx.Error
+	}
+
+	// Perform update within transaction
+	// First verify the record exists
+	var exists bool
+	err := tx.Model(&models.Email{}).
+		Select("COUNT(*) > 0").
+		Where("id = ?", email.ID).
+		Find(&exists).Error
+	if err != nil {
+		tx.Rollback()
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	if !exists {
+		tx.Rollback()
+		err := fmt.Errorf("email with ID %s not found", email.ID)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Update only specific fields to prevent overwriting data that shouldn't change
+	result := tx.Model(&models.Email{}).
+		Where("id = ?", email.ID).
+		Updates(map[string]interface{}{
+			// Only include fields that should be updatable
+			"status":          email.Status,
+			"status_detail":   email.StatusDetail,
+			"sent_at":         email.SentAt,
+			"last_attempt_at": email.LastAttemptAt,
+			"scheduled_for":   email.ScheduledFor,
+			"updated_at":      email.UpdatedAt,
+			"send_attempts":   email.SendAttempts,
+		})
+
+	if result.Error != nil {
+		tx.Rollback()
+		tracing.TraceErr(span, result.Error)
+		return result.Error
+	}
+
+	// Check if any rows were affected (should be 1)
+	if result.RowsAffected != 1 {
+		tx.Rollback()
+		err := fmt.Errorf("expected to update 1 row, but updated %d", result.RowsAffected)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	return nil
 }

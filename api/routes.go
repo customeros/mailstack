@@ -16,15 +16,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	if s == nil {
 		panic("Services cannot be nil")
 	}
-	if s.IMAPService == nil {
-		panic("IMAPService cannot be nil")
-	}
 	if repos == nil {
 		panic("Repositories cannot be nil")
 	}
-	if repos.MailboxRepository == nil {
-		panic("MailboxRepository cannot be nil")
-	}
+
+	// setup handlers
+	apiHandlers := handlers.InitHandlers(repos)
 
 	// Health check and status endpoints
 	r.GET("/health", handlers.HealthCheck)
@@ -50,7 +47,28 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		// Email endpoints
 		emails := api.Group("/emails")
 		{
-			emails.POST("", handlers.Send(repos))
+			emails.POST("", apiHandlers.Emails.Send()) // send
+			emails.GET("/:id", nil)                    // get specific email
+			emails.POST("/:id/reply", nil)             // reply to an email
+			emails.POST("/:id/replyall", nil)          // reply-all to an email
+			emails.POST("/:id/forward", nil)           // forward an email
+		}
+
+		attachments := api.Group("/attachments")
+		{
+			attachments.POST("", nil)    // upload attachment, get id to use in email
+			attachments.GET("/:id", nil) // get attachment
+		}
+
+		drafts := api.Group("/drafts")
+		{
+			drafts.POST("", nil)          // create a new draft
+			drafts.GET("", nil)           // list all drafts
+			drafts.GET("/:id", nil)       // get a draft
+			drafts.PUT("/:id", nil)       // update a draft
+			drafts.DELETE("/:id", nil)    // delete a draft
+			drafts.POST("/:id/send", nil) // send a draft
+
 		}
 
 	}

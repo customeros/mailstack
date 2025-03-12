@@ -47,6 +47,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	// Validate the email
 	err := s.validateEmail(ctx, email)
 	if err != nil {
+		tracing.TraceErr(span, err)
 		return &SendResult{
 			Success:      false,
 			ErrorMessage: err.Error(),
@@ -56,6 +57,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	// Prepare the email message
 	allRecipients, messageBuffer, err := s.prepareMessage(ctx, email, attachments)
 	if err != nil {
+		tracing.TraceErr(span, err)
 		return &SendResult{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("failed to prepare email: %v", err),
@@ -65,6 +67,27 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	// Send the email
 	err = s.sendToServer(ctx, email.FromAddress, allRecipients, messageBuffer)
 	if err != nil {
+		tracing.TraceErr(span, err)
+		email.LastAttemptAt = utils.NowPtr()
+		email.Status = enum.EmailStatusFailed
+		email.StatusDetail = err.Error()
+		err = s.repositories.EmailRepository.Update(ctx, email)
+		if err != nil {
+			tracing.TraceErr(span, err)
+		}
+		return &SendResult{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}
+	}
+
+	// update db with success
+	email.SentAt = utils.NowPtr()
+	email.LastAttemptAt = email.SentAt
+	email.Status = enum.EmailStatusSent
+	err = s.repositories.EmailRepository.Update(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
 		return &SendResult{
 			Success:      false,
 			ErrorMessage: err.Error(),
@@ -82,6 +105,8 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.validateEmail")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	email.Direction = enum.EmailOutbound
 
 	if email == nil {
 		err := fmt.Errorf("email cannot be nil")

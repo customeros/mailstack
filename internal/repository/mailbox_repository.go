@@ -47,6 +47,20 @@ func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.
 	return &mailbox, nil
 }
 
+func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddress")
+	defer span.Finish()
+	tracing.TagComponentPostgresRepository(span)
+
+	var mailbox models.Mailbox
+	err := r.db.First(&mailbox, "email_address = ?", emailAddress).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	return &mailbox, nil
+}
+
 func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.SaveMailbox")
 	defer span.Finish()
