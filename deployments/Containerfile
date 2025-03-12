@@ -1,8 +1,7 @@
 FROM golang:1.23.7-alpine3.21 AS builder
 WORKDIR /app
-COPY ../mailstack/. ./mailstack
+COPY . .
 
-WORKDIR /app/mailstack
 RUN go mod tidy
 RUN go build -v -o /go/bin/app main.go
 
@@ -11,10 +10,10 @@ FROM alpine:3.14
 
 WORKDIR /app
 COPY --from=builder /go/bin/app ./app
-COPY --from=builder /app/mailstack/.env ./.env
+COPY --from=builder /app/.env ./.env
 
 # Add entrypoint script
-COPY entrypoint.sh /entrypoint.sh
+COPY deployments/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER 65534
