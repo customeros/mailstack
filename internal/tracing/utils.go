@@ -317,3 +317,25 @@ func RecoverAndLogToJaeger(appLogger logger.Logger) {
 		appLogger.Errorf("Recovered from panic: %v\nStack trace:\n%s", r, stackTrace)
 	}
 }
+
+func RecoveryWithJaeger(tracer opentracing.Tracer) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				// Log the panic to Jaeger
+				span := tracer.StartSpan("panic-recovery")
+				defer span.Finish()
+
+				buf := make([]byte, 4096)
+				stackSize := runtime.Stack(buf, false)
+				span.LogKV(
+					"event", "error",
+					"error.object", r,
+					"stack", string(buf[:stackSize]),
+				)
+				span.SetTag("error", true)
+			}
+		}()
+		c.Next()
+	}
+}

@@ -4,11 +4,13 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/api/handlers"
 	"github.com/customeros/mailstack/api/middleware"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/services"
+	"github.com/customeros/mailstack/internal/tracing"
+	
 )
 
 // RegisterRoutes sets up all API endpoints
@@ -19,6 +21,10 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	if repos == nil {
 		panic("Repositories cannot be nil")
 	}
+
+	// Add recovery middlewares
+	r.Use(gin.Recovery())                                         // Gin's built-in recovery
+	r.Use(tracing.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
 
 	// setup handlers
 	apiHandlers := handlers.InitHandlers(repos)
