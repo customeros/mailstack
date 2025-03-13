@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+
 	"github.com/customeros/mailstack/services"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	// setup handlers
 	apiHandlers := handlers.InitHandlers(repos)
 
-	// Health check and status endpoints
+	// Health check and status endpoints (no custom context needed)
 	r.GET("/health", handlers.HealthCheck)
 	r.GET("/status", handlers.Status(s.IMAPService))
 
@@ -38,9 +39,10 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		ValidAPIKey: apikey,
 	})
 
-	// API group with version
+	// API group with version and custom context
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
+	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
 	{
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
@@ -74,8 +76,6 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			drafts.PUT("/:id", nil)       // update a draft
 			drafts.DELETE("/:id", nil)    // delete a draft
 			drafts.POST("/:id/send", nil) // send a draft
-
 		}
-
 	}
 }
