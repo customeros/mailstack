@@ -54,7 +54,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
 	repos := repository.InitRepositories(mailstackDB, cfg.R2StorageConfig)
 
 	// Initialize services
-	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos)
+	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *Server) Initialize(ctx context.Context) error {
 	}
 
 	// Setup API routes
-	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config.AppConfig.APIKey)
+	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config)
 
 	return nil
 }

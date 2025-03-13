@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/customeros/mailstack/config"
 
 	"github.com/customeros/mailstack/services"
 
@@ -15,7 +16,7 @@ import (
 )
 
 // RegisterRoutes sets up all API endpoints
-func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, apikey string) {
+func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, cfg *config.Config) {
 	if s == nil {
 		panic("Services cannot be nil")
 	}
@@ -28,7 +29,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	r.Use(tracing.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
 
 	// setup handlers
-	apiHandlers := handlers.InitHandlers(repos)
+	apiHandlers := handlers.InitHandlers(repos, cfg, s)
 
 	// Health check and status endpoints (no custom context needed)
 	r.GET("/health", handlers.HealthCheck)
@@ -36,7 +37,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 
 	apiKeyMiddleware := middleware.APIKeyMiddleware(middleware.APIKeyConfig{
 		HeaderName:  "X-CUSTOMER-OS-API-KEY",
-		ValidAPIKey: apikey,
+		ValidAPIKey: cfg.AppConfig.APIKey,
 	})
 
 	// API group with version and custom context

@@ -46,5 +46,6 @@ func MigrateDB(mailstackDB *gorm.DB) error {
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
+		&models.MailstackReputation{},
 	)
 }

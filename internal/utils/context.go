@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	er "github.com/customeros/mailstack/errors"
 	"github.com/gin-gonic/gin"
-	"github.com/pkg/errors"
 )
 
 type CustomContext struct {
@@ -104,7 +104,7 @@ func SetTenantInContext(ctx context.Context, tenant string) context.Context {
 
 func ValidateTenant(ctx context.Context) error {
 	if GetTenantFromContext(ctx) == "" {
-		return errors.New("tenant is missing")
+		return er.ErrTenantMissing
 	}
 	return nil
 }

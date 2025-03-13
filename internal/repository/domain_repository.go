@@ -22,7 +22,7 @@ type DomainRepository interface {
 	MarkConfigured(ctx context.Context, tenant, domain string) error
 	SetDkimKeys(ctx context.Context, tenant, domain, dkimPublic, dkimPrivate string) error
 	CreateDMARCReport(ctx context.Context, tenant string, report *models.DMARCMonitoring) error
-	CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputationEntity) error
+	CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputation) error
 	GetDomainCrossTenant(ctx context.Context, domain string) (*models.Domain, error)
 	GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.Domain, error)
 }
@@ -37,7 +37,7 @@ func NewDomainRepository(db *gorm.DB) DomainRepository {
 	}
 }
 
-func (r *domainRepository) CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputationEntity) error {
+func (r *domainRepository) CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputation) error {
 	span, _ := opentracing.StartSpanFromContext(ctx, "DomainRepository.CreateMailstackReputationScore")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)

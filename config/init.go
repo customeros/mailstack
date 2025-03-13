@@ -17,6 +17,8 @@ type Config struct {
 	MailstackDatabaseConfig *MailstackDatabaseConfig
 	OpenlineDatabaseConfig  *OpenlineDatabaseConfig
 	R2StorageConfig         *R2StorageConfig
+	DomainConfig            *DomainConfig
+	NamecheapConfig         *NamecheapConfig
 }
 
 func InitConfig() (*Config, error) {
@@ -27,6 +29,8 @@ func InitConfig() (*Config, error) {
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
 		OpenlineDatabaseConfig:  &OpenlineDatabaseConfig{},
 		R2StorageConfig:         &R2StorageConfig{},
+		DomainConfig:            &DomainConfig{},
+		NamecheapConfig:         &NamecheapConfig{},
 	}
 
 	err := godotenv.Load()
