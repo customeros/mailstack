@@ -30,10 +30,26 @@ func WithCustomContext(ctx context.Context, customContext *CustomContext) contex
 }
 
 func WithCustomContextFromGinRequest(c *gin.Context, appSource string) context.Context {
+	// Get tenant with case-insensitive keys, prioritizing "tenant" over "TenantName"
+	tenant := ""
+	for k, v := range c.Keys {
+		if str, ok := v.(string); ok {
+			switch k {
+			case "tenant", "TENANT", "Tenant":
+				tenant = str
+				// tenant has priority, we can stop searching
+			case "TenantName", "tenantname", "TENANTNAME", "tenantName":
+				if tenant == "" {
+					tenant = str
+				}
+			}
+		}
+	}
+
 	customContext := &CustomContext{
 		AppSource:  appSource,
 		AuthUserId: c.GetString("AuthenticatedUserId"),
-		Tenant:     c.GetString("TenantName"),
+		Tenant:     tenant,
 		UserId:     c.GetString("UserId"),
 		UserEmail:  c.GetString("UserEmail"),
 	}

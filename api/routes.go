@@ -47,12 +47,14 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	{
 		// Domain endpoints
 		domains := api.Group("/domains")
+		domains.Use(middleware.TenantValidationMiddleware())
 		{
 			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
 		}
 
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
+		mailboxes.Use(middleware.TenantValidationMiddleware())
 		{
 			mailboxes.GET("", handlers.ListMailboxes(s.IMAPService))
 			mailboxes.POST("", handlers.AddMailbox(s.IMAPService, repos.MailboxRepository))
