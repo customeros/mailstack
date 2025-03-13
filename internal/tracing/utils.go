@@ -22,25 +22,19 @@ import (
 )
 
 const (
-	SpanTagTenant         = "tenant"
-	SpanTagUserId         = "user-id"
-	SpanTagUserEmail      = "user-email"
-	SpanTagEntityId       = "entity-id"
-	SpanTagComponent      = "component"
-	SpanTagExternalSystem = "external-system"
-	SpanTagExternalId     = "external-id"
-	// Deprecated
-	SpanTagAggregateId = "aggregateID"
+	SpanTagTenant    = "tenant"
+	SpanTagUserId    = "user-id"
+	SpanTagUserEmail = "user-email"
+	SpanTagEntityId  = "entity-id"
+	SpanTagComponent = "component"
 )
 
 const (
 	SpanTagComponentPostgresRepository = "postgresRepository"
-	SpanTagComponentNeo4jRepository    = "neo4jRepository"
 	SpanTagComponentRest               = "rest"
 	SpanTagComponentCronJob            = "cronJob"
 	SpanTagComponentService            = "service"
 	SpanTagComponentListener           = "listener"
-	SpanTagComponentAgentCapability    = "agentCapability"
 )
 
 func GraphQlTracingEnhancer(ctx context.Context) func(c *gin.Context) {
@@ -192,11 +186,6 @@ func SetDefaultPostgresRepositorySpanTags(ctx context.Context, span opentracing.
 	TagComponentPostgresRepository(span)
 }
 
-func SetDefaultAgentCapabilitySpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentAgentCapability(span)
-}
-
 func TraceErr(span opentracing.Span, err error, fields ...log.Field) {
 	if span == nil || err == nil {
 		return
@@ -240,14 +229,6 @@ func GetTraceId(span opentracing.Span) string {
 
 func TagComponentPostgresRepository(span opentracing.Span) {
 	span.SetTag(SpanTagComponent, SpanTagComponentPostgresRepository)
-}
-
-func TagComponentNeo4jRepository(span opentracing.Span) {
-	span.SetTag(SpanTagComponent, SpanTagComponentNeo4jRepository)
-}
-
-func TagComponentAgentCapability(span opentracing.Span) {
-	span.SetTag(SpanTagComponent, SpanTagComponentAgentCapability)
 }
 
 func TagTenant(span opentracing.Span, tenant string) {
@@ -315,27 +296,5 @@ func RecoverAndLogToJaeger(appLogger logger.Logger) {
 		span.SetTag("error", true)
 
 		appLogger.Errorf("Recovered from panic: %v\nStack trace:\n%s", r, stackTrace)
-	}
-}
-
-func RecoveryWithJaeger(tracer opentracing.Tracer) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		defer func() {
-			if r := recover(); r != nil {
-				// Log the panic to Jaeger
-				span := tracer.StartSpan("panic-recovery")
-				defer span.Finish()
-
-				buf := make([]byte, 4096)
-				stackSize := runtime.Stack(buf, false)
-				span.LogKV(
-					"event", "error",
-					"error.object", r,
-					"stack", string(buf[:stackSize]),
-				)
-				span.SetTag("error", true)
-			}
-		}()
-		c.Next()
 	}
 }

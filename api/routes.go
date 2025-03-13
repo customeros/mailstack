@@ -43,6 +43,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
 	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
+	api.Use(middleware.TracingMiddleware())                  // Add tracing for all /v1/* endpoints
 	{
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
