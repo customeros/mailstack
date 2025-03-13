@@ -14,7 +14,6 @@ type CustomContext struct {
 	AuthUserId string
 	UserId     string
 	UserEmail  string
-	Roles      []string
 }
 
 var customContextKey = "CUSTOM_CONTEXT"
@@ -37,7 +36,6 @@ func WithCustomContextFromGinRequest(c *gin.Context, appSource string) context.C
 		Tenant:     c.GetString("TenantName"),
 		UserId:     c.GetString("UserId"),
 		UserEmail:  c.GetString("UserEmail"),
-		Roles:      c.GetStringSlice("UserRoles"),
 	}
 	return WithCustomContext(c.Request.Context(), customContext)
 }
@@ -58,10 +56,6 @@ func GetTenantFromContext(ctx context.Context) string {
 	return GetContext(ctx).Tenant
 }
 
-func GetRolesFromContext(ctx context.Context) []string {
-	return GetContext(ctx).Roles
-}
-
 func GetAuthUserIdFromContext(ctx context.Context) string {
 	return GetContext(ctx).AuthUserId
 }
@@ -72,19 +66,6 @@ func GetUserIdFromContext(ctx context.Context) string {
 
 func GetUserEmailFromContext(ctx context.Context) string {
 	return GetContext(ctx).UserEmail
-}
-
-func IsImpersonatedUserInContext(ctx context.Context) bool {
-	roles := GetRolesFromContext(ctx)
-	if len(roles) == 0 {
-		return false
-	}
-	for _, role := range roles {
-		if role == "IMPERSONATED" {
-			return true
-		}
-	}
-	return false
 }
 
 func SetAppSourceInContext(ctx context.Context, appSource string) context.Context {
