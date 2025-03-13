@@ -3,6 +3,7 @@ package interfaces
 import (
 	"context"
 
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 )
 
@@ -12,4 +13,5 @@ type MailboxRepository interface {
 	GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error)
 	SaveMailbox(ctx context.Context, mailbox models.Mailbox) error
 	DeleteMailbox(ctx context.Context, id string) error
+	UpdateConnectionStatus(ctx context.Context, mailboxID string, status enum.ConnectionStatus, errorMessage string) error
 }

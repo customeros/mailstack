@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/pkg/errors"
 	"log"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,12 +14,14 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/opentracing/opentracing-go"
 	tracingLog "github.com/opentracing/opentracing-go/log"
+	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type IMAPService struct {
@@ -66,6 +66,7 @@ func (s *IMAPService) Start(ctx context.Context) error {
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	span.LogFields(tracingLog.Int("mailbox_count", len(s.configs)))
+
 	// Start each mailbox sequentially for easier debugging
 	for id, config := range s.configs {
 		log.Printf("Starting mailbox: %s (%s)", id, config.ImapUsername)
@@ -145,12 +146,6 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 
 	// Store configuration
 	s.configs[config.ID] = config
-
-	// Update status
-	s.updateStatus(config.ID, interfaces.MailboxStatus{
-		Connected: false,
-		Folders:   make(map[string]interfaces.FolderStats),
-	})
 
 	// Start monitoring if service is running
 	if s.ctx != nil {
@@ -251,11 +246,14 @@ func (s *IMAPService) processSingleMailboxIteration(
 	defer connectCancel()
 
 	// Connect to the mailbox
-	client, err := s.connectSimple(connectCtx, config)
+	client, err := s.connectToIMAPServer(connectCtx, config)
 	if err != nil {
 		log.Printf("[%s] Connection error: %v", mailboxID, err)
-		s.updateStatusError(mailboxID, err)
 		tracing.TraceErr(span, err)
+		err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionNotActive, err.Error())
+		if err != nil {
+			tracing.TraceErr(span, err)
+		}
 
 		// Sleep with backoff before reconnecting
 		select {
@@ -283,10 +281,10 @@ func (s *IMAPService) processSingleMailboxIteration(
 	s.clientsMutex.Unlock()
 
 	// Update status
-	s.updateStatus(mailboxID, interfaces.MailboxStatus{
-		Connected: true,
-		Folders:   make(map[string]interfaces.FolderStats),
-	})
+	err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionActive, "")
+	if err != nil {
+		tracing.TraceErr(span, err)
+	}
 
 	// Reset backoff on successful connection
 	*backoff = time.Second
@@ -294,70 +292,32 @@ func (s *IMAPService) processSingleMailboxIteration(
 	// Log the folders being processed
 	span.LogFields(tracingLog.String("folders", fmt.Sprintf("%v", config.SyncFolders)))
 
-	// Process each folder sequentially for easier debugging
-	var folderError error
+	// Process each folder sequentially
+	_, connectivityError := s.syncFolders(ctx, client, config.ID, config.SyncFolders)
 
-	for _, folder := range config.SyncFolders {
-		err = func(syncFolder string) error {
-			folderSpan, folderCtx := opentracing.StartSpanFromContext(ctx, "IMAPService.processSingleMailboxIteration.folder")
-			defer folderSpan.Finish()
-			folderSpan.LogFields(tracingLog.String("folder", syncFolder))
-			log.Printf("[%s] Processing folder: %s", mailboxID, syncFolder)
-
-			// Use a timeout for folder processing
-			folderCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-			err := s.processFolder(folderCtx, client, mailboxID, syncFolder)
-			cancel()
-
-			if err != nil {
-				log.Printf("[%s][%s] Error processing folder: %v", mailboxID, syncFolder, err)
-				tracing.TraceErr(folderSpan, err)
-
-				// Check if this is a connection error that should trigger reconnection
-				if strings.Contains(err.Error(), "connection closed") ||
-					strings.Contains(err.Error(), "i/o timeout") ||
-					strings.Contains(err.Error(), "EOF") ||
-					strings.Contains(err.Error(), "connection reset") {
-					folderError = err
-					log.Printf("[%s][%s] Connection error, will reconnect", mailboxID, syncFolder)
-					return err
-				}
-				// Continue with next folder for other types of errors
-				return nil
-			} else {
-				folderSpan.LogFields(tracingLog.String("result.status", "success"))
-			}
-			return nil
-		}(folder)
-		if err != nil {
-			break
-		}
-	}
-
-	// Handle folder errors
-	if folderError != nil {
+	// Handle connectivity errors
+	if connectivityError != nil {
 		s.clientsMutex.Lock()
 		delete(s.clients, mailboxID)
 		s.clientsMutex.Unlock()
 
-		s.updateStatus(mailboxID, interfaces.MailboxStatus{
-			Connected: false,
-			LastError: folderError.Error(),
-			Folders:   make(map[string]interfaces.FolderStats),
-		})
+		err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionNotActive, connectivityError.Error())
+		if err != nil {
+			tracing.TraceErr(span, err)
+		}
 
-		tracing.TraceErr(span, folderError)
+		tracing.TraceErr(span, connectivityError)
 		*backoff = 5 * time.Second
-		return folderError
+		return connectivityError
 	}
 
 	span.LogFields(tracingLog.String("status", "cycle_complete"))
 	return nil
 }
 
-// connectSimple establishes a connection to an IMAP server
-func (s *IMAPService) connectSimple(ctx context.Context, config *models.Mailbox) (*client.Client, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.connectSimple")
+// connectToIMAPServer establishes a connection to an IMAP server
+func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Mailbox) (*client.Client, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.connectToIMAPServer")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
@@ -417,6 +377,67 @@ func (s *IMAPService) connectSimple(ctx context.Context, config *models.Mailbox)
 	return c, nil
 }
 
+// syncFolders processes all folders and returns information about the sync process
+func (s *IMAPService) syncFolders(
+	ctx context.Context,
+	client *client.Client,
+	mailboxID string,
+	folders []string,
+) (processedFolders map[string]bool, connectivityError error) {
+	processedFolders = make(map[string]bool)
+
+	log.Printf("[%s] Starting sync for %d folders: %v", mailboxID, len(folders), folders)
+
+	for _, folder := range folders {
+		log.Printf("[%s] About to process folder: %s", mailboxID, folder)
+
+		err := s.processSingleFolder(ctx, client, mailboxID, folder)
+		if err != nil {
+			if isConnectionError(err) {
+				connectivityError = err
+				log.Printf("[%s][%s] Connection error, will stop processing folders", mailboxID, folder)
+				break
+			}
+
+			// Non-connectivity error, log and continue
+			log.Printf("[%s][%s] Non-connectivity error, continuing with other folders", mailboxID, folder)
+		}
+
+		processedFolders[folder] = err == nil
+	}
+
+	return processedFolders, connectivityError
+}
+
+// processSingleFolder handles the logic for processing a single folder
+func (s *IMAPService) processSingleFolder(
+	ctx context.Context,
+	client *client.Client,
+	mailboxID string,
+	folder string,
+) error {
+	folderSpan, folderCtx := opentracing.StartSpanFromContext(ctx, "IMAPService.processSingleFolder")
+	defer folderSpan.Finish()
+	folderSpan.LogFields(tracingLog.String("folder", folder))
+
+	log.Printf("[%s] Processing folder: %s", mailboxID, folder)
+
+	// Use a timeout for folder processing
+	folderCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel() // Ensure cancel is always called
+
+	err := s.processFolder(folderCtx, client, mailboxID, folder)
+	if err != nil {
+		log.Printf("[%s][%s] Error processing folder: %v", mailboxID, folder, err)
+		tracing.TraceErr(folderSpan, err)
+		return err
+	}
+
+	folderSpan.LogFields(tracingLog.String("result.status", "success"))
+	log.Printf("[%s][%s] Successfully processed folder", mailboxID, folder)
+	return nil
+}
+
 // processFolder handles a single IMAP folder
 func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailboxID, folderName string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.processFolder")
@@ -425,11 +446,17 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 	span.LogFields(tracingLog.String("folder", folderName))
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
+	// Check for nil client
+	if c == nil {
+		err := fmt.Errorf("IMAP client is nil")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	// Select the folder
 	c.Timeout = 30 * time.Second
 	mbox, err := c.Select(folderName, false)
 	c.Timeout = 0
-
 	if err != nil {
 		err = fmt.Errorf("error selecting folder: %w", err)
 		tracing.TraceErr(span, err)
@@ -439,23 +466,15 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 	log.Printf("[%s][%s] Selected folder - Messages: %d, Recent: %d, Unseen: %d",
 		mailboxID, folderName, mbox.Messages, mbox.Recent, mbox.Unseen)
 
-	// Update folder stats
-	s.updateFolderStats(ctx, mailboxID, folderName, mbox)
-
 	// Get the last synchronized UID
-	lastUID := s.getLastSyncedUID(ctx, mailboxID, folderName)
+	syncState, err := s.repositories.MailboxSyncRepository.GetSyncState(ctx, mailboxID, folderName)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
 
-	if lastUID > 0 {
-		// Sync new messages since last UID
-		log.Printf("[%s][%s] Resuming sync from UID %d", mailboxID, folderName, lastUID)
-		err = s.syncNewMessagesSince(ctx, c, mailboxID, folderName, lastUID)
-		if err != nil {
-			err = fmt.Errorf("error syncing new messages: %w", err)
-			tracing.TraceErr(span, err)
-			return err
-		}
-	} else {
-		// Initial sync
+	if syncState == nil || syncState.LastUID == 0 {
+		// Initial sync (no previous sync state or LastUID is 0)
 		log.Printf("[%s][%s] Performing initial sync", mailboxID, folderName)
 		err = s.performInitialSync(ctx, c, mailboxID, folderName)
 		if err != nil {
@@ -463,9 +482,19 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 			tracing.TraceErr(span, err)
 			return err
 		}
+	} else {
+		// We have a previous sync state, sync new messages
+		log.Printf("[%s][%s] Resuming sync from UID %d", mailboxID, folderName, syncState.LastUID)
+		err = s.syncNewMessagesSince(ctx, c, mailboxID, folderName, syncState.LastUID)
+		if err != nil {
+			err = fmt.Errorf("error syncing new messages: %w", err)
+			tracing.TraceErr(span, err)
+			return err
+		}
 	}
 
 	// Use simple polling instead of IDLE for easier debugging
+	log.Printf("[%s][%s] Starting polling after sync", mailboxID, folderName)
 	return s.simplePolling(ctx, c, mailboxID, folderName)
 }
 
@@ -543,9 +572,6 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 
 				continue
 			}
-
-			// Update folder stats
-			s.updateFolderStats(ctx, mailboxID, folderName, mbox)
 
 			// Check for new messages (skip first run to establish baseline)
 			if !firstRun && mbox.Messages > lastCount {
@@ -664,9 +690,20 @@ func (s *IMAPService) fetchNewMessages(
 
 	log.Printf("[%s][%s] Processed %d messages", mailboxID, folderName, messageCount)
 
-	// Update last synced UID if we found any messages
-	if highestUID > 0 {
-		s.saveLastSyncedUID(ctx, mailboxID, folderName, highestUID)
+	// Update last synced UID
+	if highestUID == 0 {
+		return nil
+	}
+
+	err = s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
+		MailboxID:  mailboxID,
+		FolderName: folderName,
+		LastUID:    highestUID,
+		LastSync:   utils.Now(),
+	})
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil
@@ -772,357 +809,33 @@ func (s *IMAPService) syncNewMessagesSince(
 	log.Printf("[%s][%s] Processed %d new messages", mailboxID, folderName, messageCount)
 
 	// Update last synced UID
-	if highestUID > 0 {
-		s.saveLastSyncedUID(ctx, mailboxID, folderName, highestUID)
+	if highestUID == 0 {
+		return nil
 	}
 
-	return nil
-}
-
-// performInitialSync does an initial sync of messages
-func (s *IMAPService) performInitialSync(
-	ctx context.Context,
-	c *client.Client,
-	mailboxID, folderName string,
-) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.performInitialSync")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-
-	// Search for unseen messages
-	criteria := imap.NewSearchCriteria()
-	criteria.WithoutFlags = []string{imap.SeenFlag}
-
-	// Set timeout
-	c.Timeout = 30 * time.Second
-	uids, err := c.UidSearch(criteria)
-	c.Timeout = 0
-
+	err = s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
+		MailboxID:  mailboxID,
+		FolderName: folderName,
+		LastUID:    highestUID,
+		LastSync:   utils.Now(),
+	})
 	if err != nil {
-		err = fmt.Errorf("error searching for unseen messages: %w", err)
 		tracing.TraceErr(span, err)
 		return err
 	}
 
-	if len(uids) == 0 {
-		log.Printf("[%s][%s] No unseen messages to sync", mailboxID, folderName)
-		return nil
-	}
-
-	// Limit the number of messages
-	maxToProcess := INITIAL_SYNC_MAX_TOTAL
-	if len(uids) > maxToProcess {
-		log.Printf("[%s][%s] Limiting initial sync to %d of %d messages",
-			mailboxID, folderName, maxToProcess, len(uids))
-
-		// Sort UIDs in descending order (newest first)
-		sort.SliceStable(uids, func(i, j int) bool {
-			return uids[i] > uids[j]
-		})
-
-		uids = uids[:maxToProcess]
-	}
-
-	log.Printf("[%s][%s] Starting initial sync of %d messages", mailboxID, folderName, len(uids))
-
-	// Process in smaller batches
-	batchSize := INITIAL_SYNC_BATCH_SIZE
-	var highestUID uint32
-
-	for i := 0; i < len(uids); i += batchSize {
-		select {
-		case <-ctx.Done():
-			tracing.TraceErr(span, ctx.Err())
-			return ctx.Err()
-		default:
-		}
-
-		end := i + batchSize
-		if end > len(uids) {
-			end = len(uids)
-		}
-
-		batchUIDs := uids[i:end]
-		log.Printf("[%s][%s] Processing batch %d-%d of %d",
-			mailboxID, folderName, i+1, end, len(uids))
-
-		// Create sequence set
-		seqSet := new(imap.SeqSet)
-		for _, uid := range batchUIDs {
-			seqSet.AddNum(uid)
-			if uid > highestUID {
-				highestUID = uid
-			}
-		}
-
-		// Fetch items
-		items := []imap.FetchItem{
-			imap.FetchEnvelope,
-			imap.FetchFlags,
-			imap.FetchBodyStructure,
-			"BODY.PEEK[]",
-			imap.FetchUid,
-		}
-
-		messages := make(chan *imap.Message, batchSize)
-		done := make(chan error, 1)
-		var wg sync.WaitGroup
-
-		// Create error channel with buffer for all possible errors in this batch
-		eventErrors := make(chan error, batchSize)
-
-		// Set timeout for IMAP operation
-		c.Timeout = 60 * time.Second
-
-		// Start fetch
-		go func() {
-			done <- c.UidFetch(seqSet, items, messages)
-		}()
-
-		// Process messages
-		messageCount := 0
-
-		// Create a semaphore to limit concurrent goroutines
-		sem := make(chan struct{}, INITIAL_SYNC_BATCH_SIZE)
-
-		for msg := range messages {
-			messageCount++
-
-			select {
-			case <-ctx.Done():
-				tracing.TraceErr(span, ctx.Err())
-				return ctx.Err()
-			default:
-			}
-
-			wg.Add(1)
-
-			// Process message in goroutine but track completion
-			go func(msg *imap.Message) {
-				defer wg.Done()
-
-				// Acquire semaphore
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				if s.eventHandler != nil {
-					// Create context with timeout for event handler
-					eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-					defer cancel()
-
-					// Handle the message
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								select {
-								case eventErrors <- fmt.Errorf("panic in event handler: %v", r):
-								default:
-									log.Printf("[%s][%s] Failed to send error: %v", mailboxID, folderName, r)
-								}
-							}
-						}()
-
-						s.eventHandler(eventCtx, interfaces.MailEvent{
-							Source:    "imap",
-							MailboxID: mailboxID,
-							Folder:    folderName,
-							MessageID: msg.SeqNum,
-							EventType: "new",
-							Message:   msg,
-						})
-					}()
-				}
-			}(msg)
-		}
-
-		// Reset IMAP timeout
-		c.Timeout = 0
-
-		// Check for IMAP fetch errors
-		if err := <-done; err != nil {
-			// Close error channel before returning
-			close(eventErrors)
-			log.Printf("[%s][%s] Error processing batch: %v", mailboxID, folderName, err)
-			return fmt.Errorf("IMAP fetch error: %w", err)
-		}
-
-		// Wait for all event handlers to complete with timeout
-		complete := make(chan struct{})
-		go func() {
-			wg.Wait()
-			close(complete)
-		}()
-
-		// Collect any errors that occurred during processing
-		var processingErrors []error
-
-		// Start collecting errors
-		collectDone := make(chan struct{})
-		go func() {
-			defer close(collectDone)
-			for {
-				select {
-				case err, ok := <-eventErrors:
-					if !ok {
-						return // Channel closed
-					}
-					processingErrors = append(processingErrors, err)
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-
-		// Wait for completion or timeout
-		var result error
-		select {
-		case <-complete:
-			// All handlers completed
-			close(eventErrors)
-
-			// Wait for error collection to complete with timeout
-			select {
-			case <-collectDone:
-				// Error collection complete
-			case <-time.After(5 * time.Second):
-				log.Printf("[%s][%s] Timeout waiting for error collection", mailboxID, folderName)
-			}
-
-			if len(processingErrors) > 0 {
-				// Log all errors but return the first one
-				for _, err := range processingErrors {
-					log.Printf("[%s][%s] Batch processing error: %v", mailboxID, folderName, err)
-				}
-				result = fmt.Errorf("batch processing error: %w", processingErrors[0])
-			}
-
-		case <-time.After(2 * time.Minute):
-			close(eventErrors)
-			result = fmt.Errorf("timeout waiting for batch processing")
-
-		case <-ctx.Done():
-			close(eventErrors)
-			result = ctx.Err()
-		}
-
-		// If we had an error, return it
-		if result != nil {
-			return result
-		}
-
-		log.Printf("[%s][%s] Successfully processed %d messages in batch",
-			mailboxID, folderName, messageCount)
-
-		// Add a small delay between batches
-		select {
-		case <-time.After(1 * time.Second):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	// Save the highest UID
-	if highestUID > 0 {
-		if err := s.saveLastSyncedUID(ctx, mailboxID, folderName, highestUID); err != nil {
-			log.Printf("[%s][%s] Failed to save last synced UID: %v",
-				mailboxID, folderName, err)
-			return fmt.Errorf("failed to save sync state: %w", err)
-		}
-		log.Printf("[%s][%s] Updated last synced UID to %d",
-			mailboxID, folderName, highestUID)
-	}
-
-	log.Printf("[%s][%s] Completed initial sync", mailboxID, folderName)
 	return nil
 }
 
-// getLastSyncedUID gets the last synced UID for a folder
-func (s *IMAPService) getLastSyncedUID(ctx context.Context, mailboxID, folderName string) uint32 {
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	state, err := s.repositories.MailboxSyncRepository.GetSyncState(timeoutCtx, mailboxID, folderName)
-	if err != nil {
-		log.Printf("[%s][%s] Error getting sync state: %v", mailboxID, folderName, err)
-		return 0
+// isConnectionError checks if an error is related to connectivity
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
 	}
 
-	if state == nil {
-		return 0
-	}
-
-	return state.LastUID
-}
-
-// saveLastSyncedUID saves the last synced UID for a folder
-func (s *IMAPService) saveLastSyncedUID(ctx context.Context, mailboxID, folderName string, uid uint32) error {
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	state := &models.MailboxSyncState{
-		MailboxID:  mailboxID,
-		FolderName: folderName,
-		LastUID:    uid,
-		LastSync:   time.Now(),
-	}
-
-	err := s.repositories.MailboxSyncRepository.SaveSyncState(timeoutCtx, state)
-	if err != nil {
-		log.Printf("[%s][%s] Error saving sync state: %v", mailboxID, folderName, err)
-		return err
-	}
-
-	log.Printf("[%s][%s] Updated last synced UID to %d", mailboxID, folderName, uid)
-	return nil
-}
-
-// updateStatus updates the status of a mailbox
-func (s *IMAPService) updateStatus(mailboxID string, status interfaces.MailboxStatus) {
-	s.statusMutex.Lock()
-	defer s.statusMutex.Unlock()
-	s.statuses[mailboxID] = status
-}
-
-// updateStatusError updates the error status of a mailbox
-func (s *IMAPService) updateStatusError(mailboxID string, err error) {
-	s.statusMutex.Lock()
-	defer s.statusMutex.Unlock()
-
-	status, exists := s.statuses[mailboxID]
-	if !exists {
-		status = interfaces.MailboxStatus{
-			Folders: make(map[string]interfaces.FolderStats),
-		}
-	}
-
-	status.Connected = false
-	status.LastError = err.Error()
-	s.statuses[mailboxID] = status
-}
-
-// updateFolderStats updates the stats for a folder
-func (s *IMAPService) updateFolderStats(ctx context.Context, mailboxID, folderName string, mbox *imap.MailboxStatus) {
-	s.statusMutex.Lock()
-	defer s.statusMutex.Unlock()
-
-	status, exists := s.statuses[mailboxID]
-	if !exists {
-		status = interfaces.MailboxStatus{
-			Connected: true,
-			Folders:   make(map[string]interfaces.FolderStats),
-		}
-	}
-
-	// Count unseen messages
-	unseenCount := mbox.Unseen
-
-	// Update folder stats
-	status.Folders[folderName] = interfaces.FolderStats{
-		Total:    mbox.Messages,
-		Unseen:   unseenCount,
-		LastSeen: s.getLastSyncedUID(ctx, mailboxID, folderName),
-		LastSync: time.Now(),
-	}
-
-	s.statuses[mailboxID] = status
+	errorMsg := err.Error()
+	return strings.Contains(errorMsg, "connection closed") ||
+		strings.Contains(errorMsg, "i/o timeout") ||
+		strings.Contains(errorMsg, "EOF") ||
+		strings.Contains(errorMsg, "connection reset")
 }

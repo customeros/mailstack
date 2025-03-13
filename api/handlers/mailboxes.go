@@ -42,10 +42,12 @@ func AddMailbox(imapService interfaces.IMAPService, mailboxRepository interfaces
 			return
 		}
 
-		err = imapService.AddMailbox(ctx, &config)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if config.InboundEnabled == true {
+			err = imapService.AddMailbox(ctx, &config)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 
 		c.JSON(http.StatusCreated, gin.H{"status": "mailbox added", "id": config.ID})
