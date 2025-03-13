@@ -15,6 +15,7 @@ type Repositories struct {
 	EmailThreadRepository     interfaces.EmailThreadRepository
 	MailboxRepository         interfaces.MailboxRepository
 	MailboxSyncRepository     interfaces.MailboxSyncRepository
+	DomainRepository          DomainRepository
 }
 
 func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
@@ -32,11 +33,14 @@ func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *R
 		EmailThreadRepository:     NewEmailThreadRepository(mailstackDB),
 		MailboxRepository:         NewMailboxRepository(mailstackDB),
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
+		DomainRepository:          NewDomainRepository(mailstackDB),
 	}
 }
 
 func MigrateDB(mailstackDB *gorm.DB) error {
 	return mailstackDB.AutoMigrate(
+		&models.Domain{},
+		&models.DMARCMonitoring{},
 		&models.Email{},
 		&models.EmailAttachment{},
 		&models.EmailThread{},

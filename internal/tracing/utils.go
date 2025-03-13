@@ -176,6 +176,11 @@ func setDefaultSpanTags(ctx context.Context, span opentracing.Span) {
 	}
 }
 
+func SetDefaultRestSpanTags(ctx context.Context, span opentracing.Span) {
+	setDefaultSpanTags(ctx, span)
+	TagComponentRest(span)
+}
+
 func SetDefaultServiceSpanTags(ctx context.Context, span opentracing.Span) {
 	setDefaultSpanTags(ctx, span)
 	TagComponentService(span)

@@ -45,6 +45,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
 	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
+		// Domain endpoints
+		domains := api.Group("/domains")
+		{
+			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
+		}
+
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
 		{
