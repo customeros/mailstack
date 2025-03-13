@@ -830,13 +830,11 @@ func (s *IMAPService) performInitialSync(
 	var highestUID uint32
 
 	for i := 0; i < len(uids); i += batchSize {
-		// Check for cancellation
 		select {
 		case <-ctx.Done():
 			tracing.TraceErr(span, ctx.Err())
 			return ctx.Err()
 		default:
-			// Continue processing
 		}
 
 		end := i + batchSize
@@ -866,11 +864,14 @@ func (s *IMAPService) performInitialSync(
 			imap.FetchUid,
 		}
 
-		// Create message channel
-		messages := make(chan *imap.Message, 10)
+		messages := make(chan *imap.Message, batchSize)
 		done := make(chan error, 1)
+		var wg sync.WaitGroup
 
-		// Set timeout
+		// Create error channel with buffer for all possible errors in this batch
+		eventErrors := make(chan error, batchSize)
+
+		// Set timeout for IMAP operation
 		c.Timeout = 60 * time.Second
 
 		// Start fetch
@@ -881,42 +882,154 @@ func (s *IMAPService) performInitialSync(
 		// Process messages
 		messageCount := 0
 
+		// Create a semaphore to limit concurrent goroutines
+		sem := make(chan struct{}, INITIAL_SYNC_BATCH_SIZE)
+
 		for msg := range messages {
 			messageCount++
 
-			// Process the message
-			if s.eventHandler != nil {
-				s.eventHandler(ctx, interfaces.MailEvent{
-					Source:    "imap",
-					MailboxID: mailboxID,
-					Folder:    folderName,
-					MessageID: msg.SeqNum,
-					EventType: "new",
-					Message:   msg,
-				})
+			select {
+			case <-ctx.Done():
+				tracing.TraceErr(span, ctx.Err())
+				return ctx.Err()
+			default:
 			}
+
+			wg.Add(1)
+
+			// Process message in goroutine but track completion
+			go func(msg *imap.Message) {
+				defer wg.Done()
+
+				// Acquire semaphore
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				if s.eventHandler != nil {
+					// Create context with timeout for event handler
+					eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+					defer cancel()
+
+					// Handle the message
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								select {
+								case eventErrors <- fmt.Errorf("panic in event handler: %v", r):
+								default:
+									log.Printf("[%s][%s] Failed to send error: %v", mailboxID, folderName, r)
+								}
+							}
+						}()
+
+						s.eventHandler(eventCtx, interfaces.MailEvent{
+							Source:    "imap",
+							MailboxID: mailboxID,
+							Folder:    folderName,
+							MessageID: msg.SeqNum,
+							EventType: "new",
+							Message:   msg,
+						})
+					}()
+				}
+			}(msg)
 		}
 
-		// Reset timeout
+		// Reset IMAP timeout
 		c.Timeout = 0
 
-		// Check for fetch errors
-		err = <-done
-		if err != nil {
+		// Check for IMAP fetch errors
+		if err := <-done; err != nil {
+			// Close error channel before returning
+			close(eventErrors)
 			log.Printf("[%s][%s] Error processing batch: %v", mailboxID, folderName, err)
-			// Continue with next batch instead of failing completely
+			return fmt.Errorf("IMAP fetch error: %w", err)
 		}
 
-		log.Printf("[%s][%s] Processed %d messages in batch", mailboxID, folderName, messageCount)
+		// Wait for all event handlers to complete with timeout
+		complete := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(complete)
+		}()
+
+		// Collect any errors that occurred during processing
+		var processingErrors []error
+
+		// Start collecting errors
+		collectDone := make(chan struct{})
+		go func() {
+			defer close(collectDone)
+			for {
+				select {
+				case err, ok := <-eventErrors:
+					if !ok {
+						return // Channel closed
+					}
+					processingErrors = append(processingErrors, err)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+
+		// Wait for completion or timeout
+		var result error
+		select {
+		case <-complete:
+			// All handlers completed
+			close(eventErrors)
+
+			// Wait for error collection to complete with timeout
+			select {
+			case <-collectDone:
+				// Error collection complete
+			case <-time.After(5 * time.Second):
+				log.Printf("[%s][%s] Timeout waiting for error collection", mailboxID, folderName)
+			}
+
+			if len(processingErrors) > 0 {
+				// Log all errors but return the first one
+				for _, err := range processingErrors {
+					log.Printf("[%s][%s] Batch processing error: %v", mailboxID, folderName, err)
+				}
+				result = fmt.Errorf("batch processing error: %w", processingErrors[0])
+			}
+
+		case <-time.After(2 * time.Minute):
+			close(eventErrors)
+			result = fmt.Errorf("timeout waiting for batch processing")
+
+		case <-ctx.Done():
+			close(eventErrors)
+			result = ctx.Err()
+		}
+
+		// If we had an error, return it
+		if result != nil {
+			return result
+		}
+
+		log.Printf("[%s][%s] Successfully processed %d messages in batch",
+			mailboxID, folderName, messageCount)
 
 		// Add a small delay between batches
-		time.Sleep(5 * time.Second)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	// Save the highest UID
 	if highestUID > 0 {
-		s.saveLastSyncedUID(ctx, mailboxID, folderName, highestUID)
-		log.Printf("[%s][%s] Updated last synced UID to %d", mailboxID, folderName, highestUID)
+		if err := s.saveLastSyncedUID(ctx, mailboxID, folderName, highestUID); err != nil {
+			log.Printf("[%s][%s] Failed to save last synced UID: %v",
+				mailboxID, folderName, err)
+			return fmt.Errorf("failed to save sync state: %w", err)
+		}
+		log.Printf("[%s][%s] Updated last synced UID to %d",
+			mailboxID, folderName, highestUID)
 	}
 
 	log.Printf("[%s][%s] Completed initial sync", mailboxID, folderName)
@@ -942,7 +1055,7 @@ func (s *IMAPService) getLastSyncedUID(ctx context.Context, mailboxID, folderNam
 }
 
 // saveLastSyncedUID saves the last synced UID for a folder
-func (s *IMAPService) saveLastSyncedUID(ctx context.Context, mailboxID, folderName string, uid uint32) {
+func (s *IMAPService) saveLastSyncedUID(ctx context.Context, mailboxID, folderName string, uid uint32) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -956,9 +1069,11 @@ func (s *IMAPService) saveLastSyncedUID(ctx context.Context, mailboxID, folderNa
 	err := s.repositories.MailboxSyncRepository.SaveSyncState(timeoutCtx, state)
 	if err != nil {
 		log.Printf("[%s][%s] Error saving sync state: %v", mailboxID, folderName, err)
-	} else {
-		log.Printf("[%s][%s] Updated last synced UID to %d", mailboxID, folderName, uid)
+		return err
 	}
+
+	log.Printf("[%s][%s] Updated last synced UID to %d", mailboxID, folderName, uid)
+	return nil
 }
 
 // updateStatus updates the status of a mailbox
