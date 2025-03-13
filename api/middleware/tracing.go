@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go/log"
 
@@ -8,11 +10,11 @@ import (
 )
 
 // TracingMiddleware creates a new span for each request and adds common tags
-func TracingMiddleware() gin.HandlerFunc {
+func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Start span using existing utility
+		// Start span using existing utility with parent context
 		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(
-			c.Request.Context(),
+			parentCtx,
 			c.Request.Method+" "+c.FullPath(),
 			c.Request.Header,
 		)
