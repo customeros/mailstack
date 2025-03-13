@@ -14,9 +14,10 @@ env:
 permissions:
   contents: write
   packages: write
+  actions: write # Needed to cancel workflow
 
 jobs:
-  check-version-bump:
+  check-release-needed:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'otter'
     outputs:
@@ -71,13 +72,26 @@ jobs:
             fi
           fi
 
+      - name: Cancel workflow if no release is needed
+        if: steps.commit_message.outputs.version_bump == 'skip'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            console.log("No version bump prefix found. Cancelling workflow.");
+            await github.rest.actions.cancelWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+
   create-release:
-    needs: check-version-bump
-    if: needs.check-version-bump.outputs.version_bump != 'skip'
+    needs: check-release-needed
+    # Only run if version_bump is not 'skip' - this acts as a failsafe
+    if: needs.check-release-needed.outputs.version_bump != 'skip'
     runs-on: ubuntu-latest
     outputs:
       next_version: ${{ steps.generate_version.outputs.next_version }}
-      should_release: ${{ steps.generate_version.outputs.should_release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,7 +108,7 @@ jobs:
         id: generate_version
         run: |
           latest_tag=${{ steps.get_latest_tag.outputs.latest_tag }}
-          version_bump="${{ needs.check-version-bump.outputs.version_bump }}"
+          version_bump="${{ needs.check-release-needed.outputs.version_bump }}"
           
           # Debug output
           echo "Latest tag: $latest_tag"
@@ -128,7 +142,6 @@ jobs:
           
           echo "Next version will be: $next_version"
           echo "next_version=${next_version}" >> $GITHUB_OUTPUT
-          echo "should_release=true" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
