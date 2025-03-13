@@ -49,6 +49,7 @@ func NewIMAPHandler(
 func (h *IMAPHandler) Handle(ctx context.Context, event interfaces.MailEvent) {
 	span, ctx := tracing.StartTracerSpan(ctx, "IMAPHandler.Handle")
 	defer span.Finish()
+	tracing.LogObjectAsJson(span, "event", event)
 
 	switch msg := event.Message.(type) {
 	case *go_imap.Message:
