@@ -47,7 +47,7 @@ func NewIMAPHandler(
 
 // Handle processes an IMAP email event
 func (h *IMAPHandler) Handle(ctx context.Context, event interfaces.MailEvent) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.Handle")
+	span, ctx := tracing.StartTracerSpan(ctx, "IMAPHandler.Handle")
 	defer span.Finish()
 
 	switch msg := event.Message.(type) {

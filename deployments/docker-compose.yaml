@@ -36,7 +36,7 @@ services:
 
   postgres:
     image: postgres:14.5
-    container_name: postgres
+    container_name: postgres-mailstack
     networks:
       - mailstack
     ports:

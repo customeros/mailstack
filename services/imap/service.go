@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"net"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/opentracing/opentracing-go"
+	tracingLog "github.com/opentracing/opentracing-go/log"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
@@ -58,12 +60,12 @@ func (s *IMAPService) SetEventHandler(handler func(context.Context, interfaces.M
 
 // Start initializes the service and connects to mailboxes
 func (s *IMAPService) Start(ctx context.Context) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.Start")
+	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.Start")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
-
+	span.LogFields(tracingLog.Int("mailbox_count", len(s.configs)))
 	// Start each mailbox sequentially for easier debugging
 	for id, config := range s.configs {
 		log.Printf("Starting mailbox: %s (%s)", id, config.ImapUsername)
@@ -191,158 +193,21 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 
 	log.Printf("[%s] Starting mailbox monitoring with folders: %v", mailboxID, config.SyncFolders)
 
-	// Use simple reconnection logic
 	backoff := time.Second
 	maxBackoff := 2 * time.Minute
 	attempts := 0
 
 	for {
-		// Create a span just for this connection attempt
-		attemptSpan := opentracing.StartSpan("IMAPService.connectionAttempt")
-		attemptSpan.SetTag("mailbox.id", mailboxID)
-		attemptSpan.SetTag("attempt", attempts)
-
-		attempts++
-		log.Printf("[%s] Connection attempt #%d", mailboxID, attempts)
-
-		// Check if we should stop
-		select {
-		case <-ctx.Done():
-			attemptSpan.Finish() // Always finish spans
-			log.Printf("[%s] Stopping mailbox monitoring due to context cancellation", mailboxID)
-			return
-		default:
-			// Continue processing
-		}
-
-		// Use connection timeout
-		connectCtx, connectCancel := context.WithTimeout(ctx, 1*time.Minute)
-
-		// Connect to the mailbox
-		client, err := s.connectSimple(connectCtx, config)
-		connectCancel()
-
-		if err != nil {
-			log.Printf("[%s] Connection error: %v", mailboxID, err)
-			s.updateStatusError(mailboxID, err)
-			attemptSpan.LogKV("error", err.Error())
-			attemptSpan.Finish() // Finish span here
-
-			// Sleep with backoff before reconnecting
-			select {
-			case <-time.After(backoff):
-				// Increase backoff for next attempt
-				backoff = time.Duration(float64(backoff) * 1.5)
-				if backoff > maxBackoff {
-					backoff = maxBackoff
-				}
-				log.Printf("[%s] Will retry in %v", mailboxID, backoff)
-			case <-ctx.Done():
+		if err := s.processSingleMailboxIteration(ctx, mailboxID, config, &attempts, &backoff, maxBackoff); err != nil {
+			// If context is cancelled, we should exit
+			if errors.Is(err, context.Canceled) {
 				return
 			}
-			continue
-		}
-
-		// Store the client
-		s.clientsMutex.Lock()
-		// First check if there's an existing client to clean up
-		if existingClient, exists := s.clients[mailboxID]; exists {
-			existingClient.Timeout = 5 * time.Second
-			go existingClient.Logout() // Ignore errors in a goroutine
-		}
-		s.clients[mailboxID] = client
-		s.clientsMutex.Unlock()
-
-		// Update status
-		s.updateStatus(mailboxID, interfaces.MailboxStatus{
-			Connected: true,
-			Folders:   make(map[string]interfaces.FolderStats),
-		})
-
-		// Reset backoff on successful connection
-		backoff = time.Second
-
-		// Log the folders being processed
-		attemptSpan.LogKV("folders", fmt.Sprintf("%v", config.SyncFolders))
-
-		// Process each folder sequentially for easier debugging
-		var folderError error
-
-		for _, folder := range config.SyncFolders {
-			folderName := string(folder)
-
-			// Create a span just for this folder processing
-			folderSpan := opentracing.StartSpan(
-				"IMAPService.processFolder",
-				opentracing.ChildOf(attemptSpan.Context()),
-			)
-			folderSpan.SetTag("mailbox.id", mailboxID)
-			folderSpan.SetTag("folder.name", folderName)
-
-			log.Printf("[%s] Processing folder: %s", mailboxID, folderName)
-
-			// Use a timeout for folder processing
-			folderCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-			err := s.processFolder(folderCtx, client, mailboxID, folderName)
-			cancel()
-
-			if err != nil {
-				log.Printf("[%s][%s] Error processing folder: %v", mailboxID, folderName, err)
-				folderSpan.LogKV("error", err.Error())
-
-				// Check if this is a connection error that should trigger reconnection
-				if strings.Contains(err.Error(), "connection closed") ||
-					strings.Contains(err.Error(), "i/o timeout") ||
-					strings.Contains(err.Error(), "EOF") ||
-					strings.Contains(err.Error(), "connection reset") {
-					folderError = err
-					log.Printf("[%s][%s] Connection error, will reconnect", mailboxID, folderName)
-					folderSpan.Finish() // Finish span
-					break               // Exit folder loop to trigger reconnection
-				}
-
-				folderSpan.Finish() // Finish span
-				// Continue with next folder for other types of errors
-			} else {
-				folderSpan.LogKV("result", "success")
-				folderSpan.Finish() // Finish span
-			}
-		}
-
-		// Cleanup client if there was a connection error
-		if folderError != nil {
-			s.clientsMutex.Lock()
-			delete(s.clients, mailboxID)
-			s.clientsMutex.Unlock()
-
-			s.updateStatus(mailboxID, interfaces.MailboxStatus{
-				Connected: false,
-				LastError: folderError.Error(),
-				Folders:   make(map[string]interfaces.FolderStats),
-			})
-
-			// Use a shorter backoff for connection errors
-			backoff = 5 * time.Second
-
-			log.Printf("[%s] Will reconnect in %v after connection error", mailboxID, backoff)
-			attemptSpan.LogKV("reconnect_reason", "connection_error")
-			attemptSpan.Finish() // Finish span
-
-			select {
-			case <-time.After(backoff):
-				// Continue with reconnection
-			case <-ctx.Done():
-				return
-			}
-
+			// Other errors are handled within processSingleMailboxIteration
 			continue
 		}
 
 		// If we reach here, reconnect after a short delay
-		log.Printf("[%s] Reconnecting after folder processing", mailboxID)
-		attemptSpan.LogKV("reconnect_reason", "maintenance")
-		attemptSpan.Finish() // Finish span
-
 		select {
 		case <-time.After(30 * time.Second):
 			// Continue with reconnection
@@ -350,6 +215,144 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 			return
 		}
 	}
+}
+
+// processSingleMailboxIteration handles a single iteration of mailbox processing
+func (s *IMAPService) processSingleMailboxIteration(
+	ctx context.Context,
+	mailboxID string,
+	config *models.Mailbox,
+	attempts *int,
+	backoff *time.Duration,
+	maxBackoff time.Duration,
+) error {
+	// Create a new span for each iteration of the connection loop
+	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.processSingleMailboxIteration")
+	defer span.Finish()
+	span.SetTag("mailbox.id", mailboxID)
+	span.LogFields(tracingLog.Int("attempt", *attempts))
+	span.LogFields(tracingLog.String("mailbox.username", config.ImapUsername))
+
+	*attempts++
+	log.Printf("[%s] Connection attempt #%d", mailboxID, *attempts)
+
+	// Check if we should stop
+	select {
+	case <-ctx.Done():
+		tracing.TraceErr(span, ctx.Err())
+		log.Printf("[%s] Stopping mailbox monitoring due to context cancellation", mailboxID)
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
+
+	// Use connection timeout
+	connectCtx, connectCancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer connectCancel()
+
+	// Connect to the mailbox
+	client, err := s.connectSimple(connectCtx, config)
+	if err != nil {
+		log.Printf("[%s] Connection error: %v", mailboxID, err)
+		s.updateStatusError(mailboxID, err)
+		tracing.TraceErr(span, err)
+
+		// Sleep with backoff before reconnecting
+		select {
+		case <-time.After(*backoff):
+			// Increase backoff for next attempt
+			*backoff = time.Duration(float64(*backoff) * 1.5)
+			if *backoff > maxBackoff {
+				*backoff = maxBackoff
+			}
+			log.Printf("[%s] Will retry in %v", mailboxID, *backoff)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return err
+	}
+
+	// Store the client
+	s.clientsMutex.Lock()
+	// First check if there's an existing client to clean up
+	if existingClient, exists := s.clients[mailboxID]; exists {
+		existingClient.Timeout = 5 * time.Second
+		go existingClient.Logout() // Ignore errors in a goroutine
+	}
+	s.clients[mailboxID] = client
+	s.clientsMutex.Unlock()
+
+	// Update status
+	s.updateStatus(mailboxID, interfaces.MailboxStatus{
+		Connected: true,
+		Folders:   make(map[string]interfaces.FolderStats),
+	})
+
+	// Reset backoff on successful connection
+	*backoff = time.Second
+
+	// Log the folders being processed
+	span.LogFields(tracingLog.String("folders", fmt.Sprintf("%v", config.SyncFolders)))
+
+	// Process each folder sequentially for easier debugging
+	var folderError error
+
+	for _, folder := range config.SyncFolders {
+		err = func(syncFolder string) error {
+			folderSpan, folderCtx := opentracing.StartSpanFromContext(ctx, "IMAPService.processSingleMailboxIteration.folder")
+			defer folderSpan.Finish()
+			folderSpan.LogFields(tracingLog.String("folder", syncFolder))
+			log.Printf("[%s] Processing folder: %s", mailboxID, syncFolder)
+
+			// Use a timeout for folder processing
+			folderCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			err := s.processFolder(folderCtx, client, mailboxID, syncFolder)
+			cancel()
+
+			if err != nil {
+				log.Printf("[%s][%s] Error processing folder: %v", mailboxID, syncFolder, err)
+				tracing.TraceErr(folderSpan, err)
+
+				// Check if this is a connection error that should trigger reconnection
+				if strings.Contains(err.Error(), "connection closed") ||
+					strings.Contains(err.Error(), "i/o timeout") ||
+					strings.Contains(err.Error(), "EOF") ||
+					strings.Contains(err.Error(), "connection reset") {
+					folderError = err
+					log.Printf("[%s][%s] Connection error, will reconnect", mailboxID, syncFolder)
+					return err
+				}
+				// Continue with next folder for other types of errors
+				return nil
+			} else {
+				folderSpan.LogFields(tracingLog.String("result.status", "success"))
+			}
+			return nil
+		}(folder)
+		if err != nil {
+			break
+		}
+	}
+
+	// Handle folder errors
+	if folderError != nil {
+		s.clientsMutex.Lock()
+		delete(s.clients, mailboxID)
+		s.clientsMutex.Unlock()
+
+		s.updateStatus(mailboxID, interfaces.MailboxStatus{
+			Connected: false,
+			LastError: folderError.Error(),
+			Folders:   make(map[string]interfaces.FolderStats),
+		})
+
+		tracing.TraceErr(span, folderError)
+		*backoff = 5 * time.Second
+		return folderError
+	}
+
+	span.LogFields(tracingLog.String("status", "cycle_complete"))
+	return nil
 }
 
 // connectSimple establishes a connection to an IMAP server
@@ -418,6 +421,8 @@ func (s *IMAPService) connectSimple(ctx context.Context, config *models.Mailbox)
 func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailboxID, folderName string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.processFolder")
 	defer span.Finish()
+	tracing.TagEntity(span, mailboxID)
+	span.LogFields(tracingLog.String("folder", folderName))
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// Select the folder
@@ -847,8 +852,8 @@ func (s *IMAPService) performInitialSync(
 		seqSet := new(imap.SeqSet)
 		for _, uid := range batchUIDs {
 			seqSet.AddNum(uid)
-			if uint32(uid) > highestUID {
-				highestUID = uint32(uid)
+			if uid > highestUID {
+				highestUID = uid
 			}
 		}
 
