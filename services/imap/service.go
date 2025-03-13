@@ -905,7 +905,7 @@ func (s *IMAPService) performInitialSync(
 		log.Printf("[%s][%s] Processed %d messages in batch", mailboxID, folderName, messageCount)
 
 		// Add a small delay between batches
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 	}
 
 	// Save the highest UID

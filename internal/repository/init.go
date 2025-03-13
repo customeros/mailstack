@@ -62,7 +62,7 @@ func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) e
 	db, _ = mailstackDB.DB()
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
 	db.SetMaxOpenConns(dbConfig.MaxConn)
-	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Hour)
+	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
 
 	return err
 }

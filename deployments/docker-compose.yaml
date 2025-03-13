@@ -1,0 +1,59 @@
+networks:
+  mailstack:
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
+
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    networks:
+      - mailstack
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./provision/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+      - ./provision/rabbitmq-definitions.json:/etc/rabbitmq/definitions.json
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "16686:16686"
+      - "6831:6831/udp"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      - LOG_LEVEL=debug
+    networks:
+      - mailstack
+
+  postgres:
+    image: postgres:14.5
+    container_name: postgres
+    networks:
+      - mailstack
+    ports:
+      - "5555:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: mailstack
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d mailstack -h localhost -p 5432",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
