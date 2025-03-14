@@ -14,15 +14,15 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/repository"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/config"
+	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 )
 

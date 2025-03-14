@@ -18,9 +18,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/api"
-	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"

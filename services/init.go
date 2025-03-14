@@ -1,8 +1,8 @@
 package services
 
 import (
-	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/services/cloudflare"

@@ -14,14 +14,14 @@ import (
 	"net/http"
 	"strings"
 
-	repository "github.com/customeros/mailstack/internal/repository"
 	"github.com/opentracing/opentracing-go"
 	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
+	repository "github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
