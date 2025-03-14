@@ -9,15 +9,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/customeros/mailstack/config"
-	er "github.com/customeros/mailstack/errors"
-	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/opentracing/opentracing-go"
 	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
+
+	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
+	er "github.com/customeros/mailstack/internal/errors"
+	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 // Namecheap supported commands: https://www.namecheap.com/support/api/methods/

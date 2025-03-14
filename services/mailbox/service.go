@@ -4,16 +4,16 @@ import (
 	"context"
 	"strings"
 
-	er "github.com/customeros/mailstack/errors"
-	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/repository"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
+	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )

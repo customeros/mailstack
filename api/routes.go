@@ -2,17 +2,16 @@ package api
 
 import (
 	"context"
-	"github.com/customeros/mailstack/config"
-
-	"github.com/customeros/mailstack/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/api/handlers"
 	"github.com/customeros/mailstack/api/middleware"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/services"
 )
 
 // RegisterRoutes sets up all API endpoints

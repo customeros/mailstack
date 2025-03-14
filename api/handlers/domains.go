@@ -5,17 +5,17 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/customeros/mailstack/config"
-	er "github.com/customeros/mailstack/errors"
-	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/services"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
+	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/services"
 )
 
 type RegisterNewDomainRequest struct {

@@ -4,8 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	er "github.com/customeros/mailstack/errors"
 	"github.com/gin-gonic/gin"
+
+	er "github.com/customeros/mailstack/internal/errors"
 )
 
 type CustomContext struct {

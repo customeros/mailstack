@@ -5,10 +5,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/customeros/mailstack/config"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/server"
+	"github.com/customeros/mailstack/internal/server"
 )
 
 func main() {

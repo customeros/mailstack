@@ -5,8 +5,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/services/storage"
 )
