@@ -42,12 +42,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	// API group with version and custom context
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
-	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
+	api.Use(middleware.TenantValidationMiddleware())         // Add tenant validation for all /v1/* endpoints
+	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context after tenant is set
 	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
 		// Domain endpoints
 		domains := api.Group("/domains")
-		domains.Use(middleware.TenantValidationMiddleware())
 		{
 			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
 			domains.GET("", apiHandlers.Domains.GetDomains())
