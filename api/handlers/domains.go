@@ -7,6 +7,7 @@ import (
 
 	"github.com/customeros/mailstack/config"
 	er "github.com/customeros/mailstack/errors"
+	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/services"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
@@ -26,6 +27,10 @@ type DomainResponse struct {
 	Domain DomainRecord `json:"domain"`
 }
 
+type DomainsResponse struct {
+	Domains []DomainRecord `json:"domains"`
+}
+
 type DomainRecord struct {
 	Domain      string   `json:"domain"`
 	Nameservers []string `json:"nameservers"`
@@ -35,6 +40,7 @@ type DomainRecord struct {
 
 type DomainHandler struct {
 	domainRepository repository.DomainRepository
+	namecheapService interfaces.NamecheapService
 	cfg              *config.Config
 	services         *services.Services
 }
@@ -42,6 +48,7 @@ type DomainHandler struct {
 func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *services.Services) *DomainHandler {
 	return &DomainHandler{
 		domainRepository: repos.DomainRepository,
+		namecheapService: s.NamecheapService,
 		cfg:              cfg,
 		services:         s,
 	}
@@ -190,4 +197,44 @@ func (h *DomainHandler) configureDomain(ctx context.Context, domain, website str
 	domainResponse.Domain = domainInfo.DomainName
 
 	return domainResponse, nil
+}
+
+func (h *DomainHandler) GetDomains() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "GetDomains")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		tenant := utils.GetTenantFromContext(ctx)
+
+		// get all active domains from postgres
+		activeDomainRecords, err := h.domainRepository.GetActiveDomains(ctx, tenant)
+		if err != nil {
+			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving domains"))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		response := DomainsResponse{
+			Domains: make([]DomainRecord, 0, len(activeDomainRecords)),
+		}
+
+		for _, domainRecord := range activeDomainRecords {
+			domain, err := h.namecheapService.GetDomainInfo(ctx, tenant, domainRecord.Domain)
+			if err != nil {
+				message := "Unable to retreive domain info"
+				tracing.TraceErr(span, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": message})
+				return
+			}
+			response.Domains = append(response.Domains, DomainRecord{
+				Domain:      domain.DomainName,
+				CreatedDate: domain.CreatedDate,
+				ExpiredDate: domain.ExpiredDate,
+				Nameservers: domain.Nameservers,
+			})
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
 }

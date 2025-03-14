@@ -51,6 +51,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		domains.Use(middleware.TenantValidationMiddleware())
 		{
 			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
+			domains.GET("", apiHandlers.Domains.GetDomains())
 		}
 
 		// Mailbox endpoints
