@@ -5,11 +5,14 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/services/cloudflare"
 	"github.com/customeros/mailstack/services/domain"
 	"github.com/customeros/mailstack/services/email_filter"
 	"github.com/customeros/mailstack/services/events"
 	"github.com/customeros/mailstack/services/imap"
+	"github.com/customeros/mailstack/services/mailbox"
 	"github.com/customeros/mailstack/services/namecheap"
+	"github.com/customeros/mailstack/services/opensrs"
 )
 
 type Services struct {
@@ -36,6 +39,9 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	}
 
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
+	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
+	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
+	mailboxImpl := mailbox.NewMailboxService(log, repos)
 
 	services := Services{
 		EventsService:      events,

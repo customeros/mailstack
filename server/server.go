@@ -38,7 +38,7 @@ type Server struct {
 	tracerCloser   io.Closer
 }
 
-func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
+func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
 	// Initialize logger
 	logger := logger.NewAppLogger(cfg.Logger)
 	logger.InitLogger()
@@ -51,7 +51,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
 	opentracing.SetGlobalTracer(tracer)
 
 	// Initialize repositories
-	repos := repository.InitRepositories(mailstackDB, cfg.R2StorageConfig)
+	repos := repository.InitRepositories(mailstackDB, openlineDB, cfg.R2StorageConfig)
 
 	// Initialize services
 	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos, cfg)

@@ -3,9 +3,8 @@ package domain
 import (
 	"context"
 
-	"github.com/customeros/mailstack/config"
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/repository/postgres"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go"
@@ -13,14 +12,14 @@ import (
 )
 
 type domainService struct {
-	postgres   *postgres.Repositories
+	postgres   *repository.Repositories
 	cloudflare interfaces.CloudflareService
 	mailbox    interfaces.MailboxService
 	namecheap  interfaces.NamecheapService
 	opensrs    interfaces.OpenSrsService
 }
 
-func NewDomainService(postgres *postgres.Repositories, cloudflare interfaces.CloudflareService, namecheap interfaces.NamecheapService, mailbox interfaces.MailboxService, opensrs interfaces.OpenSrsService) interfaces.DomainService {
+func NewDomainService(postgres *repository.Repositories, cloudflare interfaces.CloudflareService, namecheap interfaces.NamecheapService, mailbox interfaces.MailboxService, opensrs interfaces.OpenSrsService) interfaces.DomainService {
 	return &domainService{
 		postgres:   postgres,
 		cloudflare: cloudflare,
@@ -67,7 +66,7 @@ func (s *domainService) ConfigureDomain(ctx context.Context, domain, redirectWeb
 	}
 
 	// mark domain as configured
-	err = s.postgres.MailStackDomainRepository.MarkConfigured(ctx, tenant, domain)
+	err = s.postgres.DomainRepository.MarkConfigured(ctx, tenant, domain)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error setting domain as configured"))
 	}

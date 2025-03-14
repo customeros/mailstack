@@ -15,16 +15,16 @@ import (
 )
 
 type DomainRepository interface {
-	RegisterDomain(ctx context.Context, tenant, domain string) (*models.Domain, error)
+	RegisterDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error)
 	CheckDomainOwnership(ctx context.Context, tenant, domain string) (bool, error)
-	GetDomain(ctx context.Context, tenant, domain string) (*models.Domain, error)
-	GetActiveDomains(ctx context.Context, tenant string) ([]models.Domain, error)
+	GetDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error)
+	GetActiveDomains(ctx context.Context, tenant string) ([]models.MailStackDomain, error)
 	MarkConfigured(ctx context.Context, tenant, domain string) error
 	SetDkimKeys(ctx context.Context, tenant, domain, dkimPublic, dkimPrivate string) error
 	CreateDMARCReport(ctx context.Context, tenant string, report *models.DMARCMonitoring) error
 	CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputation) error
-	GetDomainCrossTenant(ctx context.Context, domain string) (*models.Domain, error)
-	GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.Domain, error)
+	GetDomainCrossTenant(ctx context.Context, domain string) (*models.MailStackDomain, error)
+	GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.MailStackDomain, error)
 }
 
 type domainRepository struct {
@@ -68,14 +68,14 @@ func (r *domainRepository) CreateDMARCReport(ctx context.Context, tenant string,
 	return nil
 }
 
-func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain string) (*models.Domain, error) {
+func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.RegisterDomain")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	var exists bool
 	err := r.db.WithContext(ctx).
-		Model(&models.Domain{}).
+		Model(&models.MailStackDomain{}).
 		Select("count(*) > 0").
 		Where("tenant = ? AND domain = ?", tenant, domain).
 		Find(&exists).Error
@@ -88,7 +88,7 @@ func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain st
 	}
 
 	now := utils.Now()
-	mailStackDomain := models.Domain{
+	mailStackDomain := models.MailStackDomain{
 		Tenant:    tenant,
 		Domain:    domain,
 		CreatedAt: now,
@@ -111,7 +111,7 @@ func (r *domainRepository) CheckDomainOwnership(ctx context.Context, tenant, dom
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	span.LogKV("domain", domain)
 
-	var mailStackDomain models.Domain
+	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("tenant = ? AND domain = ? AND active = ?", tenant, domain, true).
 		First(&mailStackDomain).Error
@@ -131,12 +131,12 @@ func (r *domainRepository) CheckDomainOwnership(ctx context.Context, tenant, dom
 	return true, nil
 }
 
-func (r *domainRepository) GetActiveDomains(ctx context.Context, tenant string) ([]models.Domain, error) {
+func (r *domainRepository) GetActiveDomains(ctx context.Context, tenant string) ([]models.MailStackDomain, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetActiveDomains")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
-	var mailStackDomains []models.Domain
+	var mailStackDomains []models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("tenant = ? AND active = ?", tenant, true).
 		Find(&mailStackDomains).Error
@@ -155,7 +155,7 @@ func (r *domainRepository) MarkConfigured(ctx context.Context, tenant, domain st
 	span.LogKV("domain", domain)
 
 	err := r.db.WithContext(ctx).
-		Model(&models.Domain{}).
+		Model(&models.MailStackDomain{}).
 		Where("tenant = ? AND domain = ?", tenant, domain).
 		UpdateColumn("configured", true).
 		UpdateColumn("updated_at", utils.Now()).
@@ -175,7 +175,7 @@ func (r *domainRepository) SetDkimKeys(ctx context.Context, tenant, domain, dkim
 	span.LogKV("domain", domain)
 
 	err := r.db.WithContext(ctx).
-		Model(&models.Domain{}).
+		Model(&models.MailStackDomain{}).
 		Where("tenant = ? AND domain = ?", tenant, domain).
 		UpdateColumn("dkim_public", dkimPublic).
 		UpdateColumn("dkim_private", dkimPrivate).
@@ -189,13 +189,13 @@ func (r *domainRepository) SetDkimKeys(ctx context.Context, tenant, domain, dkim
 	return nil
 }
 
-func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string) (*models.Domain, error) {
+func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetDomain")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	span.LogKV("domain", domain)
 
-	var mailStackDomain models.Domain
+	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("tenant = ? AND domain = ?", tenant, domain).
 		First(&mailStackDomain).Error
@@ -210,13 +210,13 @@ func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string)
 	return &mailStackDomain, nil
 }
 
-func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain string) (*models.Domain, error) {
+func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain string) (*models.MailStackDomain, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetDomainCrossTenant")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	span.LogKV("domain", domain)
 
-	var mailStackDomain models.Domain
+	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("domain = ?", domain).
 		First(&mailStackDomain).Error
@@ -231,12 +231,12 @@ func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain stri
 	return &mailStackDomain, nil
 }
 
-func (r *domainRepository) GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.Domain, error) {
+func (r *domainRepository) GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.MailStackDomain, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetAllActiveDomainsCrossTenant")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
-	var mailStackDomains []models.Domain
+	var mailStackDomains []models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("active = ?", true).
 		Where("configured = ?", true).

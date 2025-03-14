@@ -42,13 +42,29 @@ func main() {
 		SSLMode:         cfg.MailstackDatabaseConfig.SSLMode,
 	})
 	if err != nil {
-		log.Fatalf("Database initialization failed: %v", err)
+		log.Fatalf("Mailstack database initialization failed: %v", err)
+	}
+
+	openlineDB, err := database.InitOpenlineDatabase(&database.DatabaseConfig{
+		DBName:          cfg.OpenlineDatabaseConfig.DBName,
+		Host:            cfg.OpenlineDatabaseConfig.Host,
+		Port:            cfg.OpenlineDatabaseConfig.Port,
+		User:            cfg.OpenlineDatabaseConfig.User,
+		Password:        cfg.OpenlineDatabaseConfig.Password,
+		MaxConn:         cfg.OpenlineDatabaseConfig.MaxConn,
+		MaxIdleConn:     cfg.OpenlineDatabaseConfig.MaxIdleConn,
+		ConnMaxLifetime: cfg.OpenlineDatabaseConfig.ConnMaxLifetime,
+		LogLevel:        cfg.OpenlineDatabaseConfig.LogLevel,
+		SSLMode:         cfg.OpenlineDatabaseConfig.SSLMode,
+	})
+	if err != nil {
+		log.Fatalf("Openline database initialization failed: %v", err)
 	}
 
 	switch os.Args[1] {
 	case "migrate":
 
-		err := repository.MigrateDB(mailstackDB)
+		err := repository.MigrateDB(mailstackDB, openlineDB)
 		if err != nil {
 			log.Fatalf("Database migration failed: %v", err)
 		}
@@ -59,7 +75,7 @@ func main() {
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		server, err := server.NewServer(cfg, mailstackDB)
+		server, err := server.NewServer(cfg, mailstackDB, openlineDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}

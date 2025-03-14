@@ -19,6 +19,8 @@ type Config struct {
 	R2StorageConfig         *R2StorageConfig
 	DomainConfig            *DomainConfig
 	NamecheapConfig         *NamecheapConfig
+	CloudflareConfig        *CloudflareConfig
+	OpenSrsConfig           *OpenSRSConfig
 }
 
 func InitConfig() (*Config, error) {
@@ -31,6 +33,8 @@ func InitConfig() (*Config, error) {
 		R2StorageConfig:         &R2StorageConfig{},
 		DomainConfig:            &DomainConfig{},
 		NamecheapConfig:         &NamecheapConfig{},
+		CloudflareConfig:        &CloudflareConfig{},
+		OpenSrsConfig:           &OpenSRSConfig{},
 	}
 
 	err := godotenv.Load()
