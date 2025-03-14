@@ -64,7 +64,7 @@ func main() {
 	switch os.Args[1] {
 	case "migrate":
 
-		err := repository.MigrateDB(mailstackDB, openlineDB)
+		err := repository.MigrateDB(cfg.MailstackDatabaseConfig, mailstackDB)
 		if err != nil {
 			log.Fatalf("Database migration failed: %v", err)
 		}

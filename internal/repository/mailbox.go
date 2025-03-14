@@ -2,11 +2,14 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
 )
@@ -75,4 +78,41 @@ func (r *mailboxRepository) DeleteMailbox(ctx context.Context, id string) error 
 	tracing.TagComponentPostgresRepository(span)
 
 	return r.db.Delete(&models.Mailbox{}, "id = ?", id).Error
+}
+
+// UpdateConnectionStatus updates the connection status and error message for a mailbox
+func (r *mailboxRepository) UpdateConnectionStatus(ctx context.Context, mailboxID string, status enum.ConnectionStatus, errorMessage string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateConnectionStatus")
+	defer span.Finish()
+	tracing.TagComponentPostgresRepository(span)
+	span.SetTag("mailbox.id", mailboxID)
+	span.SetTag("status", status)
+
+	// Create a timeout context
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Update the connection status, error message, and last connection check time
+	result := r.db.WithContext(timeoutCtx).Model(&models.Mailbox{}).
+		Where("id = ?", mailboxID).
+		Updates(map[string]interface{}{
+			"connection_status":     status,
+			"error_message":         errorMessage,
+			"last_connection_check": time.Now(),
+			"updated_at":            time.Now(),
+		})
+
+	if result.Error != nil {
+		tracing.TraceErr(span, result.Error)
+		return fmt.Errorf("failed to update mailbox connection status: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		err := fmt.Errorf("mailbox with ID %s not found", mailboxID)
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	span.LogKV("affectedRows", result.RowsAffected)
+	return nil
 }

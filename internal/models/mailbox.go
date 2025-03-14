@@ -57,9 +57,9 @@ type Mailbox struct {
 	SyncFolders pq.StringArray `gorm:"column:sync_folders;type:text[]" json:"syncFolders"`
 
 	// Status tracking
-	ConnectionStatus    string     `gorm:"column:connection_status;type:varchar(50)" json:"connectionStatus"`
-	LastConnectionCheck *time.Time `gorm:"column:last_connection_check;type:timestamp" json:"lastConnectionCheck"`
-	ErrorMessage        string     `gorm:"column:error_message;type:text" json:"errorMessage"`
+	ConnectionStatus    enum.ConnectionStatus `gorm:"column:connection_status;type:varchar(50)" json:"connectionStatus"`
+	LastConnectionCheck *time.Time            `gorm:"column:last_connection_check;type:timestamp" json:"lastConnectionCheck"`
+	ErrorMessage        string                `gorm:"column:error_message;type:text" json:"errorMessage"`
 
 	// Send rate limits
 	DailySendQuota int        `gorm:"column:daily_quota;default:2000" json:"dailyQuota"`

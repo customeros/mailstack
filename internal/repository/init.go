@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/config"
@@ -10,12 +12,13 @@ import (
 )
 
 type Repositories struct {
+	DomainRepository                DomainRepository
 	EmailRepository                 interfaces.EmailRepository
 	EmailAttachmentRepository       interfaces.EmailAttachmentRepository
 	EmailThreadRepository           interfaces.EmailThreadRepository
 	MailboxRepository               interfaces.MailboxRepository
 	MailboxSyncRepository           interfaces.MailboxSyncRepository
-	DomainRepository                DomainRepository
+	OrphanEmailRepository           interfaces.OrphanEmailRepository
 	TenantSettingsMailboxRepository TenantSettingsMailboxRepository
 }
 
@@ -29,18 +32,26 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *confi
 	)
 
 	return &Repositories{
+		DomainRepository:                NewDomainRepository(openlineDB),
 		EmailRepository:                 NewEmailRepository(mailstackDB),
 		EmailAttachmentRepository:       NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
 		EmailThreadRepository:           NewEmailThreadRepository(mailstackDB),
 		MailboxRepository:               NewMailboxRepository(mailstackDB),
 		MailboxSyncRepository:           NewMailboxSyncRepository(mailstackDB),
-		DomainRepository:                NewDomainRepository(openlineDB),
+		OrphanEmailRepository:           NewOrphanEmailRepository(mailstackDB),
 		TenantSettingsMailboxRepository: NewTenantSettingsMailboxRepository(openlineDB),
 	}
 }
 
-func MigrateDB(mailstackDB *gorm.DB, openlineDB *gorm.DB) error {
-	err := mailstackDB.AutoMigrate(
+func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {
+	db, err := mailstackDB.DB()
+	if err != nil {
+		return err
+	}
+
+	db.SetMaxOpenConns(5)
+
+	err = mailstackDB.AutoMigrate(
 		&models.Domain{},
 		&models.DMARCMonitoring{},
 		&models.Email{},
@@ -48,18 +59,19 @@ func MigrateDB(mailstackDB *gorm.DB, openlineDB *gorm.DB) error {
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
-	)
-	if err != nil {
-		return err
-	}
-	err = openlineDB.AutoMigrate(
+		&models.OrphanEmail{},
 		&models.EmailMessage{},
 		&models.MailStackDomain{},
 		&models.TenantSettingsMailbox{},
 		&models.MailstackReputation{},
 	)
-	if err != nil {
-		return err
-	}
-	return nil
+
+	db.Close()
+
+	db, _ = mailstackDB.DB()
+	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
+	db.SetMaxOpenConns(dbConfig.MaxConn)
+	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
+
+	return err
 }

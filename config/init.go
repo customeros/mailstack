@@ -29,7 +29,6 @@ func InitConfig() (*Config, error) {
 		Logger:                  &logger.Config{},
 		Tracing:                 &tracing.JaegerConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
-		OpenlineDatabaseConfig:  &OpenlineDatabaseConfig{},
 		R2StorageConfig:         &R2StorageConfig{},
 		DomainConfig:            &DomainConfig{},
 		NamecheapConfig:         &NamecheapConfig{},
