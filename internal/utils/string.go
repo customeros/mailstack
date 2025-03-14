@@ -5,15 +5,6 @@ import (
 	"strings"
 )
 
-func IsStringInSlice(s string, slice []string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
 // normalizeSubject removes prefixes like Re:, Fwd:, etc. from a subject
 func NormalizeEmailSubject(subject string) string {
 	subject = strings.TrimSpace(subject)
