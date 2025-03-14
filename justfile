@@ -5,6 +5,9 @@ build:
 db:
     pgcli postgresql://postgres:password@localhost:5555/mailstack
 
+debug:
+    dlv debug . -- server
+
 migrate:
     go run main.go migrate
 

@@ -52,18 +52,18 @@ func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) e
 	db.SetMaxOpenConns(5)
 
 	err = mailstackDB.AutoMigrate(
-		&models.Domain{},
-		&models.DMARCMonitoring{},
+		// &models.Domain{},
+		// &models.DMARCMonitoring{},
 		&models.Email{},
 		&models.EmailAttachment{},
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
 		&models.OrphanEmail{},
-		&models.EmailMessage{},
-		&models.MailStackDomain{},
-		&models.TenantSettingsMailbox{},
-		&models.MailstackReputation{},
+		// &models.EmailMessage{},
+		// &models.MailStackDomain{},
+		// &models.TenantSettingsMailbox{},
+		// &models.MailstackReputation{},
 	)
 
 	db.Close()

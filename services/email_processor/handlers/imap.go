@@ -370,14 +370,13 @@ func (h *IMAPHandler) processEnvelope(email *models.Email, envelope *go_imap.Env
 	}
 
 	email.Subject = envelope.Subject
+	email.CleanSubject = utils.NormalizeSubject(envelope.Subject)
 	email.InReplyTo = envelope.InReplyTo
-	email.MessageID = envelope.MessageId
+	email.MessageID = strings.Trim(envelope.MessageId, "<>")
 
 	// Extract References if available
 	if envelope.InReplyTo != "" {
-		// Many clients put References in the InReplyTo field separated by spaces
-		references := strings.Split(envelope.InReplyTo, " ")
-		email.References = pq.StringArray(references)
+		h.processReferences(email, envelope)
 	}
 
 	// Sender information
@@ -387,6 +386,8 @@ func (h *IMAPHandler) processEnvelope(email *models.Email, envelope *go_imap.Env
 		syntaxValidation := mailvalidate.ValidateEmailSyntax(sender.Address())
 		if syntaxValidation.IsValid {
 			email.FromAddress = syntaxValidation.CleanEmail
+			email.FromDomain = syntaxValidation.Domain
+			email.FromUser = syntaxValidation.User
 		}
 	}
 
@@ -406,6 +407,32 @@ func (h *IMAPHandler) processEnvelope(email *models.Email, envelope *go_imap.Env
 	envelopeMap["cc"] = h.addressesToMap(envelope.Cc)
 	envelopeMap["bcc"] = h.addressesToMap(envelope.Bcc)
 	email.Envelope = models.JSONMap(envelopeMap)
+}
+
+func (h *IMAPHandler) processReferences(email *models.Email, envelope *go_imap.Envelope) {
+	if envelope.InReplyTo != "" {
+
+		var allReferences []string
+
+		// Process In-Reply-To (can contain multiple IDs space-separated)
+		if envelope.InReplyTo != "" {
+			inReplyToRefs := strings.Split(envelope.InReplyTo, " ")
+			for _, ref := range inReplyToRefs {
+				// Clean angle brackets
+				ref = strings.Trim(ref, "<>")
+				if ref != "" && !utils.IsStringInSlice(ref, allReferences) {
+					allReferences = append(allReferences, ref)
+				}
+			}
+
+			// Set the cleaned In-Reply-To (using first reference if multiple exist)
+			if len(allReferences) > 0 {
+				email.InReplyTo = allReferences[0] // Store without <>
+			}
+		}
+
+		email.References = pq.StringArray(allReferences)
+	}
 }
 
 // Process message content
