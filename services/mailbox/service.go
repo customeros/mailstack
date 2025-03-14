@@ -154,3 +154,19 @@ func (s *mailboxService) GetMailboxes(ctx context.Context, domain string) ([]*mo
 	}
 	return mailboxRecords, nil
 }
+
+func (s *mailboxService) GetByMailbox(ctx context.Context, username, domain string) (*models.TenantSettingsMailbox, error) {
+	span, ctx := s.initializeTracing(ctx, "MailboxService.GetByMailbox")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogFields(
+		log.String("username", username),
+		log.String("domain", domain),
+	)
+	mailboxRecord, err := s.postgres.TenantSettingsMailboxRepository.GetByMailbox(ctx, username+"@"+domain)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
+		return nil, err
+	}
+	return mailboxRecord, nil
+}
