@@ -23,6 +23,11 @@ type RegisterNewDomainRequest struct {
 	Website string `json:"website"`
 }
 
+type ConfigureDomainRequest struct {
+	Domain  string `json:"domain"`
+	Website string `json:"website"`
+}
+
 type DomainResponse struct {
 	Domain DomainRecord `json:"domain"`
 }
@@ -260,5 +265,51 @@ func (h *DomainHandler) GetRecommendations() gin.HandlerFunc {
 		recommendations := h.mailboxService.RecommendOutboundDomains(ctx, baseName, 20)
 
 		c.JSON(http.StatusOK, recommendations)
+	}
+}
+
+func (h *DomainHandler) ConfigureDomain() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.ConfigureDomain")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		var req ConfigureDomainRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if req.Domain == "" {
+			message := "Missing required field: domain"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		} else if req.Website == "" {
+			message := "Missing required field: website"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		}
+
+		domainResponse, err := h.configureDomain(ctx, req.Domain, req.Website)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			if errors.Is(err, er.ErrDomainNotFound) {
+				message := "Domain not found"
+				c.JSON(http.StatusNotFound, gin.H{"error": message})
+				return
+			} else if errors.Is(err, er.ErrDomainConfigurationFailed) {
+				message := "Domain configuration failed"
+				c.JSON(http.StatusInternalServerError, gin.H{"error": message})
+				return
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, domainResponse)
 	}
 }
