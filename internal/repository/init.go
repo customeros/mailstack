@@ -12,15 +12,17 @@ import (
 )
 
 type Repositories struct {
-	EmailRepository           interfaces.EmailRepository
-	EmailAttachmentRepository interfaces.EmailAttachmentRepository
-	EmailThreadRepository     interfaces.EmailThreadRepository
-	MailboxRepository         interfaces.MailboxRepository
-	MailboxSyncRepository     interfaces.MailboxSyncRepository
-	OrphanEmailRepository     interfaces.OrphanEmailRepository
+  DomainRepository                DomainRepository
+	EmailRepository                 interfaces.EmailRepository
+	EmailAttachmentRepository       interfaces.EmailAttachmentRepository
+	EmailThreadRepository           interfaces.EmailThreadRepository
+	MailboxRepository               interfaces.MailboxRepository
+	MailboxSyncRepository           interfaces.MailboxSyncRepository
+  OrphanEmailRepository           interfaces.OrphanEmailRepository
+	TenantSettingsMailboxRepository TenantSettingsMailboxRepository
 }
 
-func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
+func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
 	emailAttachmentStorage := storage.NewR2StorageService(
 		r2Config.AccountID,
 		r2Config.AccessKeyID,
@@ -30,12 +32,14 @@ func InitRepositories(mailstackDB *gorm.DB, r2Config *config.R2StorageConfig) *R
 	)
 
 	return &Repositories{
+    DomainRepository:                NewDomainRepository(openlineDB),
 		EmailRepository:           NewEmailRepository(mailstackDB),
 		EmailAttachmentRepository: NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
 		EmailThreadRepository:     NewEmailThreadRepository(mailstackDB),
 		MailboxRepository:         NewMailboxRepository(mailstackDB),
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
 		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
+    TenantSettingsMailboxRepository: NewTenantSettingsMailboxRepository(openlineDB),
 	}
 }
 
@@ -49,12 +53,30 @@ func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) e
 	db.SetMaxOpenConns(5)
 
 	err = mailstackDB.AutoMigrate(
+		EmailRepository:                 NewEmailRepository(mailstackDB),
+		EmailAttachmentRepository:       NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
+		EmailThreadRepository:           NewEmailThreadRepository(mailstackDB),
+		MailboxRepository:               NewMailboxRepository(mailstackDB),
+		MailboxSyncRepository:           NewMailboxSyncRepository(mailstackDB),
+		
+		
+	}
+}
+
+func MigrateDB(mailstackDB *gorm.DB, openlineDB *gorm.DB) error {
+	err := mailstackDB.AutoMigrate(
+		&models.Domain{},
+		&models.DMARCMonitoring{},
 		&models.Email{},
 		&models.EmailAttachment{},
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
 		&models.OrphanEmail{},
+    &models.EmailMessage{},
+		&models.MailStackDomain{},
+		&models.TenantSettingsMailbox{},
+		&models.MailstackReputation{},
 	)
 
 	db.Close()

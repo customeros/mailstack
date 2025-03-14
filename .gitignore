@@ -26,4 +26,7 @@ go.work.sum
 .envrc
 
 # IDE files
-.idea
+
+.idea/
+.vscode/
+

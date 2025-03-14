@@ -2,17 +2,21 @@ package api
 
 import (
 	"context"
+	"github.com/customeros/mailstack/config"
+
+	"github.com/customeros/mailstack/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/api/handlers"
 	"github.com/customeros/mailstack/api/middleware"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/services"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 // RegisterRoutes sets up all API endpoints
-func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, apikey string) {
+func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, cfg *config.Config) {
 	if s == nil {
 		panic("Services cannot be nil")
 	}
@@ -20,24 +24,44 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		panic("Repositories cannot be nil")
 	}
 
-	// setup handlers
-	apiHandlers := handlers.InitHandlers(repos)
+	// Add recovery middlewares
+	r.Use(gin.Recovery())                                         // Gin's built-in recovery
+	r.Use(tracing.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
 
-	// Health check and status endpoints
+	// setup handlers
+	apiHandlers := handlers.InitHandlers(repos, cfg, s)
+
+	// Health check and status endpoints (no custom context needed)
 	r.GET("/health", handlers.HealthCheck)
 	r.GET("/status", handlers.Status(s.IMAPService))
 
 	apiKeyMiddleware := middleware.APIKeyMiddleware(middleware.APIKeyConfig{
 		HeaderName:  "X-CUSTOMER-OS-API-KEY",
-		ValidAPIKey: apikey,
+		ValidAPIKey: cfg.AppConfig.APIKey,
 	})
 
-	// API group with version
+	// API group with version and custom context
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
+	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
+	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
+		// Domain endpoints
+		domains := api.Group("/domains")
+		domains.Use(middleware.TenantValidationMiddleware())
+		{
+			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
+			domains.GET("", apiHandlers.Domains.GetDomains())
+			domains.GET("/recommendations", apiHandlers.Domains.GetRecommendations())
+			domains.POST("/configure", apiHandlers.Domains.ConfigureDomain())
+			domains.POST("/:domain/dns", apiHandlers.DNS.AddDNSRecord())
+			domains.DELETE("/:domain/dns/:id", apiHandlers.DNS.DeleteDNSRecord())
+			domains.GET("/:domain/dns", apiHandlers.DNS.GetDNSRecords())
+		}
+
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
+		mailboxes.Use(middleware.TenantValidationMiddleware())
 		{
 			mailboxes.GET("", handlers.ListMailboxes(s.IMAPService))
 			mailboxes.POST("", handlers.AddMailbox(s.IMAPService, repos.MailboxRepository))
@@ -68,8 +92,6 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			drafts.PUT("/:id", nil)       // update a draft
 			drafts.DELETE("/:id", nil)    // delete a draft
 			drafts.POST("/:id/send", nil) // send a draft
-
 		}
-
 	}
 }

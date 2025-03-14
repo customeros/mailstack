@@ -116,7 +116,6 @@ func (h *EmailsHandler) Send() gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"messageId": results.MessageID,
 		})
-		return
 	}
 }
 
@@ -289,7 +288,7 @@ func (h *EmailsHandler) validateEmailAddresses(
 func (h *EmailsHandler) validateEmailSyntax(ctx context.Context, emailAddress *string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateSendEmailRequest")
 	defer span.Finish()
-	tracing.TagComponentRest(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	if emailAddress == nil {
 		err := errors.New("emailAddress is empty")

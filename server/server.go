@@ -2,20 +2,24 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/api"
 	"github.com/customeros/mailstack/config"
+	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
@@ -34,7 +38,7 @@ type Server struct {
 	tracerCloser   io.Closer
 }
 
-func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
+func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
 	// Initialize logger
 	logger := logger.NewAppLogger(cfg.Logger)
 	logger.InitLogger()
@@ -47,10 +51,10 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
 	opentracing.SetGlobalTracer(tracer)
 
 	// Initialize repositories
-	repos := repository.InitRepositories(mailstackDB, cfg.R2StorageConfig)
+	repos := repository.InitRepositories(mailstackDB, openlineDB, cfg.R2StorageConfig)
 
 	// Initialize services
-	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos)
+	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +83,15 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB) (*Server, error) {
 func (s *Server) Initialize(ctx context.Context) error {
 	// Register webhook handler
 	log.Println("Registering event handler...")
-	s.services.IMAPService.SetEventHandler(s.emailProcessor.ProcessMailEvent)
+
+	// Create an adapter function that wraps ProcessMailEvent with panic recovery
+	eventHandler := func(ctx context.Context, mailEvent interfaces.MailEvent) {
+		s.wrapGoroutine("event_handler", func() {
+			s.emailProcessor.ProcessMailEvent(ctx, mailEvent)
+		})
+	}
+
+	s.services.IMAPService.SetEventHandler(eventHandler)
 
 	// Setup mailboxes
 	if err := internal.InitMailboxes(s.services, s.repositories); err != nil {
@@ -87,9 +99,37 @@ func (s *Server) Initialize(ctx context.Context) error {
 	}
 
 	// Setup API routes
-	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config.AppConfig.APIKey)
+	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config)
 
 	return nil
+}
+
+func (s *Server) recoverWithJaeger(name string) {
+	if r := recover(); r != nil {
+		// Create a new span for the panic
+		span := opentracing.GlobalTracer().StartSpan(
+			fmt.Sprintf("panic.%s", name),
+		)
+		defer span.Finish()
+
+		// Mark span as failed
+		ext.Error.Set(span, true)
+
+		// Log panic details
+		span.LogKV(
+			"event", "panic",
+			"process", name,
+			"error", fmt.Sprintf("%v", r),
+			"stack", string(debug.Stack()),
+		)
+
+		log.Printf("❌ Panic in %s: %v\n%s", name, r, debug.Stack())
+	}
+}
+
+func (s *Server) wrapGoroutine(name string, fn func()) {
+	defer s.recoverWithJaeger(name)
+	fn()
 }
 
 func (s *Server) Run() error {
@@ -102,20 +142,22 @@ func (s *Server) Run() error {
 		return err
 	}
 
-	// Start the IMAP service
+	// Start the IMAP service with panic recovery
 	log.Println("Starting IMAP service...")
-	if err := s.services.IMAPService.Start(ctx); err != nil {
-		return err
-	}
+	s.wrapGoroutine("imap_service", func() {
+		if err := s.services.IMAPService.Start(ctx); err != nil {
+			log.Printf("❌ IMAP service error: %v", err)
+		}
+	})
 	log.Println("✅ IMAP service started successfully")
 
-	// Start HTTP server in a goroutine
-	go func() {
+	// Start HTTP server in a goroutine with panic recovery
+	go s.wrapGoroutine("http_server", func() {
 		log.Println("Starting HTTP server")
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("❌ HTTP server error: %v", err)
 		}
-	}()
+	})
 	log.Println("✅ HTTP server started successfully")
 	log.Println("MailStack is now running. Press Ctrl+C to exit.")
 
@@ -123,6 +165,8 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) waitForShutdown() error {
+	defer s.recoverWithJaeger("shutdown")
+
 	// Set up signal handling for graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -147,17 +191,17 @@ func (s *Server) waitForShutdown() error {
 		log.Println("✅ HTTP server shut down successfully")
 	}
 
-	// Stop IMAP service with timeout
+	// Stop IMAP service with timeout and panic recovery
 	log.Println("Stopping IMAP service...")
 	stopDone := make(chan struct{})
-	go func() {
+	go s.wrapGoroutine("imap_service_shutdown", func() {
 		defer close(stopDone)
 		if err := s.services.IMAPService.Stop(); err != nil {
 			log.Printf("❌ IMAP service shutdown error: %v", err)
 		} else {
 			log.Println("✅ IMAP service stopped successfully")
 		}
-	}()
+	})
 
 	// Wait for IMAP service to stop with timeout
 	select {
