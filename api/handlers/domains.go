@@ -41,6 +41,7 @@ type DomainRecord struct {
 type DomainHandler struct {
 	domainRepository repository.DomainRepository
 	namecheapService interfaces.NamecheapService
+	mailboxService   interfaces.MailboxService
 	cfg              *config.Config
 	services         *services.Services
 }
@@ -49,6 +50,7 @@ func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *ser
 	return &DomainHandler{
 		domainRepository: repos.DomainRepository,
 		namecheapService: s.NamecheapService,
+		mailboxService:   s.MailboxService,
 		cfg:              cfg,
 		services:         s,
 	}
@@ -57,7 +59,7 @@ func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *ser
 // RegisterNewDomain registers a new domain for the tenant
 func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "RegisterNewDomain")
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.RegisterNewDomain")
 		defer span.Finish()
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
@@ -159,7 +161,7 @@ func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 }
 
 func (h *DomainHandler) configureDomain(ctx context.Context, domain, website string) (DomainRecord, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "configureDomain")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainHandler.configureDomain")
 	defer span.Finish()
 	tracing.SetDefaultRestSpanTags(ctx, span)
 
@@ -201,7 +203,7 @@ func (h *DomainHandler) configureDomain(ctx context.Context, domain, website str
 
 func (h *DomainHandler) GetDomains() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "GetDomains")
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.GetDomains")
 		defer span.Finish()
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
@@ -236,5 +238,27 @@ func (h *DomainHandler) GetDomains() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, response)
+	}
+}
+
+func (h *DomainHandler) GetRecommendations() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.GetRecommendations")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		// get root domain
+		baseName, exists := c.GetQuery("baseName")
+		if !exists {
+			message := "Must provide baseName"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		}
+
+		// get domain recommendations
+		recommendations := h.mailboxService.RecommendOutboundDomains(ctx, baseName, 20)
+
+		c.JSON(http.StatusOK, recommendations)
 	}
 }
