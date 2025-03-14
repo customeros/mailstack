@@ -12,9 +12,12 @@ import (
 // TracingMiddleware creates a new span for each request and adds common tags
 func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get existing custom context if any
+		existingCtx := c.Request.Context()
+
 		// Start span using existing utility with parent context
 		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(
-			parentCtx,
+			existingCtx, // Use existing context instead of parentCtx to preserve values
 			c.Request.Method+" "+c.FullPath(),
 			c.Request.Header,
 		)
@@ -31,7 +34,7 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 			tracing.TagEntity(span, id)
 		}
 
-		// Store span in context
+		// Store span in context while preserving existing context values
 		c.Request = c.Request.WithContext(ctx)
 
 		// Process request
