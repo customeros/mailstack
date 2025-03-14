@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -110,4 +111,55 @@ func (h *DNSHandler) getDNSRequestPayload(c *gin.Context) (DNSRecord, error) {
 	}
 
 	return req, nil
+}
+
+func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.DeleteDNSRecord")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		tenant := utils.GetTenantFromContext(ctx)
+
+		domain := c.Param("domain")
+		domainModel, err := h.domainService.GetDomain(ctx, domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if domainModel == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+			return
+		}
+		if domainModel.Tenant != tenant {
+			c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+			return
+		}
+
+		domainExists, zoneId, err := h.cloudflareService.CheckDomainExists(ctx, domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !domainExists {
+			message := "domain not found"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusNotFound, gin.H{"error": message})
+			return
+		}
+
+		// delete dns record
+		dnsRecordId := c.Param("id")
+		dnsRecordId = strings.TrimPrefix(dnsRecordId, "dns_")
+		err = h.cloudflareService.DeleteDNSRecord(ctx, zoneId, dnsRecordId)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "DNS record deleted"})
+	}
 }
