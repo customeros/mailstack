@@ -39,7 +39,6 @@ func main() {
 		MaxIdleConn:     cfg.MailstackDatabaseConfig.MaxIdleConn,
 		ConnMaxLifetime: cfg.MailstackDatabaseConfig.ConnMaxLifetime,
 		LogLevel:        cfg.MailstackDatabaseConfig.LogLevel,
-		SSLMode:         cfg.MailstackDatabaseConfig.SSLMode,
 	})
 	if err != nil {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
@@ -55,7 +54,6 @@ func main() {
 		MaxIdleConn:     cfg.OpenlineDatabaseConfig.MaxIdleConn,
 		ConnMaxLifetime: cfg.OpenlineDatabaseConfig.ConnMaxLifetime,
 		LogLevel:        cfg.OpenlineDatabaseConfig.LogLevel,
-		SSLMode:         cfg.OpenlineDatabaseConfig.SSLMode,
 	})
 	if err != nil {
 		log.Fatalf("Openline database initialization failed: %v", err)
