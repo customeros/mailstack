@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
@@ -72,4 +73,21 @@ func (s *domainService) ConfigureDomain(ctx context.Context, domain, redirectWeb
 	}
 
 	return nil
+}
+
+func (s *domainService) GetDomain(ctx context.Context, domain string) (*models.MailStackDomain, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.GetDomain")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogKV("request.domain", domain)
+
+	tenant := utils.GetTenantFromContext(ctx)
+
+	domainModel, err := s.postgres.DomainRepository.GetDomain(ctx, tenant, domain)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "Error getting domain"))
+		return nil, err
+	}
+
+	return domainModel, nil
 }

@@ -139,12 +139,14 @@ func (r *domainRepository) GetActiveDomains(ctx context.Context, tenant string) 
 	var mailStackDomains []models.MailStackDomain
 	err := r.db.WithContext(ctx).
 		Where("tenant = ? AND active = ?", tenant, true).
+		Order("created_at DESC").
 		Find(&mailStackDomains).Error
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
+	span.LogFields(tracingLog.Int("response.count", len(mailStackDomains)))
 	return mailStackDomains, nil
 }
 
@@ -201,12 +203,14 @@ func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string)
 		First(&mailStackDomain).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			span.LogFields(tracingLog.Bool("response.found", false))
 			return nil, nil
 		}
 		tracing.TraceErr(span, errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
+	span.LogFields(tracingLog.Bool("response.found", true))
 	return &mailStackDomain, nil
 }
 

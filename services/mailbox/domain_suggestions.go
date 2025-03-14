@@ -48,8 +48,9 @@ func (s *mailboxService) IsDomainAvailable(ctx context.Context, domain string) (
 
 func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string {
 	span, ctx := s.initializeTracing(ctx, "MailboxService.RecommendOutboundDomains")
-	span.LogFields(log.String("domainRoot", domainRoot))
 	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogFields(log.String("domainRoot", domainRoot), log.Int("count", count))
 
 	var (
 		prefixResults       []string
@@ -124,6 +125,8 @@ func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoo
 		return results[:count]
 	}
 
+	span.LogFields(log.Int("results.count", len(results)))
+	tracing.LogObjectAsJson(span, "results", results)
 	return results
 }
 

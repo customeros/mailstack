@@ -22,7 +22,7 @@ func NewMailboxRepository(db *gorm.DB) interfaces.MailboxRepository {
 func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxes")
 	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	var mailboxes []*models.Mailbox
 	result := r.db.Find(&mailboxes)
@@ -50,7 +50,7 @@ func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.
 func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddress")
 	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "email_address = ?", emailAddress).Error
@@ -64,7 +64,7 @@ func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailA
 func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.SaveMailbox")
 	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	return r.db.Save(&mailbox).Error
 }

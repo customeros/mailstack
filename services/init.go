@@ -20,6 +20,9 @@ type Services struct {
 	EmailFilterService interfaces.EmailFilterService
 	IMAPService        interfaces.IMAPService
 	NamecheapService   interfaces.NamecheapService
+	OpenSrsService     interfaces.OpenSrsService
+	CloudflareService  interfaces.CloudflareService
+	MailboxService     interfaces.MailboxService
 	DomainService      interfaces.DomainService
 }
 
@@ -48,6 +51,9 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		EmailFilterService: email_filter.NewEmailFilterService(),
 		IMAPService:        imap.NewIMAPService(repos),
 		NamecheapService:   namecheapImpl,
+		OpenSrsService:     opensrsImpl,
+		CloudflareService:  cloudflareImpl,
+		MailboxService:     mailboxImpl,
 		DomainService:      domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxImpl, opensrsImpl),
 	}
 

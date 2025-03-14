@@ -7,6 +7,7 @@ import (
 
 	"github.com/customeros/mailstack/config"
 	er "github.com/customeros/mailstack/errors"
+	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/services"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
@@ -22,8 +23,17 @@ type RegisterNewDomainRequest struct {
 	Website string `json:"website"`
 }
 
+type ConfigureDomainRequest struct {
+	Domain  string `json:"domain"`
+	Website string `json:"website"`
+}
+
 type DomainResponse struct {
 	Domain DomainRecord `json:"domain"`
+}
+
+type DomainsResponse struct {
+	Domains []DomainRecord `json:"domains"`
 }
 
 type DomainRecord struct {
@@ -35,6 +45,8 @@ type DomainRecord struct {
 
 type DomainHandler struct {
 	domainRepository repository.DomainRepository
+	namecheapService interfaces.NamecheapService
+	mailboxService   interfaces.MailboxService
 	cfg              *config.Config
 	services         *services.Services
 }
@@ -42,6 +54,8 @@ type DomainHandler struct {
 func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *services.Services) *DomainHandler {
 	return &DomainHandler{
 		domainRepository: repos.DomainRepository,
+		namecheapService: s.NamecheapService,
+		mailboxService:   s.MailboxService,
 		cfg:              cfg,
 		services:         s,
 	}
@@ -50,7 +64,7 @@ func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *ser
 // RegisterNewDomain registers a new domain for the tenant
 func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "RegisterNewDomain")
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.RegisterNewDomain")
 		defer span.Finish()
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
@@ -152,7 +166,7 @@ func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 }
 
 func (h *DomainHandler) configureDomain(ctx context.Context, domain, website string) (DomainRecord, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "configureDomain")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainHandler.configureDomain")
 	defer span.Finish()
 	tracing.SetDefaultRestSpanTags(ctx, span)
 
@@ -190,4 +204,112 @@ func (h *DomainHandler) configureDomain(ctx context.Context, domain, website str
 	domainResponse.Domain = domainInfo.DomainName
 
 	return domainResponse, nil
+}
+
+func (h *DomainHandler) GetDomains() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.GetDomains")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		tenant := utils.GetTenantFromContext(ctx)
+
+		// get all active domains from postgres
+		activeDomainRecords, err := h.domainRepository.GetActiveDomains(ctx, tenant)
+		if err != nil {
+			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving domains"))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		response := DomainsResponse{
+			Domains: make([]DomainRecord, 0, len(activeDomainRecords)),
+		}
+
+		for _, domainRecord := range activeDomainRecords {
+			domain, err := h.namecheapService.GetDomainInfo(ctx, tenant, domainRecord.Domain)
+			if err != nil {
+				message := "Unable to retreive domain info"
+				tracing.TraceErr(span, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": message})
+				return
+			}
+			response.Domains = append(response.Domains, DomainRecord{
+				Domain:      domain.DomainName,
+				CreatedDate: domain.CreatedDate,
+				ExpiredDate: domain.ExpiredDate,
+				Nameservers: domain.Nameservers,
+			})
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+func (h *DomainHandler) GetRecommendations() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.GetRecommendations")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		// get root domain
+		baseName, exists := c.GetQuery("baseName")
+		if !exists {
+			message := "Must provide baseName"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		}
+
+		// get domain recommendations
+		recommendations := h.mailboxService.RecommendOutboundDomains(ctx, baseName, 20)
+
+		c.JSON(http.StatusOK, recommendations)
+	}
+}
+
+func (h *DomainHandler) ConfigureDomain() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.ConfigureDomain")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		var req ConfigureDomainRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if req.Domain == "" {
+			message := "Missing required field: domain"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		} else if req.Website == "" {
+			message := "Missing required field: website"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		}
+
+		domainResponse, err := h.configureDomain(ctx, req.Domain, req.Website)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			if errors.Is(err, er.ErrDomainNotFound) {
+				message := "Domain not found"
+				c.JSON(http.StatusNotFound, gin.H{"error": message})
+				return
+			} else if errors.Is(err, er.ErrDomainConfigurationFailed) {
+				message := "Domain configuration failed"
+				c.JSON(http.StatusInternalServerError, gin.H{"error": message})
+				return
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, domainResponse)
+	}
 }
