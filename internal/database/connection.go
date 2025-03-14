@@ -2,13 +2,14 @@ package database
 
 import (
 	"fmt"
+	"io"
 	"log"
-	"strconv"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 type DatabaseConfig struct {
@@ -26,26 +27,28 @@ type DatabaseConfig struct {
 func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	validateConfig(dbConfig)
 
-	portInt, err := strconv.Atoi(dbConfig.Port)
-	if err != nil {
-		return nil, fmt.Errorf("invalid port number: %w", err)
-	}
+	connectString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
+		dbConfig.Host, dbConfig.Port, dbConfig.User, dbConfig.Password, dbConfig.DBName)
 
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s",
-		dbConfig.Host, portInt, dbConfig.User, dbConfig.Password, dbConfig.DBName,
-	)
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+	gormDb, err := gorm.Open(postgres.Open(connectString), &gorm.Config{
+		AllowGlobalUpdate: true,
+		Logger:            initLog(dbConfig.LogLevel),
 	})
 	if err != nil {
+		log.Printf("Error opening DB: %v", err)
 		return nil, err
 	}
 
 	// Configure connection pool
-	sqlDB, err := db.DB()
+	sqlDB, err := gormDb.DB()
 	if err != nil {
+		log.Printf("Error getting DB: %v", err)
+		return nil, err
+	}
+
+	// Test the connection
+	if err = sqlDB.Ping(); err != nil {
+		log.Printf("Error pinging DB: %v", err)
 		return nil, err
 	}
 
@@ -58,7 +61,7 @@ func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused
 	sqlDB.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Hour)
 
-	return db, nil
+	return gormDb, nil
 }
 
 func validateConfig(config *DatabaseConfig) {
@@ -76,5 +79,22 @@ func validateConfig(config *DatabaseConfig) {
 	case config.DBName == "":
 		log.Fatalf("Database name config is empty")
 	}
-	return
+}
+
+func initLog(logLevel string) gormlogger.Interface {
+	postgresLogLevel := gormlogger.Silent
+	switch logLevel {
+	case "ERROR":
+		postgresLogLevel = gormlogger.Error
+	case "WARN":
+		postgresLogLevel = gormlogger.Warn
+	case "INFO":
+		postgresLogLevel = gormlogger.Info
+	}
+	newLogger := gormlogger.New(log.New(io.MultiWriter(os.Stdout), "\r\n", log.LstdFlags), gormlogger.Config{
+		Colorful:      true,
+		LogLevel:      postgresLogLevel,
+		SlowThreshold: time.Second,
+	})
+	return newLogger
 }
