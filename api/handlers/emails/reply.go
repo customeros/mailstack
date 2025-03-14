@@ -1,13 +1,11 @@
 package emails
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -92,7 +90,7 @@ func (h *EmailsHandler) Reply() gin.HandlerFunc {
 	}
 }
 
-func (h *EmailsHandler) validateSendEmailRequest(c *gin.Context) (EmailContainer, error) {
+func (h *EmailsHandler) validateReplyEmailRequest(c *gin.Context) (EmailContainer, error) {
 	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "EmailsHandler.validateSendEmailRequest")
 	defer span.Finish()
 	tracing.TagComponentRest(span)
@@ -212,70 +210,4 @@ func (h *EmailsHandler) validateSendEmailRequest(c *gin.Context) (EmailContainer
 	emailContainer.Email = &emailRecord
 
 	return emailContainer, nil
-}
-
-func (h *EmailsHandler) validateAttachments(ctx context.Context, attachments []Attachments, errs *custom_err.MultiErrors) []*models.EmailAttachment {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateAttachments")
-	defer span.Finish()
-	tracing.TagComponentRest(span)
-
-	validAttachments := make([]*models.EmailAttachment, 0)
-	for i := range attachments {
-		attachmentId := attachments[i].ID
-		attachmentRecord, err := h.repositories.EmailAttachmentRepository.GetByID(ctx, attachmentId)
-		if err != nil {
-			errs.Add("attachmentId", fmt.Sprintf("unable to find attachment id %s", attachmentId), err)
-			tracing.TraceErr(span, err)
-			continue
-		}
-		validAttachments = append(validAttachments, attachmentRecord)
-	}
-	return validAttachments
-}
-
-func (h *EmailsHandler) validateEmailAddresses(
-	ctx context.Context,
-	fieldName string,
-	addresses []string,
-	errs *custom_err.MultiErrors,
-) []string {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateEmailAddresses")
-	defer span.Finish()
-	tracing.TagComponentRest(span)
-
-	validAddresses := make([]string, 0)
-
-	for i := range addresses {
-		email := addresses[i]
-		err := h.validateEmailSyntax(ctx, &email)
-		if err != nil {
-			errs.Add(fieldName, fmt.Sprintf("%s is invalid", addresses[i]), err)
-			tracing.TraceErr(span, err)
-			continue
-		}
-		validAddresses = append(validAddresses, email)
-	}
-
-	return validAddresses
-}
-
-func (h *EmailsHandler) validateEmailSyntax(ctx context.Context, emailAddress *string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateSendEmailRequest")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-
-	if emailAddress == nil {
-		err := errors.New("emailAddress is empty")
-		tracing.TraceErr(span, err)
-		return err
-	}
-
-	validateEmail := mailvalidate.ValidateEmailSyntax(*emailAddress)
-	if !validateEmail.IsValid {
-		err := errors.New(*emailAddress + " is invalid")
-		tracing.TraceErr(span, err)
-		return err
-	}
-	*emailAddress = validateEmail.CleanEmail
-	return nil
 }
