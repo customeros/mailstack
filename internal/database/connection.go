@@ -76,8 +76,6 @@ func validateConfig(config *DatabaseConfig) {
 		log.Fatalf("Database password config is empty")
 	case config.DBName == "":
 		log.Fatalf("Database name config is empty")
-	case config.SSLMode == "":
-		log.Fatalf("Database SSLMode config is empty")
 	}
 	return
 }

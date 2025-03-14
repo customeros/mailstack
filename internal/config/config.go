@@ -24,7 +24,6 @@ type MailstackDatabaseConfig struct {
 	MaxIdleConn     int    `env:"MAILSTACK_POSTGRES_DB_MAX_IDLE_CONN"`
 	ConnMaxLifetime int    `env:"MAILSTACK_POSTGRES_DB_CONN_MAX_LIFETIME"`
 	LogLevel        string `env:"MAILSTACK_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
-	SSLMode         string `env:"MAILSTACK_POSTGRES_SSL_MODE"`
 }
 
 type OpenlineDatabaseConfig struct {
@@ -37,7 +36,6 @@ type OpenlineDatabaseConfig struct {
 	MaxIdleConn     int    `env:"OPENLINE_POSTGRES_DB_MAX_IDLE_CONN"`
 	ConnMaxLifetime int    `env:"OPENLINE_POSTGRES_DB_CONN_MAX_LIFETIME"`
 	LogLevel        string `env:"OPENLINE_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
-	SSLMode         string `env:"OPENLINE_POSTGRES_SSL_MODE"`
 }
 
 type R2StorageConfig struct {
