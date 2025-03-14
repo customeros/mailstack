@@ -27,8 +27,10 @@ type Email struct {
 
 	// Core email metadata
 	Subject      string         `gorm:"column:subject;type:varchar(1000)" json:"subject"`
+	CleanSubject string         `gorm:"column:clean_subject;type:varchar(1000)" json:"cleanSubject"`
 	FromAddress  string         `gorm:"column:from_address;type:varchar(255);index" json:"fromAddress"`
 	FromName     string         `gorm:"column:from_name;type:varchar(255)" json:"fromName"`
+	FromUser     string         `gorm:"column:from_user;type:varchar(255)" json:"fromUser"`
 	FromDomain   string         `gorm:"column:from_domain;type:varchar(255)" json:"fromDomain"`
 	ReplyTo      string         `gorm:"column:reply_to;type:varchar(255);index" json:"replyTo"`
 	ToAddresses  pq.StringArray `gorm:"column:to_addresses;type:text[]" json:"toAddresses"`
