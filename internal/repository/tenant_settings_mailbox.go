@@ -127,7 +127,6 @@ func (r *tenantSettingsMailboxRepository) GetByMailbox(ctx context.Context, mail
 	}
 
 	span.LogFields(tracingLog.Bool("result.found", true))
-
 	return &result, nil
 }
 

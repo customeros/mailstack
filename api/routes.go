@@ -42,12 +42,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	// API group with version and custom context
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
-	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context for all /v1/* endpoints
+	api.Use(middleware.TenantValidationMiddleware())         // Add tenant validation for all /v1/* endpoints
+	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context after tenant is set
 	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
 		// Domain endpoints
 		domains := api.Group("/domains")
-		domains.Use(middleware.TenantValidationMiddleware())
 		{
 			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
 			domains.GET("", apiHandlers.Domains.GetDomains())
@@ -62,19 +62,20 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		mailboxes := api.Group("/mailboxes")
 		mailboxes.Use(middleware.TenantValidationMiddleware())
 		{
-			mailboxes.GET("", handlers.ListMailboxes(s.IMAPService))
-			mailboxes.POST("", handlers.AddMailbox(s.IMAPService, repos.MailboxRepository))
-			mailboxes.DELETE("/:id", handlers.RemoveMailbox(s.IMAPService))
+			mailboxes.GET("", apiHandlers.Mailbox.GetMailboxes())
+			mailboxes.POST("", apiHandlers.Mailbox.RegisterNewMailbox())
+			// delete mailbox
+			// mailboxes.DELETE("/:id", apiHandlers.Mailbox.RemoveMailbox())
 		}
 
 		// Email endpoints
 		emails := api.Group("/emails")
 		{
-			emails.POST("", apiHandlers.Emails.Send()) // send
-			emails.GET("/:id", nil)                    // get specific email
-			emails.POST("/:id/reply", nil)             // reply to an email
-			emails.POST("/:id/replyall", nil)          // reply-all to an email
-			emails.POST("/:id/forward", nil)           // forward an email
+			emails.POST("", apiHandlers.Emails.Send())            // send
+			emails.GET("/:id", nil)                               // get specific email
+			emails.POST("/:id/reply", apiHandlers.Emails.Reply()) // reply to an email
+			emails.POST("/:id/replyall", nil)                     // reply-all to an email
+			emails.POST("/:id/forward", nil)                      // forward an email
 		}
 
 		attachments := api.Group("/attachments")
