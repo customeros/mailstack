@@ -54,6 +54,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			domains.GET("", apiHandlers.Domains.GetDomains())
 			domains.GET("/recommendations", apiHandlers.Domains.GetRecommendations())
 			domains.POST("/configure", apiHandlers.Domains.ConfigureDomain())
+			domains.POST("/:domain/dns", apiHandlers.DNS.AddDNSRecord())
 		}
 
 		// Mailbox endpoints

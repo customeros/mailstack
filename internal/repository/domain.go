@@ -203,12 +203,14 @@ func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string)
 		First(&mailStackDomain).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			span.LogFields(tracingLog.Bool("response.found", false))
 			return nil, nil
 		}
 		tracing.TraceErr(span, errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
+	span.LogFields(tracingLog.Bool("response.found", true))
 	return &mailStackDomain, nil
 }
 
