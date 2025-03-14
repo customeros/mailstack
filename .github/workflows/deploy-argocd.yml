@@ -87,7 +87,7 @@ jobs:
               cd k8s-manifests/overlays/$env
           
               # Update both image tags
-              kustomize edit set image ghcr.io/customeros/mailstack/prod:${{ steps.set_version.outputs.version }}
+              kustomize edit set image ghcr.io/customeros/mailstack:${{ steps.set_version.outputs.version }}
           
               cd -
           
