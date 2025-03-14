@@ -243,9 +243,61 @@ func (h *IMAPHandler) findThreadByMessageID(ctx context.Context, messageID strin
 }
 
 // findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
+// findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
 func (h *IMAPHandler) findThreadBySubjectAndParticipants(ctx context.Context, subject string, mailboxID string, participants []string) (string, error) {
-	// This is a placeholder for the subject-based matching
-	// TODO add a method to the repository to find threads by subject and mailbox
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.findThreadBySubjectAndParticipants")
+	defer span.Finish()
+	span.SetTag("subject", subject)
+	span.SetTag("mailbox_id", mailboxID)
+
+	// Skip empty subjects
+	if subject == "" {
+		return "", nil
+	}
+	subject = utils.NormalizeSubject(subject)
+
+	// Get threads matching the subject and mailbox
+	threads, err := h.repositories.EmailThreadRepository.FindBySubjectAndMailbox(ctx, subject, mailboxID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", err
+	}
+
+	if len(threads) == 0 {
+		return "", nil
+	}
+
+	// If only one thread matches, return it
+	if len(threads) == 1 {
+		return threads[0].ID, nil
+	}
+
+	// If multiple threads match, find the one with most participant overlap
+	bestMatchThreadID := ""
+	highestOverlap := 0
+
+	for _, thread := range threads {
+		// Calculate the number of participants that overlap
+		overlap := 0
+		for _, emailParticipant := range participants {
+			if utils.IsStringInSlice(emailParticipant, thread.Participants) {
+				overlap++
+			}
+		}
+
+		// If this thread has more overlap than the previous best match, use it
+		if overlap > highestOverlap {
+			highestOverlap = overlap
+			bestMatchThreadID = thread.ID
+		}
+	}
+
+	// Only return a match if we have at least one participant overlap
+	if highestOverlap > 0 {
+		return bestMatchThreadID, nil
+	}
+
+	// No good match found
 	return "", nil
 }
 
@@ -307,7 +359,7 @@ func (h *IMAPHandler) createNewThread(ctx context.Context, email *models.Email) 
 
 	threadID, err := h.repositories.EmailThreadRepository.Create(ctx, &models.EmailThread{
 		MailboxID:      email.MailboxID,
-		Subject:        email.Subject,
+		Subject:        utils.NormalizeSubject(email.Subject),
 		Participants:   email.AllParticipants(),
 		MessageCount:   1,
 		LastMessageID:  email.MessageID,
@@ -437,9 +489,6 @@ func (h *IMAPHandler) processReferences(email *models.Email, envelope *go_imap.E
 
 // Process message content
 func (h *IMAPHandler) processMessageContent(email *models.Email, msg *go_imap.Message) []map[string]interface{} {
-	// Determine thread ID (could be based on References, Subject, etc.)
-	email.ThreadID = h.determineThreadID(email)
-
 	// Get the full message content
 	fullMessageData := h.extractFullMessage(msg)
 
@@ -724,20 +773,4 @@ func (h *IMAPHandler) extractAttachmentsFromStructure(bs *go_imap.BodyStructure)
 	}
 
 	return attachments
-}
-
-// Determine thread ID based on message references or subject
-func (h *IMAPHandler) determineThreadID(email *models.Email) string {
-	// If we have a reference, use the first reference as thread ID
-	if len(email.References) > 0 {
-		return email.References[0]
-	}
-
-	// If we have an in-reply-to, use that
-	if email.InReplyTo != "" {
-		return email.InReplyTo
-	}
-
-	// Otherwise use the message ID itself (starting a new thread)
-	return email.MessageID
 }

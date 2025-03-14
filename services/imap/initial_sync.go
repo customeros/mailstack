@@ -2,6 +2,7 @@ package imap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -29,8 +30,14 @@ func (s *IMAPService) performInitialSync(
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// Get all UIDs that need to be synced
-	syncStateID, uidsToProcess, err := s.getUIDsToSync(ctx, c, mailboxID, folderName)
+	syncState, uidsToProcess, err := s.getUIDsToSync(ctx, c, mailboxID, folderName)
 	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if syncState == nil {
+		err := errors.New("no sync state")
+		tracing.TraceErr(span, err)
 		return err
 	}
 
@@ -42,18 +49,13 @@ func (s *IMAPService) performInitialSync(
 	totalMessagesToProcess := len(uidsToProcess)
 	log.Printf("[%s][%s] Starting initial sync of %d messages", mailboxID, folderName, totalMessagesToProcess)
 
-	syncState := models.MailboxSyncState{
-		ID:         syncStateID,
-		MailboxID:  mailboxID,
-		FolderName: folderName,
-	}
 	// Process in batches
-	return s.processBatches(ctx, c, syncState, uidsToProcess, totalMessagesToProcess)
+	return s.processBatches(ctx, c, *syncState, uidsToProcess, totalMessagesToProcess)
 }
 
 // getUIDsToSync returns a slice of UIDs that need to be synced
 func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailboxID, folderName string,
-) (string, []uint32, error) {
+) (*models.MailboxSyncState, []uint32, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.getUIDsToSync")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -62,13 +64,7 @@ func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailb
 	syncState, err := s.repositories.MailboxSyncRepository.GetSyncState(ctx, mailboxID, folderName)
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return "", nil, err
-	}
-	if syncState == nil {
-		syncState = &models.MailboxSyncState{
-			ID:      utils.GenerateNanoIDWithPrefix("sync", 12),
-			LastUID: 0,
-		}
+		return nil, nil, err
 	}
 
 	// Search for all messages in the folder
@@ -82,11 +78,11 @@ func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailb
 
 	if err != nil {
 		err = fmt.Errorf("error searching for messages: %w", err)
-		return "", nil, err
+		return nil, nil, err
 	}
 
 	if len(allUIDs) == 0 {
-		return "", nil, nil
+		return nil, nil, nil
 	}
 
 	// Sort UIDs in ascending order (oldest first)
@@ -116,7 +112,7 @@ func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailb
 		uidsToProcess = uidsToProcess[:maxToProcess]
 	}
 
-	return syncState.ID, uidsToProcess, nil
+	return syncState, uidsToProcess, nil
 }
 
 // processBatches processes UIDs in batches with state persistence

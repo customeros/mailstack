@@ -15,4 +15,5 @@ type EmailThreadRepository interface {
 	GetByMessageID(ctx context.Context, messageID string) (*models.EmailThread, error)
 	IncrementMessageCount(ctx context.Context, threadID string, messageID string, messageTime time.Time) error
 	GetParticipantsForThread(ctx context.Context, threadID string) ([]string, error)
+	FindBySubjectAndMailbox(ctx context.Context, subject string, mailboxID string) ([]*models.EmailThread, error)
 }

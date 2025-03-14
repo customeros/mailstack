@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/customeros/mailsherpa/mailvalidate"
@@ -213,6 +214,7 @@ func (h *EmailsHandler) validateSendEmailRequest(c *gin.Context) (EmailContainer
 		Subject:      emailData.Subject,
 		FromDomain:   emailContainer.Mailbox.MailboxDomain,
 		FromAddress:  emailData.FromAddress,
+		FromUser:     strings.Split(emailData.FromAddress, "@")[0],
 		FromName:     emailData.FromName,
 		ToAddresses:  emailData.ToAddresses,
 		CcAddresses:  emailData.CCAddresses,

@@ -36,13 +36,14 @@ func AddMailbox(imapService interfaces.IMAPService, mailboxRepository interfaces
 			return
 		}
 
-		err = mailboxRepository.SaveMailbox(ctx, config)
+		mailboxID, err := mailboxRepository.SaveMailbox(ctx, config)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		config.ID = mailboxID
 
-		if config.InboundEnabled == true {
+		if config.InboundEnabled {
 			err = imapService.AddMailbox(ctx, &config)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
