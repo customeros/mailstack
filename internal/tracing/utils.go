@@ -22,25 +22,19 @@ import (
 )
 
 const (
-	SpanTagTenant         = "tenant"
-	SpanTagUserId         = "user-id"
-	SpanTagUserEmail      = "user-email"
-	SpanTagEntityId       = "entity-id"
-	SpanTagComponent      = "component"
-	SpanTagExternalSystem = "external-system"
-	SpanTagExternalId     = "external-id"
-	// Deprecated
-	SpanTagAggregateId = "aggregateID"
+	SpanTagTenant    = "tenant"
+	SpanTagUserId    = "user-id"
+	SpanTagUserEmail = "user-email"
+	SpanTagEntityId  = "entity-id"
+	SpanTagComponent = "component"
 )
 
 const (
 	SpanTagComponentPostgresRepository = "postgresRepository"
-	SpanTagComponentNeo4jRepository    = "neo4jRepository"
 	SpanTagComponentRest               = "rest"
 	SpanTagComponentCronJob            = "cronJob"
 	SpanTagComponentService            = "service"
 	SpanTagComponentListener           = "listener"
-	SpanTagComponentAgentCapability    = "agentCapability"
 )
 
 func GraphQlTracingEnhancer(ctx context.Context) func(c *gin.Context) {
@@ -182,6 +176,11 @@ func setDefaultSpanTags(ctx context.Context, span opentracing.Span) {
 	}
 }
 
+func SetDefaultRestSpanTags(ctx context.Context, span opentracing.Span) {
+	setDefaultSpanTags(ctx, span)
+	TagComponentRest(span)
+}
+
 func SetDefaultServiceSpanTags(ctx context.Context, span opentracing.Span) {
 	setDefaultSpanTags(ctx, span)
 	TagComponentService(span)
@@ -190,11 +189,6 @@ func SetDefaultServiceSpanTags(ctx context.Context, span opentracing.Span) {
 func SetDefaultPostgresRepositorySpanTags(ctx context.Context, span opentracing.Span) {
 	setDefaultSpanTags(ctx, span)
 	TagComponentPostgresRepository(span)
-}
-
-func SetDefaultAgentCapabilitySpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentAgentCapability(span)
 }
 
 func TraceErr(span opentracing.Span, err error, fields ...log.Field) {
@@ -240,14 +234,6 @@ func GetTraceId(span opentracing.Span) string {
 
 func TagComponentPostgresRepository(span opentracing.Span) {
 	span.SetTag(SpanTagComponent, SpanTagComponentPostgresRepository)
-}
-
-func TagComponentNeo4jRepository(span opentracing.Span) {
-	span.SetTag(SpanTagComponent, SpanTagComponentNeo4jRepository)
-}
-
-func TagComponentAgentCapability(span opentracing.Span) {
-	span.SetTag(SpanTagComponent, SpanTagComponentAgentCapability)
 }
 
 func TagTenant(span opentracing.Span, tenant string) {
