@@ -21,7 +21,6 @@ type DatabaseConfig struct {
 	MaxIdleConn     int
 	ConnMaxLifetime int
 	LogLevel        string
-	SSLMode         string
 }
 
 func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
@@ -33,8 +32,8 @@ func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		dbConfig.Host, portInt, dbConfig.User, dbConfig.Password, dbConfig.DBName, dbConfig.SSLMode,
+		"host=%s port=%d user=%s password=%s dbname=%s",
+		dbConfig.Host, portInt, dbConfig.User, dbConfig.Password, dbConfig.DBName,
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
