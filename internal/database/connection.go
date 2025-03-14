@@ -22,13 +22,20 @@ type DatabaseConfig struct {
 	MaxIdleConn     int
 	ConnMaxLifetime int
 	LogLevel        string
+	SSLMode         string
 }
 
 func NewConnection(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	validateConfig(dbConfig)
 
-	connectString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s",
-		dbConfig.Host, dbConfig.Port, dbConfig.User, dbConfig.Password, dbConfig.DBName)
+	// Set default SSL mode to require if not specified
+	sslMode := dbConfig.SSLMode
+	if sslMode == "" {
+		sslMode = "require"
+	}
+
+	connectString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		dbConfig.Host, dbConfig.Port, dbConfig.User, dbConfig.Password, dbConfig.DBName, sslMode)
 
 	gormDb, err := gorm.Open(postgres.Open(connectString), &gorm.Config{
 		AllowGlobalUpdate: true,
