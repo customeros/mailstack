@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -20,6 +19,7 @@ import (
 	"github.com/customeros/mailstack/services/smtp"
 )
 
+// SendEmailRequest represents the API request for sending an email
 type SendEmailRequest struct {
 	MailboxID    string        `json:"mailboxId"`
 	FromAddress  string        `json:"fromAddress"`
@@ -34,22 +34,25 @@ type SendEmailRequest struct {
 	ScheduleFor  time.Time     `json:"scheduleFor"`
 }
 
+// EmailBody contains the content of the email
 type EmailBody struct {
 	Text string `json:"text"`
 	HTML string `json:"html"`
 }
 
+// Attachments represents a reference to an attachment
 type Attachments struct {
 	ID string `json:"id"`
 }
 
+// EmailContainer holds all the data needed to send an email
 type EmailContainer struct {
 	Mailbox     *models.Mailbox
 	Email       *models.Email
 	Attachments []*models.EmailAttachment
 }
 
-// send a new email thread
+// Send handles the HTTP request to send a new email
 func (h *EmailsHandler) Send() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(c.Request.Context(), "EmailsHandler.Send", c.Request.Header)
@@ -57,242 +60,281 @@ func (h *EmailsHandler) Send() gin.HandlerFunc {
 		tracing.TagComponentRest(span)
 		tracing.TagTenant(span, utils.GetTenantFromContext(ctx))
 
-		emailContainer, err := h.validateSendEmailRequest(c)
-		if err != nil {
-			tracing.TraceErr(span, err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Parse the request
+		var request SendEmailRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			h.respondWithError(c, span, http.StatusBadRequest, "Invalid request format", err)
 			return
 		}
 
-		// create new email thread
-		threadId, err := h.repositories.EmailThreadRepository.Create(ctx, &models.EmailThread{
-			MailboxID:      emailContainer.Mailbox.ID,
-			Subject:        emailContainer.Email.Subject,
-			Participants:   emailContainer.Email.AllParticipants(),
-			MessageCount:   1,
-			LastMessageID:  emailContainer.Email.MessageID,
-			HasAttachments: emailContainer.Email.HasAttachment,
-			FirstMessageAt: utils.NowPtr(),
-			LastMessageAt:  utils.NowPtr(),
-		})
-		if err != nil {
-			tracing.TraceErr(span, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// Validate the request
+		errs := h.validateRequest(ctx, &request)
+		if errs.HasErrors() {
+			tracing.TraceErr(span, errs)
+			c.JSON(http.StatusBadRequest, errs)
 			return
 		}
 
-		// save email record
-		emailContainer.Email.ThreadID = threadId
-		emailContainer.Email.Status = enum.EmailStatusQueued
-		emailContainer.Email.SendAttempts = 1
-		id, err := h.repositories.EmailRepository.Create(ctx, emailContainer.Email)
+		// Build email container
+		emailContainer, err := h.buildSendEmailContainer(ctx, &request)
 		if err != nil {
-			tracing.TraceErr(span, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			h.respondWithError(c, span, http.StatusInternalServerError, "Failed to prepare email", err)
 			return
 		}
-		emailContainer.Email.ID = id
 
-		smtpClient := smtp.NewSMTPClient(h.repositories, emailContainer.Mailbox)
-
-		results := smtpClient.Send(ctx, emailContainer.Email, emailContainer.Attachments)
-		if !results.Success {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": results.ErrorMessage,
-			})
+		// Process and send the email
+		result, err := h.processAndSendEmail(ctx, emailContainer)
+		if err != nil {
+			h.respondWithError(c, span, http.StatusInternalServerError, "Failed to send email", err)
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"messageId": results.MessageID,
+			"messageId": result.MessageID,
 		})
 	}
 }
 
-func (h *EmailsHandler) validateSendEmailRequest(c *gin.Context) (EmailContainer, error) {
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "EmailsHandler.validateSendEmailRequest")
+// Helper method to respond with an error
+func (h *EmailsHandler) respondWithError(c *gin.Context, span opentracing.Span, statusCode int, message string, err error) {
+	tracing.TraceErr(span, err)
+	c.JSON(statusCode, gin.H{"error": message, "details": err.Error()})
+}
+
+// validateRequest performs initial validation on the request
+func (h *EmailsHandler) validateRequest(ctx context.Context, request *SendEmailRequest) *custom_err.MultiErrors {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateRequest")
 	defer span.Finish()
 	tracing.TagComponentRest(span)
 
 	errs := custom_err.NewMultiErrors()
-	emailContainer := EmailContainer{}
 
-	var emailData SendEmailRequest
-	err := c.ShouldBindJSON(&emailData)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		errs.Add("request", "please provide a valid request payload", errors.New("cannot parse request"))
-		return emailContainer, errs
+	// Validate sender information
+	if request.MailboxID == "" && request.FromAddress == "" {
+		errs.Add("sender", "provide either a valid mailboxId or fromAddress", errors.New("invalid sender"))
 	}
 
-	if emailData.MailboxID == "" && emailData.FromAddress == "" {
-		errs.Add("sender", "provide either a valid mailboxId or fromAddress", errors.New("Invalid sender"))
-		tracing.TraceErr(span, err)
-		return emailContainer, err
+	// Validate recipients
+	if len(request.ToAddresses) == 0 {
+		errs.Add("toAddresses", "please provide at least one valid to address", errors.New("toAddresses is empty"))
 	}
 
-	if emailData.MailboxID != "" {
-		mailbox, err := h.repositories.MailboxRepository.GetMailbox(ctx, emailData.MailboxID)
-		if err != nil || mailbox == nil {
-			errs.Add("mailboxId", "unable to identify mailbox", err)
-			tracing.TraceErr(span, err)
-		}
-		emailContainer.Mailbox = mailbox
-	}
-
-	if emailContainer.Mailbox == nil {
-		err := h.validateEmailSyntax(ctx, &emailData.FromAddress)
-		if err != nil {
-			errs.Add("fromAddress", fmt.Sprintf("%s is invalid", emailData.FromAddress), err)
-			tracing.TraceErr(span, err)
-		}
-		mailbox, err := h.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, emailData.FromAddress)
-		if err != nil || mailbox == nil {
-			errs.Add("mailboxId", "unable to identify mailbox", err)
-			tracing.TraceErr(span, err)
-		}
-		emailContainer.Mailbox = mailbox
-	}
-
-	if !emailContainer.Mailbox.OutboundEnabled {
-		err := errors.New("mailbox not enabled for outbound")
-		tracing.TraceErr(span, err)
-		errs.Add("mailbox", "please enable mailbox for sending", err)
-	}
-
-	if len(emailData.ToAddresses) == 0 {
-		err := errors.New("toAddresses is empty")
-		errs.Add("toAddresses", "please provide at least one valid to address", err)
-		tracing.TraceErr(span, err)
-	}
-
-	emailData.ToAddresses = h.validateEmailAddresses(ctx, "toAddresses", emailData.ToAddresses, errs)
-	emailData.CCAddresses = h.validateEmailAddresses(ctx, "ccAddresses", emailData.CCAddresses, errs)
-	emailData.BCCAddresses = h.validateEmailAddresses(ctx, "bccAddresses", emailData.BCCAddresses, errs)
-
-	if emailData.ReplyTo != "" {
-		err := h.validateEmailSyntax(ctx, &emailData.ReplyTo)
-		if err != nil {
-			errs.Add("replyTo", fmt.Sprintf("%s is invalid", emailData.ReplyTo), err)
-			tracing.TraceErr(span, err)
-		}
-	}
-
-	if emailData.Subject == "" {
+	// Validate subject and body
+	if request.Subject == "" {
 		errs.Add("subject", "please provide an email subject", errors.New("subject is empty"))
 	}
 
-	if emailData.Body.HTML == "" && emailData.Body.Text == "" {
+	if request.Body.HTML == "" && request.Body.Text == "" {
 		errs.Add("body", "please provide a valid html or text body (or both)", errors.New("body is empty"))
 	}
 
-	if len(emailData.Attachments) > 0 {
-		emailContainer.Attachments = h.validateAttachments(ctx, emailData.Attachments, errs)
-	}
-
-	if errs.HasErrors() {
-		return emailContainer, errs
-	}
-
-	// principle: data passed in api request takes priority over default vales stored on mailbox.
-	// default values stored on mailbox will be used where data is not provided in api
-	emailRecord := models.Email{
-		MailboxID:    emailContainer.Mailbox.ID,
-		Direction:    enum.EmailOutbound,
-		MessageID:    utils.GenerateMessageID(emailContainer.Mailbox.MailboxDomain, ""),
-		Subject:      emailData.Subject,
-		FromDomain:   emailContainer.Mailbox.MailboxDomain,
-		FromAddress:  emailData.FromAddress,
-		FromUser:     strings.Split(emailData.FromAddress, "@")[0],
-		FromName:     emailData.FromName,
-		ToAddresses:  emailData.ToAddresses,
-		CcAddresses:  emailData.CCAddresses,
-		BccAddresses: emailData.BCCAddresses,
-		ReplyTo:      emailData.ReplyTo,
-		BodyText:     emailData.Body.Text,
-		BodyHTML:     emailData.Body.HTML,
-	}
-
-	if emailRecord.FromAddress == "" {
-		emailRecord.FromAddress = emailContainer.Mailbox.EmailAddress
-	}
-	if emailRecord.FromName == "" {
-		emailRecord.FromName = emailContainer.Mailbox.DefaultFromName
-	}
-	if emailRecord.ReplyTo == "" && emailContainer.Mailbox.ReplyToAddress == "" {
-		emailRecord.ReplyTo = emailContainer.Mailbox.ReplyToAddress
-	}
-	if len(emailContainer.Attachments) > 0 {
-		emailRecord.HasAttachment = true
-	}
-
-	emailContainer.Email = &emailRecord
-
-	return emailContainer, nil
+	return errs
 }
 
-func (h *EmailsHandler) validateAttachments(ctx context.Context, attachments []Attachments, errs *custom_err.MultiErrors) []*models.EmailAttachment {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateAttachments")
+// buildEmailContainer creates an EmailContainer with validated data
+func (h *EmailsHandler) buildSendEmailContainer(ctx context.Context, request *SendEmailRequest) (*EmailContainer, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.buildEmailContainer")
 	defer span.Finish()
-	tracing.TagComponentRest(span)
 
-	validAttachments := make([]*models.EmailAttachment, 0)
-	for i := range attachments {
-		attachmentId := attachments[i].ID
-		attachmentRecord, err := h.repositories.EmailAttachmentRepository.GetByID(ctx, attachmentId)
-		if err != nil {
-			errs.Add("attachmentId", fmt.Sprintf("unable to find attachment id %s", attachmentId), err)
-			tracing.TraceErr(span, err)
-			continue
-		}
-		validAttachments = append(validAttachments, attachmentRecord)
+	// Create container
+	container := &EmailContainer{}
+
+	// Get and validate mailbox
+	mailbox, err := h.resolveMailboxFromMailboxIDOrEmail(ctx, request)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
 	}
-	return validAttachments
+	container.Mailbox = mailbox
+
+	// Validate outbound capability
+	if !mailbox.OutboundEnabled {
+		tracing.TraceErr(span, err)
+		return nil, errors.New("mailbox not enabled for outbound email")
+	}
+
+	// Validate email addresses
+	toAddresses, err := h.validateEmailAddresses(ctx, "toAddresses", request.ToAddresses)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	ccAddresses, err := h.validateEmailAddresses(ctx, "ccAddresses", request.CCAddresses)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	bccAddresses, err := h.validateEmailAddresses(ctx, "bccAddresses", request.BCCAddresses)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// Validate reply-to
+	replyTo := request.ReplyTo
+	if replyTo != "" {
+		cleanReplyTo, err := h.validateEmailSyntax(ctx, replyTo)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, fmt.Errorf("invalid replyTo address: %w", err)
+		}
+		replyTo = cleanReplyTo
+	}
+
+	// Validate attachments
+	attachments, err := h.resolveAttachments(ctx, request.Attachments)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	container.Attachments = attachments
+
+	// Build the email model
+	fromAddress := request.FromAddress
+	if fromAddress == "" {
+		fromAddress = mailbox.EmailAddress
+	}
+
+	fromName := request.FromName
+	if fromName == "" {
+		fromName = mailbox.DefaultFromName
+	}
+
+	if replyTo == "" {
+		replyTo = mailbox.ReplyToAddress
+	}
+
+	// Create email with validated data
+	email := &models.Email{
+		MailboxID:     mailbox.ID,
+		Direction:     enum.EmailOutbound,
+		MessageID:     utils.GenerateMessageID(mailbox.MailboxDomain, ""),
+		Subject:       request.Subject,
+		FromDomain:    mailbox.MailboxDomain,
+		FromAddress:   fromAddress,
+		FromUser:      strings.Split(fromAddress, "@")[0],
+		FromName:      fromName,
+		ToAddresses:   toAddresses,
+		CcAddresses:   ccAddresses,
+		BccAddresses:  bccAddresses,
+		ReplyTo:       replyTo,
+		BodyText:      request.Body.Text,
+		BodyHTML:      request.Body.HTML,
+		HasAttachment: len(attachments) > 0,
+	}
+
+	container.Email = email
+	return container, nil
 }
 
-func (h *EmailsHandler) validateEmailAddresses(
-	ctx context.Context,
-	fieldName string,
-	addresses []string,
-	errs *custom_err.MultiErrors,
-) []string {
+// resolveMailbox gets the mailbox from either ID or email address
+func (h *EmailsHandler) resolveMailboxFromMailboxIDOrEmail(ctx context.Context, request *SendEmailRequest) (*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.resolveMailbox")
+	defer span.Finish()
+
+	if request.MailboxID != "" {
+		// Try to get by ID first
+		mailbox, err := h.repositories.MailboxRepository.GetMailbox(ctx, request.MailboxID)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, fmt.Errorf("unable to find mailbox with ID %s: %w", request.MailboxID, err)
+		}
+		if mailbox != nil {
+			return mailbox, nil
+		}
+	}
+
+	// If no mailbox found by ID or no ID provided, try by email address
+	if request.FromAddress != "" {
+		// Clean the email address first
+		cleanEmail, err := h.validateEmailSyntax(ctx, request.FromAddress)
+		if err != nil {
+			return nil, fmt.Errorf("invalid fromAddress: %w", err)
+		}
+
+		mailbox, err := h.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, cleanEmail)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, fmt.Errorf("unable to find mailbox for email %s: %w", cleanEmail, err)
+		}
+		if mailbox != nil {
+			return mailbox, nil
+		}
+	}
+
+	return nil, errors.New("no valid mailbox found")
+}
+
+// validateEmailAddresses validates a list of email addresses
+func (h *EmailsHandler) validateEmailAddresses(ctx context.Context, fieldName string, addresses []string) ([]string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateEmailAddresses")
 	defer span.Finish()
-	tracing.TagComponentRest(span)
 
-	validAddresses := make([]string, 0)
+	if len(addresses) == 0 {
+		return []string{}, nil
+	}
 
-	for i := range addresses {
-		email := addresses[i]
-		err := h.validateEmailSyntax(ctx, &email)
+	validAddresses := make([]string, 0, len(addresses))
+	var invalidAddresses []string
+
+	for _, address := range addresses {
+		cleanAddress, err := h.validateEmailSyntax(ctx, address)
 		if err != nil {
-			errs.Add(fieldName, fmt.Sprintf("%s is invalid", addresses[i]), err)
-			tracing.TraceErr(span, err)
+			invalidAddresses = append(invalidAddresses, address)
 			continue
 		}
-		validAddresses = append(validAddresses, email)
+		validAddresses = append(validAddresses, cleanAddress)
 	}
 
-	return validAddresses
+	if len(invalidAddresses) > 0 {
+		return nil, fmt.Errorf("invalid %s: %s", fieldName, strings.Join(invalidAddresses, ", "))
+	}
+
+	return validAddresses, nil
 }
 
-func (h *EmailsHandler) validateEmailSyntax(ctx context.Context, emailAddress *string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.validateSendEmailRequest")
+// processAndSendEmail creates a thread and sends the email
+func (h *EmailsHandler) processAndSendEmail(ctx context.Context, container *EmailContainer) (*smtp.SendResult, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.processAndSendEmail")
 	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
-	if emailAddress == nil {
-		err := errors.New("emailAddress is empty")
-		tracing.TraceErr(span, err)
-		return err
+	// Create a new email thread
+	threadID, err := h.createEmailThread(ctx, container)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create email thread: %w", err)
 	}
 
-	validateEmail := mailvalidate.ValidateEmailSyntax(*emailAddress)
-	if !validateEmail.IsValid {
-		err := errors.New(*emailAddress + " is invalid")
-		tracing.TraceErr(span, err)
-		return err
+	// Associate email with thread
+	container.Email.ThreadID = threadID
+	container.Email.Status = enum.EmailStatusQueued
+	container.Email.SendAttempts = 1
+
+	return h.sendEmail(ctx, container)
+}
+
+// createEmailThread creates a new email thread
+func (h *EmailsHandler) createEmailThread(ctx context.Context, container *EmailContainer) (string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailsHandler.createEmailThread")
+	defer span.Finish()
+
+	thread := &models.EmailThread{
+		MailboxID:      container.Mailbox.ID,
+		Subject:        container.Email.Subject,
+		Participants:   container.Email.AllParticipants(),
+		MessageCount:   1,
+		LastMessageID:  container.Email.MessageID,
+		HasAttachments: container.Email.HasAttachment,
+		FirstMessageAt: utils.NowPtr(),
+		LastMessageAt:  utils.NowPtr(),
 	}
-	*emailAddress = validateEmail.CleanEmail
-	return nil
+
+	threadID, err := h.repositories.EmailThreadRepository.Create(ctx, thread)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", err
+	}
+
+	return threadID, nil
 }
