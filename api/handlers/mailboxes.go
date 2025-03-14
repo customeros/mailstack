@@ -64,7 +64,7 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
 		// get domain from path params
-		domain := c.Param("domain")
+		domain, _ := c.GetQuery("domain")
 
 		mailboxRecords, err := h.mailboxService.GetMailboxes(ctx, domain)
 		if err != nil {
