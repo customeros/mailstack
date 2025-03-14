@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -161,5 +162,59 @@ func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "DNS record deleted"})
+	}
+}
+
+func (h *DNSHandler) GetDNSRecords() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.GetDNSRecords")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		tenant := utils.GetTenantFromContext(ctx)
+
+		domain := c.Param("domain")
+		domainModel, err := h.domainService.GetDomain(ctx, domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if domainModel == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+			return
+		}
+		if domainModel.Tenant != tenant {
+			c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
+			return
+		}
+
+		// get dns records
+		dnsRecords, err := h.cloudflareService.GetDNSRecords(ctx, domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if dnsRecords == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Unable to loacate DNS records for domain"})
+			return
+		}
+
+		var records []DNSRecord
+
+		for _, record := range *dnsRecords {
+			records = append(records, DNSRecord{
+				ID:      fmt.Sprintf("dns_%s", record.ID),
+				Type:    record.Type,
+				Name:    record.Name,
+				Content: record.Content,
+			})
+		}
+
+		c.JSON(http.StatusOK, DNSResponse{
+			Records: records,
+		})
+
 	}
 }
