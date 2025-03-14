@@ -62,9 +62,10 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		mailboxes := api.Group("/mailboxes")
 		mailboxes.Use(middleware.TenantValidationMiddleware())
 		{
-			mailboxes.GET("", handlers.ListMailboxes(s.IMAPService))
-			mailboxes.POST("", handlers.AddMailbox(s.IMAPService, repos.MailboxRepository))
-			mailboxes.DELETE("/:id", handlers.RemoveMailbox(s.IMAPService))
+			mailboxes.GET("", apiHandlers.Mailbox.GetMailboxes())
+			mailboxes.POST("", apiHandlers.Mailbox.RegisterNewMailbox())
+			// delete mailbox
+			// mailboxes.DELETE("/:id", apiHandlers.Mailbox.RemoveMailbox())
 		}
 
 		// Email endpoints
