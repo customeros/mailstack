@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -43,6 +44,10 @@ func (r *emailThreadRepository) Create(ctx context.Context, thread *models.Email
 	// Generate ID if not provided
 	if thread.ID == "" {
 		thread.ID = utils.GenerateNanoIDWithPrefix("thrd", 16)
+	}
+
+	if thread.LastMessageID != "" {
+		thread.LastMessageID = strings.Trim(thread.LastMessageID, "<>")
 	}
 
 	// Set timestamps
@@ -385,4 +390,24 @@ func (r *emailThreadRepository) GetParticipantsForThread(ctx context.Context, th
 	}
 
 	return thread.Participants, nil
+}
+
+// FindBySubjectAndMailbox finds threads with a matching subject and mailbox
+func (r *emailThreadRepository) FindBySubjectAndMailbox(ctx context.Context, subject string, mailboxID string) ([]*models.EmailThread, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailThreadRepository.FindBySubjectAndMailbox")
+	defer span.Finish()
+
+	var threads []*models.EmailThread
+
+	result := r.db.WithContext(ctx).
+		Where("subject = ? AND mailbox_id = ?", subject, mailboxID).
+		Order("last_message_at DESC").
+		Find(&threads)
+
+	if result.Error != nil {
+		tracing.TraceErr(span, result.Error)
+		return nil, errors.Wrap(result.Error, "error querying threads by subject")
+	}
+
+	return threads, nil
 }

@@ -134,6 +134,12 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
+	if config == nil {
+		err := errors.New("config is nil")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	s.clientsMutex.Lock()
 	defer s.clientsMutex.Unlock()
 
@@ -142,6 +148,25 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 		err := fmt.Errorf("mailbox with ID %s already exists", config.ID)
 		tracing.TraceErr(span, err)
 		return err
+	}
+
+	if len(config.SyncFolders) == 0 {
+		err := errors.New("sync folders is empty")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Add initial entry into mailbox sync table
+	for _, folder := range config.SyncFolders {
+		err := s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
+			MailboxID:  config.ID,
+			FolderName: folder,
+			LastUID:    0,
+		})
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
 	}
 
 	// Store configuration
@@ -172,6 +197,11 @@ func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error
 
 	// Remove configuration
 	delete(s.configs, mailboxID)
+	err := s.repositories.MailboxSyncRepository.DeleteMailboxSyncStates(ctx, mailboxID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
 
 	// Remove status
 	s.statusMutex.Lock()

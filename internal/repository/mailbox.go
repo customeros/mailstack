@@ -64,12 +64,18 @@ func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailA
 	return &mailbox, nil
 }
 
-func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) error {
+func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.SaveMailbox")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
-	return r.db.Save(&mailbox).Error
+	// Perform the save operation
+	result := r.db.Save(&mailbox)
+	if result.Error != nil {
+		return "", result.Error
+	}
+
+	return mailbox.ID, nil
 }
 
 func (r *mailboxRepository) DeleteMailbox(ctx context.Context, id string) error {

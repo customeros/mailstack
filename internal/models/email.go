@@ -227,6 +227,9 @@ func (e *Email) BuildHeaders() map[string]string {
 
 	// Set Message-ID
 	if e.MessageID != "" {
+		if !strings.HasPrefix(e.MessageID, "<") {
+			e.MessageID = fmt.Sprintf("<%s>", e.MessageID)
+		}
 		header["Message-ID"] = e.MessageID
 	}
 

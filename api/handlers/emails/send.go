@@ -1,9 +1,10 @@
-package handlers
+package emails
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/customeros/mailsherpa/mailvalidate"
@@ -14,21 +15,10 @@ import (
 	custom_err "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/services/smtp"
 )
-
-type EmailsHandler struct {
-	repositories *repository.Repositories
-}
-
-func NewEmailsHandler(repos *repository.Repositories) *EmailsHandler {
-	return &EmailsHandler{
-		repositories: repos,
-	}
-}
 
 type SendEmailRequest struct {
 	MailboxID    string        `json:"mailboxId"`
@@ -213,6 +203,7 @@ func (h *EmailsHandler) validateSendEmailRequest(c *gin.Context) (EmailContainer
 		Subject:      emailData.Subject,
 		FromDomain:   emailContainer.Mailbox.MailboxDomain,
 		FromAddress:  emailData.FromAddress,
+		FromUser:     strings.Split(emailData.FromAddress, "@")[0],
 		FromName:     emailData.FromName,
 		ToAddresses:  emailData.ToAddresses,
 		CcAddresses:  emailData.CCAddresses,

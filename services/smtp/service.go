@@ -133,6 +133,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 			return err
 		}
 		email.FromDomain = validation.Domain
+		email.FromUser = validation.User
 	}
 
 	if len(email.ToAddresses) == 0 {

@@ -71,11 +71,11 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		// Email endpoints
 		emails := api.Group("/emails")
 		{
-			emails.POST("", apiHandlers.Emails.Send()) // send
-			emails.GET("/:id", nil)                    // get specific email
-			emails.POST("/:id/reply", nil)             // reply to an email
-			emails.POST("/:id/replyall", nil)          // reply-all to an email
-			emails.POST("/:id/forward", nil)           // forward an email
+			emails.POST("", apiHandlers.Emails.Send())            // send
+			emails.GET("/:id", nil)                               // get specific email
+			emails.POST("/:id/reply", apiHandlers.Emails.Reply()) // reply to an email
+			emails.POST("/:id/replyall", nil)                     // reply-all to an email
+			emails.POST("/:id/forward", nil)                      // forward an email
 		}
 
 		attachments := api.Group("/attachments")

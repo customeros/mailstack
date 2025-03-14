@@ -27,6 +27,9 @@ func TenantValidationMiddleware() gin.HandlerFunc {
 		if tenant == "" {
 			tenant = c.GetHeader("TENANTNAME")
 		}
+		if tenant == "" {
+			tenant = c.GetHeader("X-TENANT")
+		}
 
 		if tenant == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant header is required"})

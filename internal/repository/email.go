@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -12,6 +13,7 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type emailRepository struct {
@@ -28,6 +30,18 @@ func (r *emailRepository) Create(ctx context.Context, email *models.Email) (stri
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.Create")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)
+
+	if email == nil {
+		return "", nil
+	}
+
+	if email.MessageID != "" {
+		email.MessageID = strings.Trim(email.MessageID, "<>")
+	}
+
+	if email.Subject != "" {
+		email.CleanSubject = utils.NormalizeSubject(email.Subject)
+	}
 
 	// Check if email already exists before creating
 	existingEmail := &models.Email{}
@@ -98,6 +112,8 @@ func (r *emailRepository) GetByMessageID(ctx context.Context, messageID string) 
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.GetByMessageID")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)
+
+	messageID = strings.Trim(messageID, "<>")
 
 	var email models.Email
 	if err := r.db.WithContext(ctx).Where("message_id = ?", messageID).First(&email).Error; err != nil {
