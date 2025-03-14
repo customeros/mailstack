@@ -29,21 +29,6 @@ func main() {
 	}
 
 	// Setup the databases
-	mailstackDB, err := database.InitMailstackDatabase(&database.DatabaseConfig{
-		DBName:          cfg.MailstackDatabaseConfig.DBName,
-		Host:            cfg.MailstackDatabaseConfig.Host,
-		Port:            cfg.MailstackDatabaseConfig.Port,
-		User:            cfg.MailstackDatabaseConfig.User,
-		Password:        cfg.MailstackDatabaseConfig.Password,
-		MaxConn:         cfg.MailstackDatabaseConfig.MaxConn,
-		MaxIdleConn:     cfg.MailstackDatabaseConfig.MaxIdleConn,
-		ConnMaxLifetime: cfg.MailstackDatabaseConfig.ConnMaxLifetime,
-		LogLevel:        cfg.MailstackDatabaseConfig.LogLevel,
-	})
-	if err != nil {
-		log.Fatalf("Mailstack database initialization failed: %v", err)
-	}
-
 	openlineDB, err := database.InitOpenlineDatabase(&database.DatabaseConfig{
 		DBName:          cfg.OpenlineDatabaseConfig.DBName,
 		Host:            cfg.OpenlineDatabaseConfig.Host,
@@ -57,6 +42,21 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("Openline database initialization failed: %v", err)
+	}
+
+	mailstackDB, err := database.InitMailstackDatabase(&database.DatabaseConfig{
+		DBName:          cfg.MailstackDatabaseConfig.DBName,
+		Host:            cfg.MailstackDatabaseConfig.Host,
+		Port:            cfg.MailstackDatabaseConfig.Port,
+		User:            cfg.MailstackDatabaseConfig.User,
+		Password:        cfg.MailstackDatabaseConfig.Password,
+		MaxConn:         cfg.MailstackDatabaseConfig.MaxConn,
+		MaxIdleConn:     cfg.MailstackDatabaseConfig.MaxIdleConn,
+		ConnMaxLifetime: cfg.MailstackDatabaseConfig.ConnMaxLifetime,
+		LogLevel:        cfg.MailstackDatabaseConfig.LogLevel,
+	})
+	if err != nil {
+		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
 	switch os.Args[1] {
