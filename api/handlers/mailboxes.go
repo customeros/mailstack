@@ -37,12 +37,13 @@ func NewMailboxHandler(repos *repository.Repositories, cfg *config.Config, s *se
 }
 
 type NewMailboxRequest struct {
-	Username       string   `json:"username"`
-	Password       string   `json:"password"`
-	Domain         string   `json:"domain"`
-	ForwardingTo   []string `json:"forwardingTo"`
-	WebmailEnabled bool     `json:"webmailEnabled"`
-	UserId         string   `json:"userId"`
+	Username              string   `json:"username"`
+	Password              string   `json:"password"`
+	Domain                string   `json:"domain"`
+	ForwardingTo          []string `json:"forwardingTo"`
+	WebmailEnabled        bool     `json:"webmailEnabled"`
+	UserId                string   `json:"userId"`
+	IgnoreDomainOwnership bool     `json:"ignoreDomainOwnership"`
 }
 
 type MailboxesResponse struct {
@@ -150,12 +151,13 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		forwardingTo = append(forwardingTo, additionalForwardingTo)
 
 		err := h.mailboxService.CreateMailbox(ctx, nil, interfaces.CreateMailboxRequest{
-			Domain:         domain,
-			Username:       username,
-			Password:       password,
-			UserId:         request.UserId,
-			WebmailEnabled: request.WebmailEnabled,
-			ForwardingTo:   forwardingTo,
+			Domain:                domain,
+			Username:              username,
+			Password:              password,
+			UserId:                request.UserId,
+			WebmailEnabled:        request.WebmailEnabled,
+			ForwardingTo:          forwardingTo,
+			IgnoreDomainOwnership: request.IgnoreDomainOwnership,
 		})
 		if err != nil {
 			if errors.Is(err, er.ErrDomainNotFound) {
