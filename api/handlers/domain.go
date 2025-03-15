@@ -22,6 +22,10 @@ type RegisterNewDomainRequest struct {
 	Website string `json:"website"`
 }
 
+type PurchaseDomainRequest struct {
+	Domain string `json:"domain"`
+}
+
 type ConfigureDomainRequest struct {
 	Domain  string `json:"domain"`
 	Website string `json:"website"`
@@ -336,6 +340,57 @@ func (h *DomainHandler) CheckAvailability() gin.HandlerFunc {
 		c.JSON(http.StatusOK, DomainAvailabilityResponse{
 			IsAvailable: isAvailable,
 			IsPremium:   isPremium,
+		})
+	}
+}
+
+func (h *DomainHandler) PurchaseDomain() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.PurchaseDomain")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		tenant := utils.GetTenantFromContext(ctx)
+
+		// Parse and validate request body
+		var req PurchaseDomainRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Check for missing domain
+		if req.Domain == "" {
+			message := "Missing required field: domain"
+			tracing.TraceErr(span, errors.New(message))
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+			return
+		}
+
+		// purchase domain
+		err := h.svc.NamecheapService.PurchaseDomain(ctx, tenant, req.Domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// get domain details
+		domainInfo, err := h.svc.NamecheapService.GetDomainInfo(ctx, tenant, req.Domain)
+		if err != nil {
+			tracing.TraceErr(span, errors.New("Domain purchased but failed to retrieve details"))
+			c.JSON(http.StatusOK, DomainResponse{Domain: DomainRecord{Domain: req.Domain}})
+			return
+		}
+
+		c.JSON(http.StatusCreated, DomainResponse{
+			Domain: DomainRecord{
+				Domain:      domainInfo.DomainName,
+				CreatedDate: domainInfo.CreatedDate,
+				ExpiredDate: domainInfo.ExpiredDate,
+				Nameservers: domainInfo.Nameservers,
+			},
 		})
 	}
 }
