@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -137,15 +138,29 @@ func (cm *CronManager) StartCron() {
 
 // registerJobs adds all cron jobs to the scheduler
 func (cm *CronManager) registerJobs(c *cronv3.Cron) {
-	// Add mailstack reputation monitoring job
 	// Load cron config from environment variables
 	var cronConfig cron_config.Config
 	if err := env.Parse(&cronConfig); err != nil {
 		cm.log.Fatalf("Failed to parse cron config from environment: %v", err)
 	}
 
-	cm.log.Infof("Using cron schedule for mailstack reputation: %s", cronConfig.CronScheduleMailstackReputation)
+	// Register heartbeat job
+	if cronConfig.CronScheduleHeartbeat != "" {
+		podName := os.Getenv("POD_NAME")
+		if podName == "" {
+			podName = "local"
+		}
+		id, err := c.AddFunc(cronConfig.CronScheduleHeartbeat, func() {
+			cm.log.Infof("Cron heartbeat from pod: %s", podName)
+		})
+		if err != nil {
+			cm.log.Fatalf("Could not add heartbeat cron job: %v", err)
+		}
+		cm.jobIDs["heartbeat"] = id
+		cm.log.Infof("Registered heartbeat job with schedule: %s", cronConfig.CronScheduleHeartbeat)
+	}
 
+	// Add mailstack reputation monitoring job
 	if cronConfig.CronScheduleMailstackReputation != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {
 			jobLocks.locks[GroupMailstack].Lock()
@@ -157,8 +172,6 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 		}
 		cm.jobIDs["mailstack_reputation"] = id
 		cm.log.Infof("Registered mailstack reputation job with schedule: %s", cronConfig.CronScheduleMailstackReputation)
-	} else {
-		cm.log.Warn("Mailstack reputation cron schedule not configured, job not registered")
 	}
 }
 
