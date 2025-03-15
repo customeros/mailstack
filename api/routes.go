@@ -73,6 +73,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		{
 			mailboxes.GET("", apiHandlers.Mailbox.GetMailboxes())
 			mailboxes.POST("", apiHandlers.Mailbox.RegisterNewMailbox())
+			mailboxes.POST("/:id/configure", apiHandlers.Mailbox.ConfigureMailbox())
 			// delete mailbox
 			// mailboxes.DELETE("/:id", apiHandlers.Mailbox.RemoveMailbox())
 		}
