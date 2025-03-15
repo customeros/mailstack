@@ -66,8 +66,8 @@ func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interf
 // Start initializes and starts the cron manager with leader election
 // If k8s is nil, it will start in local mode without leader election
 func (cm *CronManager) Start(podName, namespace string) error {
-	// If k8s client is nil, start in local mode
-	if cm.k8s == nil {
+	// If k8s client is nil or we're in local development, start in local mode
+	if cm.k8s == nil || os.Getenv("LOCAL_DEV") == "true" {
 		cm.log.Info("Starting cron manager in local mode")
 		cm.StartCron()
 		return nil
@@ -85,26 +85,49 @@ func (cm *CronManager) Start(podName, namespace string) error {
 		},
 	}
 
+	// Channel to track leader election errors
+	errCh := make(chan error, 1)
+
 	// Start leader election
-	leaderelection.RunOrDie(context.Background(), leaderelection.LeaderElectionConfig{
-		Lock:            lock,
-		ReleaseOnCancel: true,
-		LeaseDuration:   LeaseDuration,
-		RenewDeadline:   RenewDeadline,
-		RetryPeriod:     RetryPeriod,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(ctx context.Context) {
-				cm.StartCron()
+	go func() {
+		// Try leader election
+		le, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
+			Lock:            lock,
+			ReleaseOnCancel: true,
+			LeaseDuration:   LeaseDuration,
+			RenewDeadline:   RenewDeadline,
+			RetryPeriod:     RetryPeriod,
+			Callbacks: leaderelection.LeaderCallbacks{
+				OnStartedLeading: func(ctx context.Context) {
+					cm.StartCron()
+				},
+				OnStoppedLeading: func() {
+					cm.log.Info("Leader lost - stopping crons")
+					cm.Stop()
+				},
+				OnNewLeader: func(identity string) {
+					cm.log.Infof("New leader elected: %s", identity)
+				},
 			},
-			OnStoppedLeading: func() {
-				cm.log.Info("Leader lost - stopping crons")
-				cm.Stop()
-			},
-			OnNewLeader: func(identity string) {
-				cm.log.Infof("New leader elected: %s", identity)
-			},
-		},
-	})
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		// Start leader election
+		ctx := context.Background()
+		le.Run(ctx)
+	}()
+
+	// Wait briefly to see if leader election fails immediately
+	select {
+	case err := <-errCh:
+		cm.log.Warnf("Leader election failed, falling back to local mode: %v", err)
+		cm.StartCron()
+	case <-time.After(5 * time.Second):
+		// Leader election seems to be working, continue normally
+	}
 
 	return nil
 }
