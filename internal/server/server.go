@@ -36,6 +36,7 @@ type Server struct {
 	repositories   *repository.Repositories
 	emailProcessor *email_processor.Processor
 	tracerCloser   io.Closer
+	logger         logger.Logger
 }
 
 func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
@@ -77,6 +78,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 			Addr:    ":" + cfg.AppConfig.APIPort,
 			Handler: router,
 		},
+		logger: logger,
 	}, nil
 }
 
@@ -212,4 +214,12 @@ func (s *Server) waitForShutdown() error {
 	}
 
 	return nil
+}
+
+func (s *Server) Logger() logger.Logger {
+	return s.logger
+}
+
+func (s *Server) Services() *services.Services {
+	return s.services
 }

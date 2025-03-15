@@ -6,9 +6,12 @@ import (
 	"os"
 
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/server"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 func main() {
@@ -61,9 +64,20 @@ func main() {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
+	// Try to get Kubernetes config
+	var k8sClient kubernetes.Interface
+	k8sConfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Printf("Not running in Kubernetes cluster: %v", err)
+	} else {
+		k8sClient, err = kubernetes.NewForConfig(k8sConfig)
+		if err != nil {
+			log.Printf("Failed to create kubernetes client: %v", err)
+		}
+	}
+
 	switch os.Args[1] {
 	case "migrate":
-
 		err := repository.MigrateDB(cfg.MailstackDatabaseConfig, mailstackDB)
 		if err != nil {
 			log.Fatalf("Database migration failed: %v", err)
@@ -71,7 +85,6 @@ func main() {
 		log.Println("Database migration completed successfully")
 
 	case "server":
-
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
@@ -80,11 +93,46 @@ func main() {
 			log.Fatalf("Server setup failed: %v", err)
 		}
 
+		// Initialize and start cron manager
+		cronManager := cron.NewCronManager(
+			cfg,
+			server.Logger(),
+			k8sClient,
+			server.Services().DomainService,
+		)
+
+		// If running in Kubernetes, use leader election
+		if k8sClient != nil {
+			podName := os.Getenv("POD_NAME")
+			if podName == "" {
+				log.Fatal("POD_NAME environment variable not set")
+			}
+			namespace := os.Getenv("POD_NAMESPACE")
+			if namespace == "" {
+				log.Fatal("POD_NAMESPACE environment variable not set")
+			}
+
+			go func() {
+				if err := cronManager.Start(podName, namespace); err != nil {
+					log.Fatalf("Failed to start cron manager: %v", err)
+				}
+			}()
+		} else {
+			// Local development - start cron manager directly
+			log.Println("Running in local mode - starting cron manager without leader election")
+			go func() {
+				cronManager.StartCron()
+			}()
+		}
+
+		// Start the server
 		err = server.Run()
 		if err != nil {
 			log.Fatalf("Server startup failed: %v", err)
 		}
 
+		// Stop cron manager when server stops
+		cronManager.Stop()
 		log.Println("Shutdown complete")
 
 	default:

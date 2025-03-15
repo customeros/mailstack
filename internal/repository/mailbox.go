@@ -39,7 +39,7 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailbox")
 	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "id = ?", id).Error
@@ -81,7 +81,7 @@ func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mail
 func (r *mailboxRepository) DeleteMailbox(ctx context.Context, id string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.DeleteMailbox")
 	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 
 	return r.db.Delete(&models.Mailbox{}, "id = ?", id).Error
 }
