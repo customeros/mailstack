@@ -97,7 +97,7 @@ func (s *domainService) GetDomain(ctx context.Context, domain string) (*models.M
 }
 
 func (s *domainService) CheckMailstackDomainReputations(ctx context.Context) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.CheckMailstackDomainReputation")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.CheckMailstackDomainReputations")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 

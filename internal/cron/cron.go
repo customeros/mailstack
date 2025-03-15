@@ -37,7 +37,7 @@ var jobLocks = struct {
 	locks map[string]*sync.Mutex
 }{
 	locks: map[string]*sync.Mutex{
-		GroupMailstack: &sync.Mutex{},
+		GroupMailstack: new(sync.Mutex),
 	},
 }
 
@@ -175,7 +175,7 @@ func (cm *CronManager) checkMailstackDomainReputation() {
 	// Call the domain service to check reputation
 	if err := cm.domain.CheckMailstackDomainReputations(ctx); err != nil {
 		tracing.TraceErr(span, err)
-		cm.log.Errorf("Failed to check domain reputation: %v", err)
+		cm.log.Errorf("Failed to check domain reputations: %v", err)
 		return
 	}
 

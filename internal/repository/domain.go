@@ -250,5 +250,6 @@ func (r *domainRepository) GetAllActiveDomainsCrossTenant(ctx context.Context) (
 		return nil, err
 	}
 
+	span.LogFields(tracingLog.Int("result.count", len(mailStackDomains)))
 	return mailStackDomains, nil
 }
