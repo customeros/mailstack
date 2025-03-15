@@ -50,6 +50,7 @@ type MailboxesResponse struct {
 }
 
 type MailboxRecord struct {
+	ID                string   `json:"id,omitempty"`
 	Email             string   `json:"email"`
 	Password          string   `json:"password,omitempty"`
 	ForwardingEnabled bool     `json:"forwardingEnabled"`
@@ -188,6 +189,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		}
 
 		response := MailboxRecord{
+			ID:                mailbox.ID,
 			Email:             username + "@" + domain,
 			WebmailEnabled:    request.WebmailEnabled,
 			ForwardingEnabled: true,
