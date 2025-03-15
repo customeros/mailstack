@@ -9,7 +9,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/config"
 	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/repository"
@@ -43,21 +42,22 @@ type DomainRecord struct {
 	ExpiredDate string   `json:"expiredDate"`
 }
 
-type DomainHandler struct {
-	domainRepository repository.DomainRepository
-	namecheapService interfaces.NamecheapService
-	mailboxService   interfaces.MailboxService
-	cfg              *config.Config
-	services         *services.Services
+type DomainAvailabilityResponse struct {
+	IsAvailable bool `json:"isAvailable"`
+	IsPremium   bool `json:"isPremium"`
 }
 
-func NewDomainHandler(repos *repository.Repositories, cfg *config.Config, s *services.Services) *DomainHandler {
+type DomainHandler struct {
+	repos *repository.Repositories
+	cfg   *config.Config
+	svc   *services.Services
+}
+
+func NewDomainHandler(r *repository.Repositories, cfg *config.Config, s *services.Services) *DomainHandler {
 	return &DomainHandler{
-		domainRepository: repos.DomainRepository,
-		namecheapService: s.NamecheapService,
-		mailboxService:   s.MailboxService,
-		cfg:              cfg,
-		services:         s,
+		repos: r,
+		cfg:   cfg,
+		svc:   s,
 	}
 }
 
@@ -103,7 +103,7 @@ func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 			return
 		}
 		// check if domain is available
-		isAvailable, isPremium, err := h.services.NamecheapService.CheckDomainAvailability(ctx, domain)
+		isAvailable, isPremium, err := h.svc.NamecheapService.CheckDomainAvailability(ctx, domain)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -122,7 +122,7 @@ func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 			return
 		}
 		// check if domain price is exceeded
-		domainPrice, err := h.services.NamecheapService.GetDomainPrice(ctx, domain)
+		domainPrice, err := h.svc.NamecheapService.GetDomainPrice(ctx, domain)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -135,7 +135,7 @@ func (h *DomainHandler) RegisterNewDomain() gin.HandlerFunc {
 			return
 		}
 		// register domain
-		err = h.services.NamecheapService.PurchaseDomain(ctx, tenant, domain)
+		err = h.svc.NamecheapService.PurchaseDomain(ctx, tenant, domain)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -177,7 +177,7 @@ func (h *DomainHandler) configureDomain(ctx context.Context, domain, website str
 
 	var err error
 
-	domainBelongsToTenant, err := h.domainRepository.CheckDomainOwnership(ctx, tenant, domain)
+	domainBelongsToTenant, err := h.repos.DomainRepository.CheckDomainOwnership(ctx, tenant, domain)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error checking domain"))
 		return domainResponse, err
@@ -186,14 +186,14 @@ func (h *DomainHandler) configureDomain(ctx context.Context, domain, website str
 		return domainResponse, er.ErrDomainNotFound
 	}
 
-	err = h.services.DomainService.ConfigureDomain(ctx, domain, website)
+	err = h.svc.DomainService.ConfigureDomain(ctx, domain, website)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error configuring domain"))
 		return domainResponse, er.ErrDomainConfigurationFailed
 	}
 
 	// get domain details
-	domainInfo, err := h.services.NamecheapService.GetDomainInfo(ctx, tenant, domain)
+	domainInfo, err := h.svc.NamecheapService.GetDomainInfo(ctx, tenant, domain)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error getting domain info"))
 		return domainResponse, err
@@ -215,7 +215,7 @@ func (h *DomainHandler) GetDomains() gin.HandlerFunc {
 		tenant := utils.GetTenantFromContext(ctx)
 
 		// get all active domains from postgres
-		activeDomainRecords, err := h.domainRepository.GetActiveDomains(ctx, tenant)
+		activeDomainRecords, err := h.repos.DomainRepository.GetActiveDomains(ctx, tenant)
 		if err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving domains"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -227,7 +227,7 @@ func (h *DomainHandler) GetDomains() gin.HandlerFunc {
 		}
 
 		for _, domainRecord := range activeDomainRecords {
-			domain, err := h.namecheapService.GetDomainInfo(ctx, tenant, domainRecord.Domain)
+			domain, err := h.svc.NamecheapService.GetDomainInfo(ctx, tenant, domainRecord.Domain)
 			if err != nil {
 				message := "Unable to retreive domain info"
 				tracing.TraceErr(span, err)
@@ -262,7 +262,7 @@ func (h *DomainHandler) GetRecommendations() gin.HandlerFunc {
 		}
 
 		// get domain recommendations
-		recommendations := h.mailboxService.RecommendOutboundDomains(ctx, baseName, 20)
+		recommendations := h.svc.MailboxService.RecommendOutboundDomains(ctx, baseName, 20)
 
 		c.JSON(http.StatusOK, recommendations)
 	}
@@ -311,5 +311,31 @@ func (h *DomainHandler) ConfigureDomain() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, domainResponse)
+	}
+}
+
+func (h *DomainHandler) CheckAvailability() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DomainHandler.CheckAvailability")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		domain := c.Param("domain")
+		if domain == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "domain parameter is required"})
+			return
+		}
+
+		isAvailable, isPremium, err := h.svc.NamecheapService.CheckDomainAvailability(ctx, domain)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, DomainAvailabilityResponse{
+			IsAvailable: isAvailable,
+			IsPremium:   isPremium,
+		})
 	}
 }

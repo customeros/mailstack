@@ -49,6 +49,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		// Domain endpoints
 		domains := api.Group("/domains")
 		{
+			domains.GET("/check-availability/:domain", apiHandlers.Domains.CheckAvailability())
 			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
 			domains.GET("", apiHandlers.Domains.GetDomains())
 			domains.GET("/recommendations", apiHandlers.Domains.GetRecommendations())
