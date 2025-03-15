@@ -94,7 +94,12 @@ func main() {
 		}
 
 		// Initialize and start cron manager
-		cronManager := cron.NewCronManager(cfg, server.Logger(), k8sClient)
+		cronManager := cron.NewCronManager(
+			cfg,
+			server.Logger(),
+			k8sClient,
+			server.Services().DomainService,
+		)
 
 		// If running in Kubernetes, use leader election
 		if k8sClient != nil {

@@ -39,7 +39,7 @@ func TestNewCronManager(t *testing.T) {
 	k8s := &mockKubernetesInterface{}
 
 	// Act
-	cm := NewCronManager(cfg, log, k8s)
+	cm := NewCronManager(cfg, log, k8s, nil)
 
 	// Assert
 	assert.NotNil(t, cm)
@@ -64,7 +64,7 @@ func TestCronManager_StartCron(t *testing.T) {
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
-	cm := NewCronManager(cfg, log, k8s)
+	cm := NewCronManager(cfg, log, k8s, nil)
 
 	// Create a mock cron for testing
 	mockCron := cronv3.New()
@@ -99,7 +99,7 @@ func TestCronManager_Stop(t *testing.T) {
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
-	cm := NewCronManager(cfg, log, k8s)
+	cm := NewCronManager(cfg, log, k8s, nil)
 
 	// Create a mock cron for testing
 	mockCron := cronv3.New()

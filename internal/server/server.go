@@ -219,3 +219,7 @@ func (s *Server) waitForShutdown() error {
 func (s *Server) Logger() logger.Logger {
 	return s.logger
 }
+
+func (s *Server) Services() *services.Services {
+	return s.services
+}

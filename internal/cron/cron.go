@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v6"
+	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
+	cron_config "github.com/customeros/mailstack/internal/cron/config"
+	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/tracing"
 	cronv3 "github.com/robfig/cron/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-
-	"github.com/customeros/mailstack/internal/config"
-	cron_config "github.com/customeros/mailstack/internal/cron/config"
-	"github.com/customeros/mailstack/internal/logger"
 )
 
 // CONSTANTS
@@ -47,15 +48,17 @@ type CronManager struct {
 	k8s    kubernetes.Interface
 	stopCh chan struct{}
 	jobIDs map[string]cronv3.EntryID
+	domain interfaces.DomainService
 }
 
-func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface) *CronManager {
+func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService) *CronManager {
 	return &CronManager{
 		cfg:    cfg,
 		log:    log,
 		k8s:    k8s,
 		stopCh: make(chan struct{}),
 		jobIDs: make(map[string]cronv3.EntryID),
+		domain: domain,
 	}
 }
 
@@ -160,6 +163,21 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 }
 
 func (cm *CronManager) checkMailstackDomainReputation() {
-	// TODO: Implement mailstack domain reputation checking logic
 	cm.log.Info("Running mailstack domain reputation check")
+
+	// Create a background context for the operation
+	ctx := context.Background()
+
+	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.checkMailstackDomainReputation")
+	defer span.Finish()
+	tracing.TagComponentCronJob(span)
+
+	// Call the domain service to check reputation
+	if err := cm.domain.CheckMailstackDomainReputations(ctx); err != nil {
+		tracing.TraceErr(span, err)
+		cm.log.Errorf("Failed to check domain reputation: %v", err)
+		return
+	}
+
+	cm.log.Info("Successfully completed domain reputation check")
 }
