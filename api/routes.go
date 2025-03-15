@@ -49,14 +49,22 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		// Domain endpoints
 		domains := api.Group("/domains")
 		{
+			// Domain discovery and acquisition
 			domains.GET("/check-availability/:domain", apiHandlers.Domains.CheckAvailability())
-			domains.POST("", apiHandlers.Domains.RegisterNewDomain())
-			domains.GET("", apiHandlers.Domains.GetDomains())
 			domains.GET("/recommendations", apiHandlers.Domains.GetRecommendations())
+
+			// Domain registration and configuration
+			domains.POST("/purchase", apiHandlers.Domains.PurchaseDomain())
 			domains.POST("/configure", apiHandlers.Domains.ConfigureDomain())
+			domains.POST("", apiHandlers.Domains.RegisterNewDomain()) // Combined purchase + configure
+
+			// DNS management
 			domains.POST("/:domain/dns", apiHandlers.DNS.AddDNSRecord())
-			domains.DELETE("/:domain/dns/:id", apiHandlers.DNS.DeleteDNSRecord())
 			domains.GET("/:domain/dns", apiHandlers.DNS.GetDNSRecords())
+			domains.DELETE("/:domain/dns/:id", apiHandlers.DNS.DeleteDNSRecord())
+
+			// Domain listing
+			domains.GET("", apiHandlers.Domains.GetDomains())
 		}
 
 		// Mailbox endpoints
