@@ -17,12 +17,11 @@ type MailboxService interface {
 }
 
 type CreateMailboxRequest struct {
-	Domain         string
-	Username       string
-	Password       string
-	UserId         string
-	WebmailEnabled bool
-	ForwardingTo   []string
-
+	Domain                string
+	Username              string
+	Password              string
+	UserId                string
+	WebmailEnabled        bool
+	ForwardingTo          []string
 	IgnoreDomainOwnership bool
 }

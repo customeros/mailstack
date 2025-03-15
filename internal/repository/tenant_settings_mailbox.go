@@ -25,6 +25,7 @@ type TenantSettingsMailboxRepository interface {
 	GetAllByUserId(ctx context.Context, userId string) ([]*models.TenantSettingsMailbox, error)
 
 	Merge(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
+	UpdateStatus(ctx context.Context, id string, status models.MailboxStatus) error
 }
 
 func NewTenantSettingsMailboxRepository(db *gorm.DB) TenantSettingsMailboxRepository {
@@ -245,6 +246,30 @@ func (r *tenantSettingsMailboxRepository) Merge(ctx context.Context, tx *gorm.DB
 			tracing.TraceErr(span, err)
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (r *tenantSettingsMailboxRepository) UpdateStatus(ctx context.Context, id string, status models.MailboxStatus) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.UpdateStatus")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	tracing.TagEntity(span, id)
+	span.LogKV("status", status)
+
+	tenant := utils.GetTenantFromContext(ctx)
+
+	err := r.gormDb.WithContext(ctx).
+		Model(&models.TenantSettingsMailbox{}).
+		Where("tenant = ? AND id = ?", tenant, id).
+		UpdateColumns(map[string]interface{}{
+			"status":     status,
+			"updated_at": utils.Now(),
+		}).Error
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		return err
 	}
 
 	return nil
