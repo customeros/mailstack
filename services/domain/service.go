@@ -13,6 +13,7 @@ import (
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go"
+	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 )
 
@@ -196,4 +197,24 @@ func (s *domainService) blacklistPenaltyPercent(domain string) int {
 	} else {
 		return pct
 	}
+}
+
+func (s *domainService) GetTenantForMailstackDomain(ctx context.Context, domain string) (string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.GetTenantForMailstackDomain")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogKV("domain", domain)
+
+	mailStackDomainEntity, err := s.postgres.DomainRepository.GetDomainCrossTenant(ctx, domain)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", err
+	}
+	if mailStackDomainEntity == nil {
+		span.LogFields(tracingLog.Bool("result.found", false))
+		return "", nil
+	}
+
+	span.LogFields(tracingLog.String("result.tenant", mailStackDomainEntity.Tenant))
+	return mailStackDomainEntity.Tenant, nil
 }

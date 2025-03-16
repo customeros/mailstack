@@ -42,12 +42,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	// API group with version and custom context
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
-	api.Use(middleware.TenantValidationMiddleware())         // Add tenant validation for all /v1/* endpoints
 	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context after tenant is set
 	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
 		// Domain endpoints
 		domains := api.Group("/domains")
+		domains.Use(middleware.TenantValidationMiddleware()) // Add tenant validation for all /v1/domains endpoints
 		{
 			// Domain discovery and acquisition
 			domains.GET("/check-availability/:domain", apiHandlers.Domains.CheckAvailability())
@@ -76,6 +76,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			mailboxes.POST("/:id/configure", apiHandlers.Mailbox.ConfigureMailbox())
 			// delete mailbox
 			// mailboxes.DELETE("/:id", apiHandlers.Mailbox.RemoveMailbox())
+		}
+
+		// Dmarc endpoints
+		dmarc := api.Group("/dmarc")
+		{
+			dmarc.POST("", apiHandlers.Postmark.PostmarkDMARCMonitor())
 		}
 
 		// Email endpoints
