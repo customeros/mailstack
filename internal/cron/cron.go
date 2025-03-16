@@ -143,22 +143,6 @@ func (cm *CronManager) Stop() {
 	close(cm.stopCh)
 }
 
-// StartCron initializes and starts the cron scheduler
-func (cm *CronManager) StartCron() {
-	cm.log.Info("Starting cron manager")
-	// Create a new cron with seconds field enabled and panic recovery
-	cronOptions := []cronv3.Option{
-		cronv3.WithSeconds(),
-		cronv3.WithChain(
-			cronv3.Recover(cronv3.DefaultLogger),
-		),
-	}
-	c := cronv3.New(cronOptions...)
-	cm.registerJobs(c)
-	c.Start()
-	cm.cron = c
-}
-
 // registerJobs adds all cron jobs to the scheduler
 func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Load cron config from environment variables
@@ -174,6 +158,7 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 			podName = "local"
 		}
 		id, err := c.AddFunc(cronConfig.CronScheduleHeartbeat, func() {
+			defer tracing.RecoverAndLogToJaeger(cm.log)
 			cm.log.Infof("Cron heartbeat from pod: %s", podName)
 		})
 		if err != nil {
@@ -186,6 +171,7 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add mailstack reputation monitoring job
 	if cronConfig.CronScheduleMailstackReputation != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {
+			defer tracing.RecoverAndLogToJaeger(cm.log)
 			jobLocks.locks[GroupMailstack].Lock()
 			defer jobLocks.locks[GroupMailstack].Unlock()
 			cm.checkMailstackDomainReputation()
@@ -196,6 +182,23 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 		cm.jobIDs["mailstack_reputation"] = id
 		cm.log.Infof("Registered mailstack reputation job with schedule: %s", cronConfig.CronScheduleMailstackReputation)
 	}
+}
+
+// StartCron initializes and starts the cron scheduler
+func (cm *CronManager) StartCron() {
+	cm.log.Info("Starting cron manager")
+	// Create a new cron with seconds field enabled and panic recovery
+	cronOptions := []cronv3.Option{
+		cronv3.WithSeconds(),
+		cronv3.WithChain(
+			cronv3.SkipIfStillRunning(cronv3.DefaultLogger), // Skip if still running
+			cronv3.Recover(cronv3.DefaultLogger),            // Default recovery as backup
+		),
+	}
+	c := cronv3.New(cronOptions...)
+	cm.registerJobs(c)
+	c.Start()
+	cm.cron = c
 }
 
 func (cm *CronManager) checkMailstackDomainReputation() {
