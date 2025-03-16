@@ -32,18 +32,20 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *confi
 	)
 
 	return &Repositories{
+		// Openline
 		DomainRepository:                NewDomainRepository(openlineDB),
-		EmailRepository:                 NewEmailRepository(mailstackDB),
-		EmailAttachmentRepository:       NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
-		EmailThreadRepository:           NewEmailThreadRepository(mailstackDB),
-		MailboxRepository:               NewMailboxRepository(mailstackDB),
-		MailboxSyncRepository:           NewMailboxSyncRepository(mailstackDB),
-		OrphanEmailRepository:           NewOrphanEmailRepository(mailstackDB),
 		TenantSettingsMailboxRepository: NewTenantSettingsMailboxRepository(openlineDB),
+		// Mailstack
+		EmailRepository:           NewEmailRepository(mailstackDB),
+		EmailAttachmentRepository: NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
+		EmailThreadRepository:     NewEmailThreadRepository(mailstackDB),
+		MailboxRepository:         NewMailboxRepository(mailstackDB),
+		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
+		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
 	}
 }
 
-func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {
+func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {
 	db, err := mailstackDB.DB()
 	if err != nil {
 		return err
@@ -52,23 +54,42 @@ func MigrateDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) e
 	db.SetMaxOpenConns(5)
 
 	err = mailstackDB.AutoMigrate(
-		// &models.Domain{},
-		// &models.DMARCMonitoring{},
 		&models.Email{},
 		&models.EmailAttachment{},
 		&models.EmailThread{},
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
 		&models.OrphanEmail{},
-		// &models.EmailMessage{},
-		// &models.MailStackDomain{},
-		// &models.TenantSettingsMailbox{},
-		// &models.MailstackReputation{},
 	)
 
 	db.Close()
 
 	db, _ = mailstackDB.DB()
+	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
+	db.SetMaxOpenConns(dbConfig.MaxConn)
+	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
+
+	return err
+}
+
+func MigrateOpenlineDB(dbConfig *config.OpenlineDatabaseConfig, openlineDB *gorm.DB) error {
+	db, err := openlineDB.DB()
+	if err != nil {
+		return err
+	}
+
+	db.SetMaxOpenConns(5)
+
+	err = openlineDB.AutoMigrate(
+		&models.DMARCMonitoring{},
+		&models.MailStackDomain{},
+		&models.TenantSettingsMailbox{},
+		&models.MailstackReputation{},
+	)
+
+	db.Close()
+
+	db, _ = openlineDB.DB()
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
 	db.SetMaxOpenConns(dbConfig.MaxConn)
 	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)

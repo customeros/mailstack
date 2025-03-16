@@ -78,9 +78,13 @@ func main() {
 
 	switch os.Args[1] {
 	case "migrate":
-		err := repository.MigrateDB(cfg.MailstackDatabaseConfig, mailstackDB)
+		err := repository.MigrateMailstackDB(cfg.MailstackDatabaseConfig, mailstackDB)
 		if err != nil {
-			log.Fatalf("Database migration failed: %v", err)
+			log.Fatalf("Mailstack database migration failed: %v", err)
+		}
+		err = repository.MigrateOpenlineDB(cfg.OpenlineDatabaseConfig, openlineDB)
+		if err != nil {
+			log.Fatalf("Openline database migration failed: %v", err)
 		}
 		log.Println("Database migration completed successfully")
 
@@ -88,7 +92,7 @@ func main() {
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		server, err := server.NewServer(cfg, mailstackDB, openlineDB)
+		srv, err := server.NewServer(cfg, mailstackDB, openlineDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}
@@ -96,9 +100,9 @@ func main() {
 		// Initialize and start cron manager
 		cronManager := cron.NewCronManager(
 			cfg,
-			server.Logger(),
+			srv.Logger(),
 			k8sClient,
-			server.Services().DomainService,
+			srv.Services().DomainService,
 		)
 
 		// If running in Kubernetes, use leader election
@@ -126,7 +130,7 @@ func main() {
 		}
 
 		// Start the server
-		err = server.Run()
+		err = srv.Run()
 		if err != nil {
 			log.Fatalf("Server startup failed: %v", err)
 		}
