@@ -12,7 +12,7 @@ type MailboxService interface {
 	IsDomainAvailable(ctx context.Context, domain string) (ok, available bool)
 	RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string
 	ReputationScore(ctx context.Context, domain, tenant string) (int, error)
-	GetMailboxes(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error)
+	GetMailboxes(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error)
 	GetByMailbox(ctx context.Context, username, domain string) (*models.TenantSettingsMailbox, error)
 	RampUpMailboxes(ctx context.Context) error
 }

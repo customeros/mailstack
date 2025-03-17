@@ -17,12 +17,10 @@ type tenantSettingsMailboxRepository struct {
 }
 
 type TenantSettingsMailboxRepository interface {
-	GetAll(ctx context.Context) ([]*models.TenantSettingsMailbox, error)
 	GetForRampUp(ctx context.Context) ([]*models.TenantSettingsMailbox, error)
 	GetById(ctx context.Context, id string) (*models.TenantSettingsMailbox, error)
 	GetByMailbox(ctx context.Context, mailbox string) (*models.TenantSettingsMailbox, error)
-	GetAllByDomain(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error)
-	GetAllByUserId(ctx context.Context, userId string) ([]*models.TenantSettingsMailbox, error)
+	GetAllWithFilters(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error)
 
 	Merge(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
 	UpdateStatus(ctx context.Context, id string, status models.MailboxStatus) error
@@ -31,27 +29,6 @@ type TenantSettingsMailboxRepository interface {
 
 func NewTenantSettingsMailboxRepository(db *gorm.DB) TenantSettingsMailboxRepository {
 	return &tenantSettingsMailboxRepository{gormDb: db}
-}
-
-func (r *tenantSettingsMailboxRepository) GetAll(ctx context.Context) ([]*models.TenantSettingsMailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetAll")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-
-	tenant := utils.GetTenantFromContext(ctx)
-
-	var result []*models.TenantSettingsMailbox
-	err := r.gormDb.
-		Where("tenant = ?", tenant).
-		Find(&result).
-		Error
-
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return nil, err
-	}
-
-	return result, nil
 }
 
 func (r *tenantSettingsMailboxRepository) GetForRampUp(ctx context.Context) ([]*models.TenantSettingsMailbox, error) {
@@ -134,44 +111,27 @@ func (r *tenantSettingsMailboxRepository) GetByMailbox(ctx context.Context, mail
 	return &result, nil
 }
 
-func (r *tenantSettingsMailboxRepository) GetAllByDomain(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetAllByDomain")
+func (r *tenantSettingsMailboxRepository) GetAllWithFilters(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetAllWithFilters")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogFields(tracingLog.String("domain", domain), tracingLog.String("userId", userId))
 
 	tenant := utils.GetTenantFromContext(ctx)
 
-	span.LogKV("domain", domain)
+	// Start with base query for tenant
+	query := r.gormDb.WithContext(ctx).Where("tenant = ?", tenant)
 
-	var result []*models.TenantSettingsMailbox
-	err := r.gormDb.WithContext(ctx).
-		Where("tenant = ? and domain = ?", tenant, domain).
-		Find(&result).
-		Error
-
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return nil, err
+	// Add optional filters
+	if domain != "" {
+		query = query.Where("domain = ?", domain)
+	}
+	if userId != "" {
+		query = query.Where("user_id = ?", userId)
 	}
 
-	return result, nil
-}
-
-func (r *tenantSettingsMailboxRepository) GetAllByUserId(ctx context.Context, userId string) ([]*models.TenantSettingsMailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetAllByUserId")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-
-	tenant := utils.GetTenantFromContext(ctx)
-
-	span.LogKV("userId", userId)
-
 	var result []*models.TenantSettingsMailbox
-	err := r.gormDb.WithContext(ctx).
-		Where("tenant = ? and user_id = ?", tenant, userId).
-		Find(&result).
-		Error
-
+	err := query.Find(&result).Error
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return nil, err
