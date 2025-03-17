@@ -150,11 +150,15 @@ func (h *EmailsHandler) buildReplyEmailContainer(ctx context.Context, request *R
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
+	if senderProfile.DisplayName == "" {
+		senderProfile.DisplayName = mailbox.EmailAddress
+	}
 
 	// build email model
 	email := &models.Email{
 		MailboxID:    mailbox.ID,
 		Direction:    enum.EmailOutbound,
+		MessageID:    utils.GenerateMessageID(mailbox.MailboxDomain, ""),
 		ThreadID:     replyToEmail.ThreadID,
 		InReplyTo:    replyToEmail.MessageID,
 		Subject:      fmt.Sprintf("RE: %s", replyToEmail.CleanSubject),
@@ -164,6 +168,8 @@ func (h *EmailsHandler) buildReplyEmailContainer(ctx context.Context, request *R
 		FromDomain:   mailbox.MailboxDomain,
 		ReplyTo:      replyTo,
 		ToAddresses:  []string{replyToEmail.FromAddress},
+		CcAddresses:  []string{},
+		BccAddresses: []string{},
 		BodyText:     request.Body.Text,
 		BodyHTML:     request.Body.HTML,
 		Status:       enum.EmailStatusQueued,

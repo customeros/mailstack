@@ -29,3 +29,32 @@ func NormalizeSubject(subject string) string {
 
 	return normalized
 }
+
+func ExtractDomainFromEmail(email string) string {
+	if email == "" {
+		return ""
+	}
+
+	// Remove any potential surrounding whitespace
+	email = strings.TrimSpace(email)
+
+	// Handle potential angle brackets in email (e.g., "Name <email@domain.com>")
+	if strings.Contains(email, "<") && strings.Contains(email, ">") {
+		startIdx := strings.LastIndex(email, "<") + 1
+		endIdx := strings.LastIndex(email, ">")
+		if startIdx > 0 && endIdx > startIdx {
+			email = email[startIdx:endIdx]
+		}
+	}
+
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+
+	domain := strings.TrimSpace(parts[1])
+
+	domain = strings.ToLower(domain)
+
+	return domain
+}

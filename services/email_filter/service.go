@@ -14,6 +14,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type emailFilterService struct{}
@@ -208,7 +209,11 @@ func (s *emailFilterService) isBulkEmail(headers *models.EmailHeaders, replyTo, 
 		case headers.ReturnPathExists && headers.ReturnPath == "":
 			return true, "RETURN-PATH header is empty"
 		case headers.ReturnPathExists && strings.Index(headers.ReturnPath, from) == -1:
-			return true, "RETURN-PATH != FROM"
+			sendingDomain := utils.ExtractDomainFromEmail(from)
+			returnPathDomain := utils.ExtractDomainFromEmail(headers.ReturnPath)
+			if sendingDomain != returnPathDomain {
+				return true, "RETURN-PATH != FROM"
+			}
 		default:
 		}
 	}

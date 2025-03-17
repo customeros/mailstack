@@ -3,7 +3,8 @@ networks:
 
 volumes:
   rabbitmq_data:
-  postgres_data:
+  postgres_data_mailstack:
+  postgres_data_openline:
 
 services:
   rabbitmq:
@@ -34,7 +35,7 @@ services:
     networks:
       - mailstack
 
-  postgres:
+  postgres-mailstack:
     image: postgres:14.5
     container_name: postgres-mailstack
     networks:
@@ -42,7 +43,7 @@ services:
     ports:
       - "5555:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_mailstack:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: mailstack
       POSTGRES_USER: postgres
@@ -58,7 +59,7 @@ services:
       retries: 5
       start_period: 5s
 
-  postgres:
+  postgres-openline:
     image: postgres:14.5
     container_name: postgres-openline
     networks:
@@ -66,17 +67,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_openline:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: openline
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     healthcheck:
       test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U postgres -d mailstack -h localhost -p 5432",
-        ]
+        ["CMD-SHELL", "pg_isready -U postgres -d openline -h localhost -p 5432"]
       interval: 3s
       timeout: 3s
       retries: 5

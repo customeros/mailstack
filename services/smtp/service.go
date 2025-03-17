@@ -161,8 +161,8 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 	return nil
 }
 
-// prepareMessage builds the email message in proper MIME format
-func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, attattachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
+// prepareMessage builds the email message in proper MIME format and stores raw metadata
+func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.prepareMessage")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -170,16 +170,19 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 	// Create message buffer
 	buffer := bytes.NewBuffer(nil)
 
-	// Generate headers
-	headers := email.BuildHeaders()
+	// Generate and store headers
+	headers := s.prepareHeaders(ctx, email)
 	tracing.LogObjectAsJson(span, "headers", headers)
 
-	// Build email content
+	// Prepare and store envelope information
+	s.prepareEnvelope(ctx, email, headers)
+
+	// Prepare message content and body structure
 	var err error
 	if email.HasRichContent() {
-		err = s.buildMultipartMessage(ctx, email, headers, attattachments, buffer)
+		err = s.buildMultipartMessageWithStructure(ctx, email, headers, attachments, buffer)
 	} else {
-		err = s.buildPlainTextMessage(email, headers, buffer)
+		err = s.buildPlainTextMessageWithStructure(ctx, email, headers, buffer)
 	}
 
 	if err != nil {
@@ -187,63 +190,172 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 		return nil, nil, err
 	}
 
+	// Store the raw data in the database
+	err = s.repositories.EmailRepository.SetEmailRawData(ctx, email.ID, email.RawHeaders, email.Envelope, email.BodyStructure)
+	if err != nil {
+		tracing.TraceErr(span, err)
+	}
+
 	return email.AllRecipients(), buffer, nil
 }
 
-// buildMultipartMessage creates a multipart MIME message with text, HTML, and attachments
-func (s *SMTPClient) buildMultipartMessage(ctx context.Context, email *models.Email, headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.buildMultipartMessage")
+// prepareHeaders generates email headers and stores them in the Email model
+func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.Email) map[string]string {
+	headers := email.BuildHeaders()
+
+	// Store raw headers in Email model
+	rawHeaders := make(models.JSONMap)
+	for k, v := range headers {
+		rawHeaders[k] = v
+	}
+	email.RawHeaders = rawHeaders
+
+	return headers
+}
+
+// prepareEnvelope creates the envelope information and stores it in the Email model
+func (s *SMTPClient) prepareEnvelope(ctx context.Context, email *models.Email, headers map[string]string) {
+	envelope := models.JSONMap{
+		"from":       email.FromAddress,
+		"to":         email.AllRecipients(),
+		"messageId":  email.MessageID,
+		"subject":    email.Subject,
+		"date":       headers["Date"],
+		"returnPath": email.FromAddress,
+	}
+
+	if email.ReplyTo != "" {
+		envelope["replyTo"] = email.ReplyTo
+	}
+
+	email.Envelope = envelope
+}
+
+// buildMultipartMessageWithStructure creates a multipart MIME message with text, HTML, and attachments
+// while also capturing body structure metadata
+func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *models.Email,
+	headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer,
+) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.buildMultipartMessageWithStructure")
 	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	writer := multipart.NewWriter(buffer)
 	boundary := writer.Boundary()
+
+	// Set content-type in headers
 	headers["Content-Type"] = "multipart/mixed; boundary=" + boundary
 
-	// Write headers
+	// Initialize body structure
+	bodyStructure := s.initializeBodyStructure(email)
+	bodyStructure["type"] = "multipart/mixed"
+	bodyStructure["boundary"] = boundary
+
+	// Initialize parts array for body structure
+	parts := []models.JSONMap{}
+	hasTextPart := false
+	hasHtmlPart := false
+
+	// Write headers to buffer
 	writeHeaders(headers, buffer)
 
 	// Add text part if available
 	if email.BodyText != "" {
 		if err := s.addTextPart(ctx, writer, email.BodyText); err != nil {
-			tracing.TraceErr(span, err)
 			return err
 		}
+		parts = append(parts, s.createPartMetadata("text/plain", len(email.BodyText), ""))
+		hasTextPart = true
 	}
 
 	// Add HTML part if available
 	if email.BodyHTML != "" {
 		if err := s.addHtmlPart(ctx, writer, email.BodyHTML); err != nil {
-			tracing.TraceErr(span, err)
 			return err
 		}
+		parts = append(parts, s.createPartMetadata("text/html", len(email.BodyHTML), ""))
+		hasHtmlPart = true
 	}
 
 	// Add attachments if any
-	if attachments == nil || len(attachments) == 0 {
-		return writer.Close()
-	}
-
-	for _, attachment := range attachments {
-		if err := s.addAttachment(ctx, writer, attachment); err != nil {
-			tracing.TraceErr(span, err)
-			return err
+	if attachments != nil && len(attachments) > 0 {
+		for _, attachment := range attachments {
+			if err := s.addAttachment(ctx, writer, attachment); err != nil {
+				return err
+			}
+			parts = append(parts, s.createAttachmentMetadata(attachment))
 		}
 	}
 
+	// Update body structure with parts information
+	bodyStructure["parts"] = parts
+	bodyStructure["hasTextPart"] = hasTextPart
+	bodyStructure["hasHtmlPart"] = hasHtmlPart
+
+	// Store body structure in Email model
+	email.BodyStructure = bodyStructure
+
+	// Close the multipart writer
 	return writer.Close()
 }
 
-// buildPlainTextMessage creates a simple text-only email
-func (s *SMTPClient) buildPlainTextMessage(email *models.Email, headers map[string]string, buffer *bytes.Buffer) error {
+// buildPlainTextMessageWithStructure creates a simple text-only email and captures body structure
+func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *models.Email,
+	headers map[string]string, buffer *bytes.Buffer,
+) error {
 	headers["Content-Type"] = "text/plain; charset=UTF-8"
 
-	// Write headers
+	// Initialize body structure for plain text
+	bodyStructure := s.initializeBodyStructure(email)
+	bodyStructure["type"] = "text/plain"
+	bodyStructure["charset"] = "UTF-8"
+	bodyStructure["hasTextPart"] = true
+	bodyStructure["hasHtmlPart"] = false
+	bodyStructure["size"] = len(email.BodyText)
+
+	// Store body structure in Email model
+	email.BodyStructure = bodyStructure
+
+	// Write headers to buffer
 	writeHeaders(headers, buffer)
 
 	// Write body
 	_, err := buffer.WriteString(email.BodyText)
 	return err
+}
+
+// initializeBodyStructure creates the base body structure object
+func (s *SMTPClient) initializeBodyStructure(email *models.Email) models.JSONMap {
+	return models.JSONMap{
+		"hasAttachments": email.HasAttachment,
+	}
+}
+
+// createPartMetadata creates metadata for a message part
+func (s *SMTPClient) createPartMetadata(contentType string, size int, id string) models.JSONMap {
+	part := models.JSONMap{
+		"type":     contentType,
+		"charset":  "UTF-8",
+		"encoding": "quoted-printable",
+		"size":     size,
+	}
+
+	if id != "" {
+		part["id"] = id
+	}
+
+	return part
+}
+
+// createAttachmentMetadata creates metadata for an attachment part
+func (s *SMTPClient) createAttachmentMetadata(attachment *models.EmailAttachment) models.JSONMap {
+	return models.JSONMap{
+		"type":        attachment.ContentType,
+		"name":        attachment.Filename,
+		"disposition": "attachment",
+		"encoding":    "base64",
+		"size":        attachment.Size,
+		"id":          attachment.ID,
+	}
 }
 
 // writeHeaders writes email headers to the buffer

@@ -5,13 +5,14 @@ import (
 	"log"
 	"os"
 
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/server"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 func main() {

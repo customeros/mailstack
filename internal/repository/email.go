@@ -326,3 +326,48 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 
 	return nil
 }
+
+// SetEmailRawData updates only the raw data fields of an email (headers, envelope, body structure)
+func (r *emailRepository) SetEmailRawData(ctx context.Context, emailID string, headers, envelope, bodyStructure models.JSONMap) error {
+	if emailID == "" {
+		return ErrInvalidInput
+	}
+
+	// Check if any of the fields needs updating
+	if headers == nil && envelope == nil && bodyStructure == nil {
+		return ErrInvalidInput
+	}
+
+	// Prepare update map with only the fields that are provided
+	updates := map[string]interface{}{
+		"updated_at": time.Now(),
+	}
+
+	if headers != nil {
+		updates["raw_headers"] = headers
+	}
+
+	if envelope != nil {
+		updates["envelope"] = envelope
+	}
+
+	if bodyStructure != nil {
+		updates["body_structure"] = bodyStructure
+	}
+
+	// Execute the update
+	result := r.db.WithContext(ctx).
+		Model(&models.Email{}).
+		Where("id = ?", emailID).
+		Updates(updates)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return ErrEmailNotFound
+	}
+
+	return nil
+}
