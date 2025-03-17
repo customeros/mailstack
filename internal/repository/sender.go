@@ -11,11 +11,6 @@ import (
 )
 
 // Common repository errors
-var (
-	ErrSenderNotFound      = errors.New("sender not found")
-	ErrSenderAlreadyExists = errors.New("sender already exists")
-	ErrInvalidInput        = errors.New("invalid input parameters")
-)
 
 // SenderRepository defines the interface for sender data operations
 type SenderRepository interface {

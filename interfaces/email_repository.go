@@ -16,4 +16,5 @@ type EmailRepository interface {
 	ListByThread(ctx context.Context, threadID string) ([]*models.Email, error)
 	Search(ctx context.Context, query string, limit, offset int) ([]*models.Email, int64, error)
 	Update(ctx context.Context, email *models.Email) error
+	SetEmailRawData(ctx context.Context, emailID string, headers, envelope, bodyStructure models.JSONMap) error
 }

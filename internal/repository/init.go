@@ -65,9 +65,6 @@ func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *g
 		&models.Sender{},
 	)
 
-	db.Close()
-
-	db, _ = mailstackDB.DB()
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
 	db.SetMaxOpenConns(dbConfig.MaxConn)
 	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
@@ -90,9 +87,6 @@ func MigrateOpenlineDB(dbConfig *config.OpenlineDatabaseConfig, openlineDB *gorm
 		&models.MailstackReputation{},
 	)
 
-	db.Close()
-
-	db, _ = openlineDB.DB()
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
 	db.SetMaxOpenConns(dbConfig.MaxConn)
 	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)

@@ -243,7 +243,6 @@ func (h *IMAPHandler) findThreadByMessageID(ctx context.Context, messageID strin
 }
 
 // findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
-// findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
 func (h *IMAPHandler) findThreadBySubjectAndParticipants(ctx context.Context, subject string, mailboxID string, participants []string) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPHandler.findThreadBySubjectAndParticipants")
 	defer span.Finish()
@@ -426,10 +425,7 @@ func (h *IMAPHandler) processEnvelope(email *models.Email, envelope *go_imap.Env
 	email.InReplyTo = envelope.InReplyTo
 	email.MessageID = strings.Trim(envelope.MessageId, "<>")
 
-	// Extract References if available
-	if envelope.InReplyTo != "" {
-		h.processReferences(email, envelope)
-	}
+	h.processInReplyTo(email, envelope)
 
 	// Sender information
 	if len(envelope.From) > 0 {
@@ -461,30 +457,75 @@ func (h *IMAPHandler) processEnvelope(email *models.Email, envelope *go_imap.Env
 	email.Envelope = models.JSONMap(envelopeMap)
 }
 
-func (h *IMAPHandler) processReferences(email *models.Email, envelope *go_imap.Envelope) {
+func (h *IMAPHandler) processInReplyTo(email *models.Email, envelope *go_imap.Envelope) {
+	var allReferences []string
+
+	// Process In-Reply-To (can contain multiple IDs space-separated)
 	if envelope.InReplyTo != "" {
+		inReplyToRefs := strings.Split(envelope.InReplyTo, " ")
+		for _, ref := range inReplyToRefs {
+			// Clean angle brackets
+			ref = strings.Trim(ref, "<>")
+			if ref != "" && !utils.IsStringInSlice(ref, allReferences) {
+				allReferences = append(allReferences, ref)
+			}
+		}
 
-		var allReferences []string
+		// Set the cleaned In-Reply-To (using first reference if multiple exist)
+		if len(allReferences) > 0 {
+			email.InReplyTo = allReferences[0] // Store without <>
+		}
+	}
 
-		// Process In-Reply-To (can contain multiple IDs space-separated)
-		if envelope.InReplyTo != "" {
-			inReplyToRefs := strings.Split(envelope.InReplyTo, " ")
-			for _, ref := range inReplyToRefs {
+	email.References = allReferences
+}
+
+func (h *IMAPHandler) processReferences(email *models.Email, headers map[string]interface{}) {
+	var allReferences []string
+
+	// Get references from headers
+	referencesRaw, ok := headers["References"]
+	if ok {
+		var refsString string
+
+		// Handle different possible types from the raw headers
+		switch refs := referencesRaw.(type) {
+		case []string:
+			if len(refs) > 0 {
+				refsString = refs[0]
+			}
+		case string:
+			refsString = refs
+		}
+
+		if refsString != "" {
+			// References can be space or newline separated
+			refsString = strings.ReplaceAll(refsString, "\r\n", " ")
+			refsString = strings.ReplaceAll(refsString, "\n", " ")
+
+			// Split by space
+			referencesList := strings.Split(refsString, " ")
+			for _, ref := range referencesList {
 				// Clean angle brackets
 				ref = strings.Trim(ref, "<>")
 				if ref != "" && !utils.IsStringInSlice(ref, allReferences) {
 					allReferences = append(allReferences, ref)
 				}
 			}
+		}
+	}
 
-			// Set the cleaned In-Reply-To (using first reference if multiple exist)
-			if len(allReferences) > 0 {
-				email.InReplyTo = allReferences[0] // Store without <>
+	// Also add any existing references from email
+	if email.References != nil {
+		for _, reference := range email.References {
+			if reference != "" && !utils.IsStringInSlice(reference, allReferences) {
+				allReferences = append(allReferences, reference)
 			}
 		}
-
-		email.References = pq.StringArray(allReferences)
 	}
+
+	// Update email references
+	email.References = pq.StringArray(allReferences)
 }
 
 // Process message content
@@ -539,11 +580,18 @@ func (h *IMAPHandler) parseWithEnmime(email *models.Email, messageData []byte) [
 			headers[key] = values
 		}
 	}
+
+	h.processReferences(email, headers)
+
 	email.RawHeaders = models.JSONMap(headers)
 
 	// Extract body content
 	email.BodyText = emailParser.Text
 	email.BodyHTML = emailParser.HTML
+
+	// Create body structure from enmime data
+	bodyStructure := h.createBodyStructureFromEnmime(emailParser)
+	email.BodyStructure = models.JSONMap(bodyStructure)
 
 	// Process attachments
 	attachments := make([]map[string]interface{}, 0)
@@ -577,6 +625,77 @@ func (h *IMAPHandler) parseWithEnmime(email *models.Email, messageData []byte) [
 		email.HasAttachment = true
 	}
 	return attachments
+}
+
+// Helper function to create body structure from enmime data
+func (h *IMAPHandler) createBodyStructureFromEnmime(emailParser *enmime.Envelope) map[string]interface{} {
+	bodyStructure := make(map[string]interface{})
+
+	// Add basic information
+	bodyStructure["has_text"] = emailParser.Text != ""
+	bodyStructure["has_html"] = emailParser.HTML != ""
+	bodyStructure["has_attachments"] = len(emailParser.Attachments) > 0 || len(emailParser.Inlines) > 0
+
+	// Add content types
+	contentType := emailParser.GetHeader("Content-Type")
+	if contentType != "" {
+		bodyStructure["content_type"] = contentType
+	}
+
+	// Create parts array
+	parts := []map[string]interface{}{}
+
+	// Text part
+	if emailParser.Text != "" {
+		textPart := map[string]interface{}{
+			"type":     "text/plain",
+			"charset":  "UTF-8", // Default, could be extracted from Content-Type if available
+			"encoding": emailParser.GetHeader("Content-Transfer-Encoding"),
+			"size":     len(emailParser.Text),
+		}
+		parts = append(parts, textPart)
+	}
+
+	// HTML part
+	if emailParser.HTML != "" {
+		htmlPart := map[string]interface{}{
+			"type":     "text/html",
+			"charset":  "UTF-8", // Default, could be extracted from Content-Type if available
+			"encoding": emailParser.GetHeader("Content-Transfer-Encoding"),
+			"size":     len(emailParser.HTML),
+		}
+		parts = append(parts, htmlPart)
+	}
+
+	// Attachment parts
+	for _, attachment := range emailParser.Attachments {
+		attachmentPart := map[string]interface{}{
+			"type":        attachment.ContentType,
+			"filename":    attachment.FileName,
+			"disposition": "attachment",
+			"size":        len(attachment.Content),
+		}
+		parts = append(parts, attachmentPart)
+	}
+
+	// Inline parts
+	for _, inline := range emailParser.Inlines {
+		inlinePart := map[string]interface{}{
+			"type":        inline.ContentType,
+			"filename":    inline.FileName,
+			"disposition": "inline",
+			"content_id":  inline.ContentID,
+			"size":        len(inline.Content),
+		}
+		parts = append(parts, inlinePart)
+	}
+
+	bodyStructure["parts"] = parts
+
+	// Add metadata about MIME structure
+	bodyStructure["is_multipart"] = len(parts) > 1
+
+	return bodyStructure
 }
 
 // Manual content extraction as fallback
