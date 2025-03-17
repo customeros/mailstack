@@ -33,7 +33,9 @@ func NewMailboxService(log logger.Logger, postgres *repository.Repositories) int
 }
 
 func (s *mailboxService) CreateMailbox(ctx context.Context, tx *gorm.DB, request interfaces.CreateMailboxRequest) error {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.CreateMailbox")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.CreateMailbox")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(
 		log.String("userId", request.UserId),
 		log.String("domain", request.Domain),
@@ -65,12 +67,6 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, tx *gorm.DB, request
 	}
 
 	return nil
-}
-
-func (s *mailboxService) initializeTracing(ctx context.Context, methodName string) (opentracing.Span, context.Context) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, methodName)
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	return span, ctx
 }
 
 func (s *mailboxService) validateRequest(ctx context.Context, span opentracing.Span, domain string) error {
@@ -131,7 +127,7 @@ func (s *mailboxService) createMailbox(ctx context.Context, span opentracing.Spa
 // GetMailboxes returns all mailboxes for a given domain
 // If domain is empty, it returns all mailboxes for the tenant
 func (s *mailboxService) GetMailboxes(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error) {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.GetMailboxes")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.GetMailboxes")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(
@@ -156,7 +152,7 @@ func (s *mailboxService) GetMailboxes(ctx context.Context, domain string) ([]*mo
 }
 
 func (s *mailboxService) GetByMailbox(ctx context.Context, username, domain string) (*models.TenantSettingsMailbox, error) {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.GetByMailbox")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.GetByMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(

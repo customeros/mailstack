@@ -14,8 +14,9 @@ import (
 )
 
 func (s *mailboxService) ReputationScore(ctx context.Context, domain, tenant string) (int, error) {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.ReputationScore")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ReputationScore")
 	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
 	tracing.TagTenant(span, tenant)
 	span.LogKV("domain", domain)
 

@@ -11,26 +11,25 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
-	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/internal/tracing"
 )
 
 // checkDomain checks if a domain is likely available using multiple methods
 func (s *mailboxService) IsDomainAvailable(ctx context.Context, domain string) (ok, available bool) {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.IsDomainAvailable")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.IsDomainAvailable")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(log.String("domain", domain))
 
 	// First try DNS lookup
-	dnsOk, dnsCheck := s.dnsCheck(domain, span)
+	dnsOk, dnsCheck := s.dnsCheck(ctx, domain)
 	if dnsCheck {
 		span.LogFields(log.Bool("result.available", false))
 		return true, false
 	}
 
-	whoOk, whoCheck := s.checkWhois(domain, span)
+	whoOk, whoCheck := s.checkWhois(ctx, domain)
 
 	if !dnsOk && !whoOk {
 		span.LogFields(log.Bool("result.available", false))
@@ -47,7 +46,7 @@ func (s *mailboxService) IsDomainAvailable(ctx context.Context, domain string) (
 }
 
 func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string {
-	span, ctx := s.initializeTracing(ctx, "MailboxService.RecommendOutboundDomains")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.RecommendOutboundDomains")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(log.String("domainRoot", domainRoot), log.Int("count", count))
@@ -130,18 +129,22 @@ func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoo
 	return results
 }
 
-func (s *mailboxService) dnsCheck(domain string, span opentracing.Span) (ok bool, exists bool) {
+func (s *mailboxService) dnsCheck(ctx context.Context, domain string) (ok bool, exists bool) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.dnsCheck")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogFields(log.String("domain", domain))
+
 	ips, err := net.LookupIP(domain)
 	if len(ips) > 0 {
 		return true, true
 	}
 
-	if err != nil && strings.Contains(err.Error(), "no such host") {
-		return true, false
-	}
-
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "dnsCheck"))
+		span.LogFields(log.String("result", err.Error()))
+		if strings.Contains(err.Error(), "no such host") {
+			return true, false
+		}
 		return false, false
 	}
 
@@ -149,9 +152,14 @@ func (s *mailboxService) dnsCheck(domain string, span opentracing.Span) (ok bool
 }
 
 // checkWhois runs a whois query and analyzes the output
-func (s *mailboxService) checkWhois(domain string, span opentracing.Span) (ok, exists bool) {
+func (s *mailboxService) checkWhois(ctx context.Context, domain string) (ok, exists bool) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.checkWhois")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogFields(log.String("domain", domain))
+
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	// Create the command with context
@@ -166,7 +174,7 @@ func (s *mailboxService) checkWhois(domain string, span opentracing.Span) (ok, e
 	}
 
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "checkWhois"))
+		span.LogFields(log.String("result", err.Error()))
 		// Check if it's an exit error (whois sometimes exits with status 1)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// Still process the output if we got any
