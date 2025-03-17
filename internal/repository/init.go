@@ -19,6 +19,7 @@ type Repositories struct {
 	MailboxRepository               interfaces.MailboxRepository
 	MailboxSyncRepository           interfaces.MailboxSyncRepository
 	OrphanEmailRepository           interfaces.OrphanEmailRepository
+	SenderRepository                interfaces.SenderRepository
 	TenantSettingsMailboxRepository TenantSettingsMailboxRepository
 }
 
@@ -42,6 +43,7 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *confi
 		MailboxRepository:         NewMailboxRepository(mailstackDB),
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
 		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
+		SenderRepository:          NewSenderRepository(mailstackDB),
 	}
 }
 
@@ -60,6 +62,7 @@ func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *g
 		&models.Mailbox{},
 		&models.MailboxSyncState{},
 		&models.OrphanEmail{},
+		&models.Sender{},
 	)
 
 	db.Close()
