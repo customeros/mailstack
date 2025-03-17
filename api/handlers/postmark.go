@@ -117,7 +117,7 @@ func (h *PostmarkHandler) buildDMARCReport(ctx context.Context, report dmarcstat
 
 	tenant, err := h.svc.DomainService.GetTenantForMailstackDomain(ctx, report.Domain)
 	if err != nil {
-		tracing.TraceErr(span, fmt.Errorf("Unable to get tenant for domain %s: %v", report.Domain, err))
+		tracing.TraceErr(span, fmt.Errorf("unable to get tenant for domain %s: %v", report.Domain, err))
 	}
 
 	jsonReport, _ := json.Marshal(report)
