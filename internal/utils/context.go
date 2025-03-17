@@ -109,3 +109,10 @@ func ValidateTenant(ctx context.Context) error {
 	}
 	return nil
 }
+
+// WithTenantContext creates a new context with the specified tenant
+func WithTenantContext(ctx context.Context, tenant string) context.Context {
+	return WithCustomContext(ctx, &CustomContext{
+		Tenant: tenant,
+	})
+}

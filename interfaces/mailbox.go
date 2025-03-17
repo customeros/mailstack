@@ -14,6 +14,7 @@ type MailboxService interface {
 	ReputationScore(ctx context.Context, domain, tenant string) (int, error)
 	GetMailboxes(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error)
 	GetByMailbox(ctx context.Context, username, domain string) (*models.TenantSettingsMailbox, error)
+	RampUpMailboxes(ctx context.Context) error
 }
 
 type CreateMailboxRequest struct {

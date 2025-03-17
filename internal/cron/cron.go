@@ -21,8 +21,11 @@ import (
 
 // CONSTANTS
 const (
-	// GroupMailstack is the group for mailstack related jobs
-	GroupMailstack = "mailstack"
+	// GroupMailstackDomain is the group for mailstack domain related jobs
+	GroupMailstackDomain = "mailstack_domain"
+
+	// GroupMailstackMailbox is the group for mailstack mailbox related jobs
+	GroupMailstackMailbox = "mailstack_mailbox"
 
 	// LeaseDuration is how long a lease lasts before needing renewal
 	LeaseDuration = 15 * time.Second
@@ -38,28 +41,31 @@ var jobLocks = struct {
 	locks map[string]*sync.Mutex
 }{
 	locks: map[string]*sync.Mutex{
-		GroupMailstack: new(sync.Mutex),
+		GroupMailstackDomain:  new(sync.Mutex),
+		GroupMailstackMailbox: new(sync.Mutex),
 	},
 }
 
 type CronManager struct {
-	cfg    *config.Config
-	log    logger.Logger
-	cron   *cronv3.Cron
-	k8s    kubernetes.Interface
-	stopCh chan struct{}
-	jobIDs map[string]cronv3.EntryID
-	domain interfaces.DomainService
+	cfg     *config.Config
+	log     logger.Logger
+	cron    *cronv3.Cron
+	k8s     kubernetes.Interface
+	stopCh  chan struct{}
+	jobIDs  map[string]cronv3.EntryID
+	domain  interfaces.DomainService
+	mailbox interfaces.MailboxService
 }
 
-func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService) *CronManager {
+func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxService) *CronManager {
 	return &CronManager{
-		cfg:    cfg,
-		log:    log,
-		k8s:    k8s,
-		stopCh: make(chan struct{}),
-		jobIDs: make(map[string]cronv3.EntryID),
-		domain: domain,
+		cfg:     cfg,
+		log:     log,
+		k8s:     k8s,
+		stopCh:  make(chan struct{}),
+		jobIDs:  make(map[string]cronv3.EntryID),
+		domain:  domain,
+		mailbox: mailbox,
 	}
 }
 
@@ -172,8 +178,8 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	if cronConfig.CronScheduleMailstackReputation != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {
 			defer tracing.RecoverAndLogToJaeger(cm.log)
-			jobLocks.locks[GroupMailstack].Lock()
-			defer jobLocks.locks[GroupMailstack].Unlock()
+			jobLocks.locks[GroupMailstackDomain].Lock()
+			defer jobLocks.locks[GroupMailstackDomain].Unlock()
 			cm.checkMailstackDomainReputation()
 		})
 		if err != nil {
@@ -181,6 +187,21 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 		}
 		cm.jobIDs["mailstack_reputation"] = id
 		cm.log.Infof("Registered mailstack reputation job with schedule: %s", cronConfig.CronScheduleMailstackReputation)
+	}
+
+	// Add mailbox ramp up job
+	if cronConfig.CronScheduleRampUpMailboxes != "" {
+		id, err := c.AddFunc(cronConfig.CronScheduleRampUpMailboxes, func() {
+			defer tracing.RecoverAndLogToJaeger(cm.log)
+			jobLocks.locks[GroupMailstackMailbox].Lock()
+			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
+			cm.rampUpMailboxes()
+		})
+		if err != nil {
+			cm.log.Fatalf("Could not add mailbox ramp up cron job: %v", err)
+		}
+		cm.jobIDs["ramp_up_mailboxes"] = id
+		cm.log.Infof("Registered mailbox ramp up job with schedule: %s", cronConfig.CronScheduleRampUpMailboxes)
 	}
 }
 
@@ -219,4 +240,24 @@ func (cm *CronManager) checkMailstackDomainReputation() {
 	}
 
 	cm.log.Info("Successfully completed domain reputation check")
+}
+
+func (cm *CronManager) rampUpMailboxes() {
+	cm.log.Info("Running mailbox ramp up check")
+
+	// Create a background context for the operation
+	ctx := context.Background()
+
+	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.rampUpMailboxes")
+	defer span.Finish()
+	tracing.TagComponentCronJob(span)
+
+	// Call the mailbox service to ramp up mailboxes
+	if err := cm.mailbox.RampUpMailboxes(ctx); err != nil {
+		tracing.TraceErr(span, err)
+		cm.log.Errorf("Failed to ramp up mailboxes: %v", err)
+		return
+	}
+
+	cm.log.Info("Successfully completed mailbox ramp up check")
 }
