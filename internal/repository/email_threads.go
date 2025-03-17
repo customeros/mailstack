@@ -165,11 +165,8 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 	if len(thread.Participants) > 0 {
 		updates["participants"] = thread.Participants
 	}
-	if thread.MessageCount > 0 {
-		updates["message_count"] = thread.MessageCount
-	}
 	if thread.LastMessageID != "" {
-		updates["last_message_id"] = thread.LastMessageID
+		updates["last_message_id"] = strings.Trim(thread.LastMessageID, "<>")
 	}
 
 	// Boolean value - need to check if it's explicitly being set to true

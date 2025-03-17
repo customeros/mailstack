@@ -317,9 +317,6 @@ func (h *IMAPHandler) updateThreadMetadata(ctx context.Context, email *models.Em
 		return err
 	}
 
-	// Update message count
-	threadRecord.MessageCount++
-
 	// Update attachments flag
 	if email.HasAttachment {
 		threadRecord.HasAttachments = true
@@ -360,7 +357,6 @@ func (h *IMAPHandler) createNewThread(ctx context.Context, email *models.Email) 
 		MailboxID:      email.MailboxID,
 		Subject:        utils.NormalizeSubject(email.Subject),
 		Participants:   email.AllParticipants(),
-		MessageCount:   1,
 		LastMessageID:  email.MessageID,
 		HasAttachments: email.HasAttachment,
 		FirstMessageAt: email.ReceivedAt,

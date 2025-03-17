@@ -14,7 +14,6 @@ type EmailThread struct {
 	MailboxID      string         `gorm:"column:mailbox_id;type:varchar(50);index" json:"mailboxId"`
 	Subject        string         `gorm:"column:subject;type:varchar(1000)" json:"subject"`
 	Participants   pq.StringArray `gorm:"column:participants;type:text[]" json:"participants"`
-	MessageCount   int            `gorm:"column:message_count;default:0" json:"messageCount"`
 	LastMessageID  string         `gorm:"column:last_message_id;type:varchar(255)" json:"lastMessageId"`
 	HasAttachments bool           `gorm:"column:has_attachments;default:false" json:"hasAttachments"`
 	LastMessageAt  *time.Time     `gorm:"column:last_message_at;type:timestamp" json:"lastMessageAt"`
