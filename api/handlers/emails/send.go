@@ -335,7 +335,6 @@ func (h *EmailsHandler) createEmailThread(ctx context.Context, container *EmailC
 		MailboxID:      container.Mailbox.ID,
 		Subject:        container.Email.Subject,
 		Participants:   container.Email.AllParticipants(),
-		MessageCount:   1,
 		LastMessageID:  container.Email.MessageID,
 		HasAttachments: container.Email.HasAttachment,
 		FirstMessageAt: utils.NowPtr(),
