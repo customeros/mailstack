@@ -126,24 +126,17 @@ func (s *mailboxService) createMailbox(ctx context.Context, span opentracing.Spa
 
 // GetMailboxes returns all mailboxes for a given domain
 // If domain is empty, it returns all mailboxes for the tenant
-func (s *mailboxService) GetMailboxes(ctx context.Context, domain string) ([]*models.TenantSettingsMailbox, error) {
+func (s *mailboxService) GetMailboxes(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.GetMailboxes")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	span.LogFields(
 		log.String("domain", domain),
+		log.String("userId", userId),
 	)
 
-	// if domain is missing return all mailboxes for tenant
-	if domain == "" {
-		mailboxRecords, err := s.postgres.TenantSettingsMailboxRepository.GetAll(ctx)
-		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailboxes"))
-			return nil, err
-		}
-		return mailboxRecords, nil
-	}
-	mailboxRecords, err := s.postgres.TenantSettingsMailboxRepository.GetAllByDomain(ctx, domain)
+	// Get mailboxes with filters
+	mailboxRecords, err := s.postgres.TenantSettingsMailboxRepository.GetAllWithFilters(ctx, domain, userId)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailboxes"))
 		return nil, err

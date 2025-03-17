@@ -54,6 +54,8 @@ type MailboxesResponse struct {
 type MailboxRecord struct {
 	ID                string   `json:"id,omitempty"`
 	Email             string   `json:"email"`
+	Domain            string   `json:"domain"`
+	Username          string   `json:"username"`
 	Password          string   `json:"password,omitempty"`
 	ForwardingEnabled bool     `json:"forwardingEnabled"`
 	ForwardingTo      []string `json:"forwardingTo"`
@@ -67,10 +69,12 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		defer span.Finish()
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
-		// get domain from path params
+		// get domain from query params
 		domain, _ := c.GetQuery("domain")
+		// get userId from query params
+		userId, _ := c.GetQuery("userId")
 
-		mailboxRecords, err := h.mailboxService.GetMailboxes(ctx, domain)
+		mailboxRecords, err := h.mailboxService.GetMailboxes(ctx, domain, userId)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -89,6 +93,9 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 			}
 			response.Mailboxes = append(response.Mailboxes, MailboxRecord{
 				Email:             mailboxRecord.MailboxUsername,
+				Domain:            mailboxRecord.Domain,
+				Username:          mailboxRecord.Username,
+				Password:          mailboxRecord.MailboxPassword,
 				ForwardingEnabled: mailboxDetails.ForwardingEnabled,
 				ForwardingTo:      mailboxDetails.ForwardingTo,
 				WebmailEnabled:    mailboxDetails.WebmailEnabled,
