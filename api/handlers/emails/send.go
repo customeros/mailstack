@@ -191,6 +191,18 @@ func (h *EmailsHandler) buildSendEmailContainer(ctx context.Context, request *Se
 	}
 	container.Attachments = attachments
 
+	// get sender profile
+	senderProfile, err := h.repositories.SenderRepository.GetByID(ctx, mailbox.SenderID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	if senderProfile == nil {
+		err := errors.New("No sender attached to mailbox")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
 	// Build the email model
 	fromAddress := request.FromAddress
 	if fromAddress == "" {
@@ -199,7 +211,7 @@ func (h *EmailsHandler) buildSendEmailContainer(ctx context.Context, request *Se
 
 	fromName := request.FromName
 	if fromName == "" {
-		fromName = mailbox.DefaultFromName
+		fromName = senderProfile.DisplayName
 	}
 
 	if replyTo == "" {

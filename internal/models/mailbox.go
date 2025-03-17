@@ -20,6 +20,7 @@ type Mailbox struct {
 	EmailAddress  string             `gorm:"column:email_address;type:varchar(255);index" json:"emailAddress"`
 	MailboxUser   string             `gorm:"column:mailbox_user;type:varchar(255);index" json:"mailboxUser"`
 	MailboxDomain string             `gorm:"column:mailbox_domain;type:varchar(255);index" json:"mailboxDomain"`
+	SenderID      string             `gorm:"column:sender_id;type:varchar(255);index" json:"senderId"`
 
 	// Common connection properties
 	InboundEnabled  bool `gorm:"column:inbound_enabled;default:true" json:"inboundEnabled"`
@@ -47,10 +48,7 @@ type Mailbox struct {
 	OAuthScope        string     `gorm:"column:oauth_scope;type:varchar(500)" json:"oauthScope"`
 
 	// Email sending configuration
-	DefaultFromName string `gorm:"column:default_from_name;type:varchar(255)" json:"defaultFromName"`
-	ReplyToAddress  string `gorm:"column:reply_to_address;type:varchar(255)" json:"replyToAddress"`
-	SignatureHTML   string `gorm:"column:signature_html;type:text" json:"signatureHtml"`
-	SignaturePlain  string `gorm:"column:signature_plain;type:text" json:"signaturePlain"`
+	ReplyToAddress string `gorm:"column:reply_to_address;type:varchar(255)" json:"replyToAddress"`
 
 	// Sync configuration
 	SyncEnabled bool           `gorm:"column:sync_enabled;default:true" json:"syncEnabled"`

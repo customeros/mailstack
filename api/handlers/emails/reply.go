@@ -139,6 +139,18 @@ func (h *EmailsHandler) buildReplyEmailContainer(ctx context.Context, request *R
 	}
 	container.Attachments = attachments
 
+	// get sender profile
+	senderProfile, err := h.repositories.SenderRepository.GetByID(ctx, mailbox.SenderID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	if senderProfile == nil {
+		err := errors.New("No sender attached to mailbox")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
 	// build email model
 	email := &models.Email{
 		MailboxID:    mailbox.ID,
@@ -147,7 +159,7 @@ func (h *EmailsHandler) buildReplyEmailContainer(ctx context.Context, request *R
 		InReplyTo:    replyToEmail.MessageID,
 		Subject:      fmt.Sprintf("RE: %s", replyToEmail.CleanSubject),
 		FromAddress:  mailbox.EmailAddress,
-		FromName:     mailbox.DefaultFromName,
+		FromName:     senderProfile.DisplayName,
 		FromUser:     mailbox.MailboxUser,
 		FromDomain:   mailbox.MailboxDomain,
 		ReplyTo:      replyTo,
