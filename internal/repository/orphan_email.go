@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -36,6 +37,10 @@ func (r *orphanEmailRepository) Create(ctx context.Context, orphan *models.Orpha
 		err := errors.New("orphan email cannot be nil")
 		tracing.TraceErr(span, err)
 		return "", err
+	}
+
+	if orphan.ReferencedBy != "" {
+		orphan.ReferencedBy = strings.Trim(orphan.ReferencedBy, "<>")
 	}
 
 	// Set creation timestamp if not already set
