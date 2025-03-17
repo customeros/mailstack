@@ -26,6 +26,7 @@ type TenantSettingsMailboxRepository interface {
 
 	Merge(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
 	UpdateStatus(ctx context.Context, id string, status models.MailboxStatus) error
+	UpdateRampUpFields(ctx context.Context, mailbox *models.TenantSettingsMailbox) error
 }
 
 func NewTenantSettingsMailboxRepository(db *gorm.DB) TenantSettingsMailboxRepository {
@@ -68,6 +69,8 @@ func (r *tenantSettingsMailboxRepository) GetForRampUp(ctx context.Context) ([]*
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
+
+	span.LogFields(tracingLog.Int("result.count", len(result)))
 
 	return result, nil
 }
@@ -269,6 +272,30 @@ func (r *tenantSettingsMailboxRepository) UpdateStatus(ctx context.Context, id s
 		}).Error
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		return err
+	}
+
+	return nil
+}
+
+func (r *tenantSettingsMailboxRepository) UpdateRampUpFields(ctx context.Context, mailbox *models.TenantSettingsMailbox) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.UpdateRampUpFields")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	tracing.TagEntity(span, mailbox.ID)
+	span.LogFields(tracingLog.Object("ramp_up_current", mailbox.RampUpCurrent))
+	span.LogFields(tracingLog.Object("last_ramp_up_at", mailbox.LastRampUpAt))
+
+	err := r.gormDb.WithContext(ctx).
+		Model(&models.TenantSettingsMailbox{}).
+		Where("id = ?", mailbox.ID).
+		Updates(map[string]interface{}{
+			"ramp_up_current": mailbox.RampUpCurrent,
+			"last_ramp_up_at": mailbox.LastRampUpAt,
+		}).Error
+
+	if err != nil {
+		tracing.TraceErr(span, err)
 		return err
 	}
 

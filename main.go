@@ -103,6 +103,7 @@ func main() {
 			srv.Logger(),
 			k8sClient,
 			srv.Services().DomainService,
+			srv.Services().MailboxService,
 		)
 
 		// If running in Kubernetes, use leader election

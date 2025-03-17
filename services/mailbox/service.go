@@ -166,3 +166,61 @@ func (s *mailboxService) GetByMailbox(ctx context.Context, username, domain stri
 	}
 	return mailboxRecord, nil
 }
+
+func (s *mailboxService) RampUpMailboxes(ctx context.Context) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.RampUpMailboxes")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	mailboxes, err := s.postgres.TenantSettingsMailboxRepository.GetForRampUp(ctx)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	span.LogFields(log.Int("mailboxes.count", len(mailboxes)))
+
+	for _, mailbox := range mailboxes {
+		innerCtx := utils.WithTenantContext(ctx, mailbox.Tenant)
+		err := s.rampUpMailbox(innerCtx, mailbox)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			// Continue processing other mailboxes even if one fails
+			continue
+		}
+	}
+
+	return nil
+}
+
+func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.TenantSettingsMailbox) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.rampUpMailbox")
+	defer span.Finish()
+	tracing.TagComponentCronJob(span)
+
+	for {
+		if mailbox.RampUpCurrent >= mailbox.RampUpMax {
+			break
+		}
+
+		if mailbox.LastRampUpAt.After(utils.StartOfDayInUTC(utils.Now())) {
+			break
+		}
+
+		mailbox.RampUpCurrent = mailbox.RampUpCurrent + mailbox.RampUpRate
+
+		if mailbox.RampUpCurrent > mailbox.RampUpMax {
+			mailbox.RampUpCurrent = mailbox.RampUpMax
+		}
+
+		mailbox.LastRampUpAt = mailbox.LastRampUpAt.AddDate(0, 0, 1)
+
+		err := s.postgres.TenantSettingsMailboxRepository.UpdateRampUpFields(ctx, mailbox)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
+	}
+
+	return nil
+}
