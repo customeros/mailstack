@@ -9,6 +9,20 @@ import (
 	er "github.com/customeros/mailstack/internal/errors"
 )
 
+// TenantHeaders is a list of possible header names for tenant identification
+var TenantHeaders = []string{
+	"X-TENANT",
+	"x-tenant",
+	"X-Tenant",
+	"tenant",
+	"Tenant",
+	"TENANT",
+	"tenantname",
+	"TenantName",
+	"tenantName",
+	"TENANTNAME",
+}
+
 type CustomContext struct {
 	AppSource  string
 	Tenant     string
@@ -31,19 +45,12 @@ func WithCustomContext(ctx context.Context, customContext *CustomContext) contex
 }
 
 func WithCustomContextFromGinRequest(c *gin.Context, appSource string) context.Context {
-	// Get tenant with case-insensitive keys, prioritizing "tenant" over "TenantName"
+	// Get tenant from headers with case-insensitive checks
 	tenant := ""
-	for k, v := range c.Keys {
-		if str, ok := v.(string); ok {
-			switch k {
-			case "tenant", "TENANT", "Tenant":
-				tenant = str
-				// tenant has priority, we can stop searching
-			case "TenantName", "tenantname", "TENANTNAME", "tenantName":
-				if tenant == "" {
-					tenant = str
-				}
-			}
+	for _, header := range TenantHeaders {
+		if value := c.GetHeader(header); value != "" {
+			tenant = value
+			break
 		}
 	}
 
