@@ -64,6 +64,7 @@ type MailboxRecord struct {
 	RampUpCurrent     int      `json:"rampUpCurrent"`
 	RampUpMax         int      `json:"rampUpMax"`
 	RampUpRate        int      `json:"rampUpRate"`
+	UserID            string   `json:"userId,omitempty"`
 }
 
 func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
@@ -100,6 +101,7 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 				RampUpCurrent:     mailboxRecord.RampUpCurrent,
 				RampUpMax:         mailboxRecord.RampUpMax,
 				RampUpRate:        mailboxRecord.RampUpRate,
+				UserID:            mailboxRecord.UserId,
 			})
 		}
 
@@ -305,6 +307,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 			RampUpCurrent:     mailbox.RampUpCurrent,
 			RampUpMax:         mailbox.RampUpMax,
 			RampUpRate:        mailbox.RampUpRate,
+			UserID:            mailbox.UserId,
 		}
 
 		c.JSON(http.StatusOK, response)
