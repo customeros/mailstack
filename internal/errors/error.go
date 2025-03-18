@@ -12,5 +12,7 @@ var (
 	ErrDomainConfigurationFailed = errors.New("domain configuration failed")
 
 	// mailbox errors
-	ErrMailboxExists = errors.New("mailbox already exists")
+	ErrMailboxExists           = errors.New("mailbox already exists")
+	ErrMailboxNotFound         = errors.New("mailbox not found")
+	ErrMailboxNotOwnedByTenant = errors.New("mailbox does not belong to tenant")
 )

@@ -44,7 +44,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
-	mailboxImpl := mailbox.NewMailboxService(log, repos)
+	mailboxImpl := mailbox.NewMailboxService(log, repos, opensrsImpl)
 
 	services := Services{
 		EventsService:      events,
