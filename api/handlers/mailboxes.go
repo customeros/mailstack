@@ -61,6 +61,9 @@ type MailboxRecord struct {
 	ForwardingTo      []string `json:"forwardingTo"`
 	WebmailEnabled    bool     `json:"webmailEnabled"`
 	Provisioned       bool     `json:"provisioned"`
+	RampUpCurrent     int      `json:"rampUpCurrent"`
+	RampUpMax         int      `json:"rampUpMax"`
+	RampUpRate        int      `json:"rampUpRate"`
 }
 
 func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
@@ -85,21 +88,18 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 			Mailboxes: make([]MailboxRecord, 0, len(mailboxRecords)),
 		}
 		for _, mailboxRecord := range mailboxRecords {
-			mailboxDetails, err := h.services.OpenSrsService.GetMailboxDetails(ctx, mailboxRecord.MailboxUsername)
-			if err != nil {
-				tracing.TraceErr(span, errors.Wrap(err, "Could not get mailbox details"))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
 			response.Mailboxes = append(response.Mailboxes, MailboxRecord{
 				Email:             mailboxRecord.MailboxUsername,
 				Domain:            mailboxRecord.Domain,
 				Username:          mailboxRecord.Username,
 				Password:          mailboxRecord.MailboxPassword,
-				ForwardingEnabled: mailboxDetails.ForwardingEnabled,
-				ForwardingTo:      mailboxDetails.ForwardingTo,
-				WebmailEnabled:    mailboxDetails.WebmailEnabled,
+				ForwardingEnabled: mailboxRecord.ForwardingTo != "",
+				ForwardingTo:      strings.Split(mailboxRecord.ForwardingTo, ","),
+				WebmailEnabled:    mailboxRecord.WebmailEnabled,
 				Provisioned:       mailboxRecord.Status == models.MailboxStatusProvisioned,
+				RampUpCurrent:     mailboxRecord.RampUpCurrent,
+				RampUpMax:         mailboxRecord.RampUpMax,
+				RampUpRate:        mailboxRecord.RampUpRate,
 			})
 		}
 
@@ -255,5 +255,58 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{})
+	}
+}
+
+func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "MailboxHandler.GetMailboxByEmail")
+		defer span.Finish()
+		tracing.SetDefaultRestSpanTags(ctx, span)
+
+		email := c.Param("email")
+		if email == "" {
+			tracing.TraceErr(span, errors.New("email is required"))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email is required"})
+			return
+		}
+
+		// Split email into username and domain
+		parts := strings.Split(email, "@")
+		if len(parts) != 2 {
+			tracing.TraceErr(span, errors.New("invalid email format"))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email format"})
+			return
+		}
+
+		username := parts[0]
+		domain := parts[1]
+
+		mailbox, err := h.mailboxService.GetByMailbox(ctx, username, domain)
+		if err != nil {
+			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if mailbox == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "mailbox not found"})
+			return
+		}
+
+		response := MailboxRecord{
+			ID:                mailbox.ID,
+			Email:             email,
+			Domain:            domain,
+			Username:          username,
+			ForwardingEnabled: mailbox.ForwardingTo != "",
+			ForwardingTo:      strings.Split(mailbox.ForwardingTo, ","),
+			WebmailEnabled:    mailbox.WebmailEnabled,
+			Provisioned:       mailbox.Status == models.MailboxStatusProvisioned,
+			RampUpCurrent:     mailbox.RampUpCurrent,
+			RampUpMax:         mailbox.RampUpMax,
+			RampUpRate:        mailbox.RampUpRate,
+		}
+
+		c.JSON(http.StatusOK, response)
 	}
 }
