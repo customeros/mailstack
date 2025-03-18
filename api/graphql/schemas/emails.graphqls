@@ -1,0 +1,40 @@
+enum EmailDirection {
+  inbound
+  outbound
+}
+
+type EmailMessage {
+  id: String!
+  threadId: String!
+  mailboxId: String!
+  direction: EmailDirection!
+  from: String!
+  to: [String!]!
+  cc: [String!]
+  bcc: [String!]
+  subject: String!
+  body: String!
+  attachmentCount: Int!
+  receivedAt: Time!
+}
+
+type ThreadMetadata {
+  id: String!
+  summary: String!
+  participants: [String!]!
+  hasAttachments: Boolean!
+  attachments: [Attachment]
+}
+
+type Attachment {
+  id: String!
+  messageId: String!
+  filename: String!
+  contentType: String!
+  url: String!
+}
+
+extend type Query {
+  getEmailsByThread(threadId: String!): [EmailMessage!]!
+  getThreadMetadata(threadId: String!): ThreadMetadata!
+}

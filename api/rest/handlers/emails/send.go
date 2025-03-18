@@ -221,7 +221,7 @@ func (h *EmailsHandler) buildSendEmailContainer(ctx context.Context, request *Se
 	// Create email with validated data
 	email := &models.Email{
 		MailboxID:     mailbox.ID,
-		Direction:     enum.EmailOutbound,
+		Direction:     enum.EmailDirectionOutbound,
 		MessageID:     utils.GenerateMessageID(mailbox.MailboxDomain, ""),
 		Subject:       request.Subject,
 		FromDomain:    mailbox.MailboxDomain,

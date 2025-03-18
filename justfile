@@ -8,6 +8,12 @@ db:
 debug:
     dlv debug . -- server
 
+down:
+	cd ./deployments && podman-compose down
+
+gen-api:
+    go run github.com/99designs/gqlgen generate --config ./api/graphql/gqlgen.yml
+
 migrate:
     go run main.go migrate
 
@@ -17,8 +23,5 @@ run:
 tidy:
     go mod tidy
 
-start:
+up:
 	cd ./deployments && podman-compose up -d
-
-stop:
-	cd ./deployments && podman-compose down
