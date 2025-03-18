@@ -49,7 +49,7 @@ func NewIMAPService(repos *repository.Repositories) interfaces.IMAPService {
 const (
 	DEFAULT_IMAP_LOGOUT     = 25 // minutes
 	DEFAULT_POLLING_PERIOD  = 20 // minutes
-	INITIAL_SYNC_BATCH_SIZE = 50
+	INITIAL_SYNC_BATCH_SIZE = 20
 	INITIAL_SYNC_MAX_TOTAL  = 50000
 )
 

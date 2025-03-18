@@ -16,6 +16,7 @@ type Config struct {
 	Tracing                 *tracing.JaegerConfig
 	MailstackDatabaseConfig *MailstackDatabaseConfig
 	OpenlineDatabaseConfig  *OpenlineDatabaseConfig
+	CustomerOSAPIConfig     *CustomerOSAPIConfig
 	R2StorageConfig         *R2StorageConfig
 	DomainConfig            *DomainConfig
 	NamecheapConfig         *NamecheapConfig
@@ -30,6 +31,7 @@ func InitConfig() (*Config, error) {
 		Tracing:                 &tracing.JaegerConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
 		OpenlineDatabaseConfig:  &OpenlineDatabaseConfig{},
+		CustomerOSAPIConfig:     &CustomerOSAPIConfig{},
 		R2StorageConfig:         &R2StorageConfig{},
 		DomainConfig:            &DomainConfig{},
 		NamecheapConfig:         &NamecheapConfig{},

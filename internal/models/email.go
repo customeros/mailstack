@@ -40,7 +40,9 @@ type Email struct {
 	// Content
 	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`
 	BodyHTML      string `gorm:"column:body_html;type:text" json:"bodyHtml"`
+	BodyMarkdown  string `gorm:"column:body_markdown;type:text" json:"bodyMarkdown"`
 	HasAttachment bool   `gorm:"column:has_attachment;default:false" json:"hasAttachment"`
+	HasSignature  bool   `gorm:"column:has_signature;default:false" json:"hasSignature"`
 
 	// Send Details
 	StatusDetail string `gorm:"column:status_detail;type:text" json:"statusDetail"` // Error message or delivery info

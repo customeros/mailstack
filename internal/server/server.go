@@ -61,7 +61,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 	}
 
 	// Set up handler for email events
-	emailProcessor := email_processor.NewProcessor(repos, svcs.EventsService, svcs.EmailFilterService)
+	emailProcessor := email_processor.NewProcessor(repos, svcs.EventsService, svcs.EmailFilterService, svcs.AIService)
 
 	// Initialize Gin
 	gin.SetMode(gin.ReleaseMode)

@@ -175,7 +175,7 @@ func (s *IMAPService) processBatches(
 
 		// Add a small delay between batches
 		select {
-		case <-time.After(1 * time.Second):
+		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
