@@ -11,7 +11,10 @@ import (
 	"github.com/customeros/mailstack/internal/config"
 	cron_config "github.com/customeros/mailstack/internal/cron/config"
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
+	"github.com/opentracing/opentracing-go/log"
 	cronv3 "github.com/robfig/cron/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -47,25 +50,27 @@ var jobLocks = struct {
 }
 
 type CronManager struct {
-	cfg     *config.Config
-	log     logger.Logger
-	cron    *cronv3.Cron
-	k8s     kubernetes.Interface
-	stopCh  chan struct{}
-	jobIDs  map[string]cronv3.EntryID
-	domain  interfaces.DomainService
-	mailbox interfaces.MailboxService
+	cfg      *config.Config
+	log      logger.Logger
+	cron     *cronv3.Cron
+	k8s      kubernetes.Interface
+	stopCh   chan struct{}
+	jobIDs   map[string]cronv3.EntryID
+	domain   interfaces.DomainService
+	mailbox  interfaces.MailboxService
+	postgres *repository.Repositories
 }
 
-func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxService) *CronManager {
+func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxService, postgres *repository.Repositories) *CronManager {
 	return &CronManager{
-		cfg:     cfg,
-		log:     log,
-		k8s:     k8s,
-		stopCh:  make(chan struct{}),
-		jobIDs:  make(map[string]cronv3.EntryID),
-		domain:  domain,
-		mailbox: mailbox,
+		cfg:      cfg,
+		log:      log,
+		k8s:      k8s,
+		stopCh:   make(chan struct{}),
+		jobIDs:   make(map[string]cronv3.EntryID),
+		domain:   domain,
+		mailbox:  mailbox,
+		postgres: postgres,
 	}
 }
 
@@ -203,6 +208,21 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 		cm.jobIDs["ramp_up_mailboxes"] = id
 		cm.log.Infof("Registered mailbox ramp up job with schedule: %s", cronConfig.CronScheduleRampUpMailboxes)
 	}
+
+	// Add configure mailboxes job
+	if cronConfig.CronScheduleConfigureMailboxes != "" {
+		id, err := c.AddFunc(cronConfig.CronScheduleConfigureMailboxes, func() {
+			defer tracing.RecoverAndLogToJaeger(cm.log)
+			jobLocks.locks[GroupMailstackMailbox].Lock()
+			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
+			cm.configureMailboxes()
+		})
+		if err != nil {
+			cm.log.Fatalf("Could not add configure mailboxes cron job: %v", err)
+		}
+		cm.jobIDs["configure_mailboxes"] = id
+		cm.log.Infof("Registered configure mailboxes job with schedule: %s", cronConfig.CronScheduleConfigureMailboxes)
+	}
 }
 
 // StartCron initializes and starts the cron scheduler
@@ -260,4 +280,39 @@ func (cm *CronManager) rampUpMailboxes() {
 	}
 
 	cm.log.Info("Successfully completed mailbox ramp up check")
+}
+
+func (cm *CronManager) configureMailboxes() {
+	cm.log.Info("Running configure mailboxes check")
+
+	// Create a background context for the operation
+	ctx := context.Background()
+
+	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.configureMailboxes")
+	defer span.Finish()
+	tracing.TagComponentCronJob(span)
+
+	// Get mailboxes that need configuration directly from repository
+	mailboxes, err := cm.postgres.TenantSettingsMailboxRepository.GetForConfiguration(ctx, 10)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		cm.log.Errorf("Failed to get mailboxes for configuration: %v", err)
+		return
+	}
+
+	span.LogFields(log.Int("mailboxes.count", len(mailboxes)))
+
+	// Process each mailbox
+	for _, mailbox := range mailboxes {
+		// Create tenant context for each mailbox
+		innerCtx := utils.WithTenantContext(ctx, mailbox.Tenant)
+
+		// Configure the mailbox
+		if err := cm.mailbox.ConfigureMailbox(innerCtx, mailbox.ID); err != nil {
+			cm.log.Errorf("Failed to configure mailbox %s: %v", mailbox.ID, err)
+			continue
+		}
+	}
+
+	cm.log.Info("Successfully completed configure mailboxes check")
 }

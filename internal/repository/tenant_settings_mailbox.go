@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -21,6 +22,7 @@ type TenantSettingsMailboxRepository interface {
 	GetById(ctx context.Context, id string) (*models.TenantSettingsMailbox, error)
 	GetByMailbox(ctx context.Context, mailbox string) (*models.TenantSettingsMailbox, error)
 	GetAllWithFilters(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error)
+	GetForConfiguration(ctx context.Context, limit int) ([]*models.TenantSettingsMailbox, error)
 
 	Create(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
 	Update(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
@@ -133,6 +135,34 @@ func (r *tenantSettingsMailboxRepository) GetAllWithFilters(ctx context.Context,
 
 	var result []*models.TenantSettingsMailbox
 	err := query.Find(&result).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	span.LogFields(tracingLog.Int("result.count", len(result)))
+	return result, nil
+}
+
+func (r *tenantSettingsMailboxRepository) GetForConfiguration(ctx context.Context, limit int) ([]*models.TenantSettingsMailbox, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetForConfiguration")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogFields(tracingLog.Int("limit", limit))
+
+	twoHoursAgo := utils.Now().Add(-2 * time.Hour)
+
+	var result []*models.TenantSettingsMailbox
+	err := r.gormDb.WithContext(ctx).
+		Where("status = ? AND ("+
+			"(configure_attempt_at IS NULL AND created_at < ?) OR "+
+			"(configure_attempt_at < ?)"+
+			")", models.MailboxStatusPendingProvisioning, twoHoursAgo, twoHoursAgo).
+		Order("CASE WHEN configure_attempt_at IS NULL THEN 0 ELSE 1 END, configure_attempt_at ASC").
+		Limit(limit).
+		Find(&result).
+		Error
+
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return nil, err

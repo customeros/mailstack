@@ -39,7 +39,7 @@ func TestNewCronManager(t *testing.T) {
 	k8s := &mockKubernetesInterface{}
 
 	// Act
-	cm := NewCronManager(cfg, log, k8s, nil, nil)
+	cm := NewCronManager(cfg, log, k8s, nil, nil, nil)
 
 	// Assert
 	assert.NotNil(t, cm)
@@ -53,8 +53,10 @@ func TestCronManager_StartCron(t *testing.T) {
 	// Set environment variable for testing
 	os.Setenv("CRON_SCHEDULE_MAILSTACK_REPUTATION", "0 0 * * *")
 	os.Setenv("CRON_SCHEDULE_RAMP_UP_MAILBOXES", "0 * * * * *")
+	os.Setenv("CRON_SCHEDULE_CONFIGURE_MAILBOXES", "0 0 * * * *")
 	defer os.Unsetenv("CRON_SCHEDULE_MAILSTACK_REPUTATION")
 	defer os.Unsetenv("CRON_SCHEDULE_RAMP_UP_MAILBOXES")
+	defer os.Unsetenv("CRON_SCHEDULE_CONFIGURE_MAILBOXES")
 
 	// Arrange
 	cfg := &config.Config{
@@ -66,7 +68,7 @@ func TestCronManager_StartCron(t *testing.T) {
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
-	cm := NewCronManager(cfg, log, k8s, nil, nil)
+	cm := NewCronManager(cfg, log, k8s, nil, nil, nil)
 
 	// Create a mock cron for testing
 	mockCron := cronv3.New()
@@ -75,6 +77,7 @@ func TestCronManager_StartCron(t *testing.T) {
 	var cronConfig cron_config.Config
 	cronConfig.CronScheduleMailstackReputation = "0 0 * * *"
 	cronConfig.CronScheduleRampUpMailboxes = "0 * * * * *"
+	cronConfig.CronScheduleConfigureMailboxes = "0 0 * * * *"
 
 	// Act - register jobs manually
 	id, err := mockCron.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {})
@@ -86,11 +89,16 @@ func TestCronManager_StartCron(t *testing.T) {
 	assert.NoError(t, err)
 	cm.jobIDs["ramp_up_mailboxes"] = rampUpId
 
+	// Add configure mailboxes job
+	configureId, err := mockCron.AddFunc(cronConfig.CronScheduleConfigureMailboxes, func() {})
+	assert.NoError(t, err)
+	cm.jobIDs["configure_mailboxes"] = configureId
+
 	cm.cron = mockCron
 
 	// Assert
 	assert.NotNil(t, cm.cron)
-	assert.Equal(t, 2, len(cm.jobIDs))
+	assert.Equal(t, 3, len(cm.jobIDs))
 }
 
 func TestCronManager_Stop(t *testing.T) {
@@ -108,7 +116,7 @@ func TestCronManager_Stop(t *testing.T) {
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
-	cm := NewCronManager(cfg, log, k8s, nil, nil)
+	cm := NewCronManager(cfg, log, k8s, nil, nil, nil)
 
 	// Create a mock cron for testing
 	mockCron := cronv3.New()
