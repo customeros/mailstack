@@ -9,6 +9,7 @@ type EmailMessage {
   mailboxId: String!
   direction: EmailDirection!
   from: String!
+  fromName: String!
   to: [String!]!
   cc: [String!]
   bcc: [String!]
@@ -28,7 +29,7 @@ type ThreadMetadata {
 
 type Attachment {
   id: String!
-  messageId: String!
+  emailId: String!
   filename: String!
   contentType: String!
   url: String!

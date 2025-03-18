@@ -13,5 +13,8 @@ import (
 
 // GetThreadsByUser is the resolver for the getThreadsByUser field.
 func (r *queryResolver) GetThreadsByUser(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error) {
+	// get all mailboxes for user
+
+	// get all threads for each mailbox
 	panic(fmt.Errorf("not implemented: GetThreadsByUser - getThreadsByUser"))
 }

@@ -96,6 +96,11 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 		return err
 	}
 
+	// return early if spam
+	if email.Classification != enum.EmailOK {
+		return nil
+	}
+
 	// attach message to thread
 	err = h.attachMessageToThread(ctx, &email)
 	if err != nil {
@@ -103,36 +108,34 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 		return err
 	}
 
-	// Clean message body if email passes spam filter
-	if email.Classification == enum.EmailOK {
-		structuredData, err := h.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
-			FromName:         email.FromName,
-			FromEmailAddress: email.FromAddress,
-			ToEmailAddress:   email.ToAddresses[0],
-			EmailBodyText:    email.BodyText,
-			EmailBodyHTML:    email.BodyHTML,
-		})
+	// Clean message body
+	structuredData, err := h.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
+		FromName:         email.FromName,
+		FromEmailAddress: email.FromAddress,
+		ToEmailAddress:   email.ToAddresses[0],
+		EmailBodyText:    email.BodyText,
+		EmailBodyHTML:    email.BodyHTML,
+	})
+	if err != nil {
+		tracing.TraceErr(span, err)
+	}
+
+	if structuredData != nil {
+		email.HasSignature = structuredData.EmailData.HasSignature
+		email.BodyMarkdown = structuredData.EmailData.MessageBody
+	}
+
+	if email.HasSignature {
+		err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.ContactInfo)
 		if err != nil {
 			tracing.TraceErr(span, err)
 		}
 
-		if structuredData != nil {
-			email.HasSignature = structuredData.EmailData.HasSignature
-			email.BodyMarkdown = structuredData.EmailData.MessageBody
-		}
-
-		if email.HasSignature {
-			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.ContactInfo)
-			if err != nil {
-				tracing.TraceErr(span, err)
-			}
-
-			structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
-			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.CompanyInfo)
-			if err != nil {
-				tracing.TraceErr(span, err)
-				return err
-			}
+		structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
+		err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.CompanyInfo)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
 		}
 	}
 
@@ -145,15 +148,11 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 
 	// Create attachment records if any
 	if email.HasAttachment && len(attachments) > 0 {
-		h.processAttachments(email.ID, attachments)
+		h.processAttachments(email.ID, email.ThreadID, attachments)
 	}
 
-	// Publish events
-	if email.Classification == enum.EmailOK {
-		return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
-	}
-
-	return nil
+	// Publish email events
+	return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
 }
 
 func (h *IMAPHandler) attachMessageToThread(ctx context.Context, email *models.Email) error {
@@ -766,11 +765,12 @@ func (h *IMAPHandler) extractContentManually(email *models.Email, msg *go_imap.M
 }
 
 // Process attachments - create attachment records
-func (h *IMAPHandler) processAttachments(emailID string, attachmentsData []map[string]interface{}) {
+func (h *IMAPHandler) processAttachments(emailID, threadID string, attachmentsData []map[string]interface{}) {
 	for _, attachmentData := range attachmentsData {
 		// Create attachment entity
 		attachment := models.EmailAttachment{
 			EmailID:     emailID,
+			ThreadID:    threadID,
 			Filename:    attachmentData["filename"].(string),
 			ContentType: attachmentData["content_type"].(string),
 			Size:        attachmentData["size"].(int),

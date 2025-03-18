@@ -5,19 +5,21 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 // EmailAttachment represents an attachment to an email
 type EmailAttachment struct {
-	ID          string `gorm:"type:varchar(50);primaryKey"`
-	EmailID     string `gorm:"type:varchar(50);index;not null"`
-	Direction   string `gorm:"type:varchar(10);index;not null"` // "inbound" or "outbound"
-	Filename    string `gorm:"type:varchar(500)"`
-	ContentType string `gorm:"type:varchar(255)"`
-	ContentID   string `gorm:"type:varchar(255)"` // For inline attachments
-	Size        int    `gorm:"default:0"`
-	IsInline    bool   `gorm:"default:false"`
+	ID          string              `gorm:"type:varchar(50);primaryKey"`
+	EmailID     string              `gorm:"type:varchar(50);index;not null"`
+	ThreadID    string              `gorm:"type:varchar(50);index;not null"`
+	Direction   enum.EmailDirection `gorm:"type:varchar(10);index;not null"` // "inbound" or "outbound"
+	Filename    string              `gorm:"type:varchar(500)"`
+	ContentType string              `gorm:"type:varchar(255)"`
+	ContentID   string              `gorm:"type:varchar(255)"` // For inline attachments
+	Size        int                 `gorm:"default:0"`
+	IsInline    bool                `gorm:"default:false"`
 
 	// Storage options
 	StorageService string `gorm:"type:varchar(50)"`   // "s3", "azure", "local", etc.

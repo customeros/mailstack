@@ -6,58 +6,83 @@ package resolver
 
 import (
 	"context"
-	"time"
 
+	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
-	"github.com/customeros/mailstack/internal/enum"
+	"github.com/customeros/mailstack/api/graphql/mappers"
+	"github.com/customeros/mailstack/internal/tracing"
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // GetEmailsByThread is the resolver for the getEmailsByThread field.
 func (r *queryResolver) GetEmailsByThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error) {
-	// Stub implementation that returns mock data
-	mockMessages := []*graphql_model.EmailMessage{
-		{
-			ID:              "msg-1",
-			ThreadID:        threadID,
-			MailboxID:       "mbx-123",
-			Direction:       enum.EmailDirectionInbound,
-			From:            "sender@example.com",
-			To:              []string{"recipient@yourdomain.com"},
-			Cc:              []string{},
-			Bcc:             []string{},
-			Subject:         "Test Email 1",
-			Body:            "This is a test email body",
-			AttachmentCount: 0,
-			ReceivedAt:      time.Now(),
-		},
-		{
-			ID:              "msg-2",
-			ThreadID:        threadID,
-			MailboxID:       "mbx-123",
-			Direction:       enum.EmailDirectionOutbound,
-			From:            "recipient@yourdomain.com",
-			To:              []string{"sender@example.com"},
-			Cc:              []string{},
-			Bcc:             []string{},
-			Subject:         "Re: Test Email 1",
-			Body:            "This is a reply to the test email",
-			AttachmentCount: 0,
-			ReceivedAt:      time.Now().Add(1 * time.Hour),
-		},
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetEmailsByThread")
+	defer span.Finish()
+	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+
+	emails, err := r.repositories.EmailRepository.ListByThread(ctx, threadID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
+	}
+	if emails == nil {
+		return nil, api_errors.NewError("thread not found", api_errors.CodeNotFound, nil)
 	}
 
-	return mockMessages, nil
+	messages := make([]*graphql_model.EmailMessage, 0, len(emails))
+	for _, email := range emails {
+		message := mappers.MapGormEmailToGraph(email)
+		attachments, err := r.repositories.EmailAttachmentRepository.ListByEmail(ctx, email.ID)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, api_errors.NewError("error getting attachment count", api_errors.CodeInternal, nil)
+		}
+		message.AttachmentCount = len(attachments)
+		messages = append(messages, message)
+	}
+
+	return messages, nil
 }
 
 // GetThreadMetadata is the resolver for the getThreadMetadata field.
 func (r *queryResolver) GetThreadMetadata(ctx context.Context, threadID string) (*graphql_model.ThreadMetadata, error) {
-	mockMetadata := &graphql_model.ThreadMetadata{
-		ID:             threadID,
-		Summary:        "This is a test email thread about testing",
-		Participants:   []string{"sender@example.com", "recipient@yourdomain.com"},
-		HasAttachments: false,
-		Attachments:    []*graphql_model.Attachment{},
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetThreadMetadata")
+	defer span.Finish()
+	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+
+	threadRecord, err := r.repositories.EmailThreadRepository.GetByID(ctx, threadID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
+	}
+	if threadRecord == nil {
+		return nil, api_errors.NewError("thread not found", api_errors.CodeNotFound, nil)
 	}
 
-	return mockMetadata, nil
+	attachments, err := r.repositories.EmailAttachmentRepository.ListByThread(ctx, threadRecord.ID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("error getting email attachments", api_errors.CodeInternal, nil)
+	}
+
+	threadMetadata := &graphql_model.ThreadMetadata{
+		ID: threadID,
+		// TODO implement email thread summary
+		Summary:        "This is a test email thread about testing",
+		Participants:   threadRecord.Participants,
+		HasAttachments: threadRecord.HasAttachments,
+	}
+
+	if attachments == nil || len(attachments) == 0 {
+		return threadMetadata, nil
+	}
+
+	files := make([]*graphql_model.Attachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		files = append(files, mappers.MapGormAttachmentToGraph(attachment))
+	}
+
+	threadMetadata.Attachments = files
+
+	return threadMetadata, nil
 }

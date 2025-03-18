@@ -32,6 +32,7 @@ const (
 const (
 	SpanTagComponentPostgresRepository = "postgresRepository"
 	SpanTagComponentRest               = "rest"
+	SpanTagComponentGraphQL            = "graphql"
 	SpanTagComponentCronJob            = "cronJob"
 	SpanTagComponentService            = "service"
 	SpanTagComponentListener           = "listener"
@@ -181,6 +182,11 @@ func SetDefaultRestSpanTags(ctx context.Context, span opentracing.Span) {
 	TagComponentRest(span)
 }
 
+func SetDefaultGraphqlSpanTags(ctx context.Context, span opentracing.Span) {
+	setDefaultSpanTags(ctx, span)
+	TagComponentGraphql(span)
+}
+
 func SetDefaultServiceSpanTags(ctx context.Context, span opentracing.Span) {
 	setDefaultSpanTags(ctx, span)
 	TagComponentService(span)
@@ -254,6 +260,10 @@ func TagComponentCronJob(span opentracing.Span) {
 
 func TagComponentRest(span opentracing.Span) {
 	span.SetTag(SpanTagComponent, SpanTagComponentRest)
+}
+
+func TagComponentGraphql(span opentracing.Span) {
+	span.SetTag(SpanTagComponent, SpanTagComponentGraphQL)
 }
 
 func TagComponentService(span opentracing.Span) {
