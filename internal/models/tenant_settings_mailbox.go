@@ -27,7 +27,8 @@ type TenantSettingsMailbox struct {
 	MinMinutesBetweenEmails int `gorm:"type:integer" json:"minMinutesBetweenEmails"`
 	MaxMinutesBetweenEmails int `gorm:"type:integer" json:"maxMinutesBetweenEmails"`
 
-	Status MailboxStatus `gorm:"column:status;type:varchar(255)" json:"status"`
+	ConfigureAttemptAt *time.Time    `gorm:"column:configure_attempt_at;type:timestamp" json:"configureAttemptAt"`
+	Status             MailboxStatus `gorm:"column:status;type:varchar(255)" json:"status"`
 }
 
 func (TenantSettingsMailbox) TableName() string {

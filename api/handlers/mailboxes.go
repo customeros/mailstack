@@ -232,8 +232,6 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 		defer span.Finish()
 		tracing.SetDefaultRestSpanTags(ctx, span)
 
-		tenant := utils.GetTenantFromContext(ctx)
-
 		mailboxID := c.Param("id")
 		if mailboxID == "" {
 			tracing.TraceErr(span, errors.New("mailbox ID is required"))
@@ -241,44 +239,18 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 			return
 		}
 
-		// Get the mailbox from the repository
-		mailbox, err := h.repos.TenantSettingsMailboxRepository.GetById(ctx, mailboxID)
+		err := h.mailboxService.ConfigureMailbox(ctx, mailboxID)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to get mailbox"))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get mailbox"})
-			return
-		}
-		if mailbox == nil {
-			tracing.TraceErr(span, errors.New("mailbox not found"))
-			c.JSON(http.StatusNotFound, gin.H{"error": "mailbox not found"})
-			return
-		}
-
-		// Verify tenant ownership
-		if mailbox.Tenant != tenant {
-			tracing.TraceErr(span, errors.New("mailbox does not belong to tenant"))
-			c.JSON(http.StatusForbidden, gin.H{"error": "mailbox does not belong to tenant"})
-			return
-		}
-
-		// Call OpenSRS to configure the mailbox
-		forwardingTo := []string{}
-		if mailbox.ForwardingTo != "" {
-			forwardingTo = strings.Split(mailbox.ForwardingTo, ",")
-		}
-
-		err = h.services.OpenSrsService.SetupMailbox(ctx, tenant, mailbox.MailboxUsername, mailbox.MailboxPassword, forwardingTo, mailbox.WebmailEnabled)
-		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to configure mailbox with OpenSRS"))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to configure mailbox with OpenSRS"})
-			return
-		}
-
-		// Update mailbox status to provisioned
-		err = h.repos.TenantSettingsMailboxRepository.UpdateStatus(ctx, mailboxID, models.MailboxStatusProvisioned)
-		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox status"))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update mailbox status"})
+			if errors.Is(err, er.ErrMailboxNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "mailbox not found"})
+				return
+			}
+			if errors.Is(err, er.ErrMailboxNotOwnedByTenant) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "mailbox does not belong to tenant"})
+				return
+			}
+			tracing.TraceErr(span, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to configure mailbox"})
 			return
 		}
 

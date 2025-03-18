@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -21,8 +22,10 @@ type TenantSettingsMailboxRepository interface {
 	GetById(ctx context.Context, id string) (*models.TenantSettingsMailbox, error)
 	GetByMailbox(ctx context.Context, mailbox string) (*models.TenantSettingsMailbox, error)
 	GetAllWithFilters(ctx context.Context, domain, userId string) ([]*models.TenantSettingsMailbox, error)
+	GetForConfiguration(ctx context.Context, limit int) ([]*models.TenantSettingsMailbox, error)
 
-	Merge(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
+	Create(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
+	Update(ctx context.Context, tx *gorm.DB, mailbox *models.TenantSettingsMailbox) error
 	UpdateStatus(ctx context.Context, id string, status models.MailboxStatus) error
 	UpdateRampUpFields(ctx context.Context, mailbox *models.TenantSettingsMailbox) error
 }
@@ -141,8 +144,36 @@ func (r *tenantSettingsMailboxRepository) GetAllWithFilters(ctx context.Context,
 	return result, nil
 }
 
-func (r *tenantSettingsMailboxRepository) Merge(ctx context.Context, tx *gorm.DB, input *models.TenantSettingsMailbox) error {
-	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.Merge")
+func (r *tenantSettingsMailboxRepository) GetForConfiguration(ctx context.Context, limit int) ([]*models.TenantSettingsMailbox, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.GetForConfiguration")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogFields(tracingLog.Int("limit", limit))
+
+	twoHoursAgo := utils.Now().Add(-2 * time.Hour)
+
+	var result []*models.TenantSettingsMailbox
+	err := r.gormDb.WithContext(ctx).
+		Where("status = ? AND ("+
+			"(configure_attempt_at IS NULL AND created_at < ?) OR "+
+			"(configure_attempt_at < ?)"+
+			")", models.MailboxStatusPendingProvisioning, twoHoursAgo, twoHoursAgo).
+		Order("CASE WHEN configure_attempt_at IS NULL THEN 0 ELSE 1 END, configure_attempt_at ASC").
+		Limit(limit).
+		Find(&result).
+		Error
+
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	span.LogFields(tracingLog.Int("result.count", len(result)))
+	return result, nil
+}
+
+func (r *tenantSettingsMailboxRepository) Create(ctx context.Context, tx *gorm.DB, input *models.TenantSettingsMailbox) error {
+	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.Create")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	tracing.LogObjectAsJson(span, "mailbox", input)
@@ -150,65 +181,89 @@ func (r *tenantSettingsMailboxRepository) Merge(ctx context.Context, tx *gorm.DB
 	tenant := utils.GetTenantFromContext(ctx)
 
 	// Check if the mailbox already exists
-	var mailbox models.TenantSettingsMailbox
+	var exists bool
 	err := r.gormDb.
+		Model(&models.TenantSettingsMailbox{}).
+		Select("count(*) > 0").
 		Where("tenant = ? AND mailbox_username = ?", tenant, input.MailboxUsername).
-		First(&mailbox).Error
+		Find(&exists).Error
 
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
 	}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// If not found, create a new mailbox
-		mailbox = models.TenantSettingsMailbox{
-			Tenant:                  tenant,
-			MailboxUsername:         input.MailboxUsername,
-			MailboxPassword:         input.MailboxPassword,
-			Status:                  input.Status,
-			ForwardingTo:            input.ForwardingTo,
-			WebmailEnabled:          input.WebmailEnabled,
-			Username:                input.Username,
-			UserId:                  input.UserId,
-			Domain:                  input.Domain,
-			LastRampUpAt:            utils.Now(),
-			RampUpRate:              3,
-			RampUpMax:               40,
-			RampUpCurrent:           3,
-			MinMinutesBetweenEmails: input.MinMinutesBetweenEmails,
-			MaxMinutesBetweenEmails: input.MaxMinutesBetweenEmails,
-		}
+	if exists {
+		return errors.New("mailbox already exists")
+	}
 
-		err = r.gormDb.Create(&mailbox).Error
-		if err != nil {
-			tracing.TraceErr(span, err)
-			return err
-		}
-	} else {
-		// If found, update the existing mailbox
-		mailbox.Status = input.Status
-		mailbox.ForwardingTo = input.ForwardingTo
-		mailbox.WebmailEnabled = input.WebmailEnabled
-		mailbox.MailboxPassword = input.MailboxPassword
-		mailbox.LastRampUpAt = input.LastRampUpAt
-		mailbox.RampUpRate = input.RampUpRate
-		mailbox.RampUpMax = input.RampUpMax
-		mailbox.RampUpCurrent = input.RampUpCurrent
-		mailbox.MinMinutesBetweenEmails = input.MinMinutesBetweenEmails
-		mailbox.MaxMinutesBetweenEmails = input.MaxMinutesBetweenEmails
-		mailbox.UserId = input.UserId
-		mailbox.UpdatedAt = utils.Now()
+	// Create new mailbox
+	mailbox := models.TenantSettingsMailbox{
+		Tenant:                  tenant,
+		MailboxUsername:         input.MailboxUsername,
+		MailboxPassword:         input.MailboxPassword,
+		Status:                  input.Status,
+		ForwardingTo:            input.ForwardingTo,
+		WebmailEnabled:          input.WebmailEnabled,
+		Username:                input.Username,
+		UserId:                  input.UserId,
+		Domain:                  input.Domain,
+		LastRampUpAt:            utils.Now(),
+		RampUpRate:              3,
+		RampUpMax:               40,
+		RampUpCurrent:           3,
+		MinMinutesBetweenEmails: input.MinMinutesBetweenEmails,
+		MaxMinutesBetweenEmails: input.MaxMinutesBetweenEmails,
+	}
 
-		if tx == nil {
-			tx = r.gormDb
-		}
+	if tx == nil {
+		tx = r.gormDb
+	}
 
-		err = tx.Save(&mailbox).Error
-		if err != nil {
-			tracing.TraceErr(span, err)
-			return err
+	err = tx.Create(&mailbox).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *tenantSettingsMailboxRepository) Update(ctx context.Context, tx *gorm.DB, input *models.TenantSettingsMailbox) error {
+	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.Update")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	tracing.LogObjectAsJson(span, "mailbox", input)
+
+	tenant := utils.GetTenantFromContext(ctx)
+
+	// Get existing mailbox to verify it exists and get its ID
+	var existing models.TenantSettingsMailbox
+	err := r.gormDb.
+		Where("tenant = ? AND mailbox_username = ?", tenant, input.MailboxUsername).
+		First(&existing).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("mailbox not found")
 		}
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Preserve ID and tenant
+	input.ID = existing.ID
+	input.Tenant = tenant
+	input.UpdatedAt = utils.Now()
+
+	if tx == nil {
+		tx = r.gormDb
+	}
+
+	err = tx.Save(input).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
 	}
 
 	return nil

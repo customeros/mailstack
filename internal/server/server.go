@@ -223,3 +223,7 @@ func (s *Server) Logger() logger.Logger {
 func (s *Server) Services() *services.Services {
 	return s.services
 }
+
+func (s *Server) Repositories() *repository.Repositories {
+	return s.repositories
+}

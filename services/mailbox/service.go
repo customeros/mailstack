@@ -19,16 +19,18 @@ import (
 )
 
 type mailboxService struct {
-	log      logger.Logger
-	postgres *repository.Repositories
+	log            logger.Logger
+	postgres       *repository.Repositories
+	openSrsService interfaces.OpenSrsService
 }
 
 const TEST_MAILBOX_DOMAIN = "testcustomeros.com"
 
-func NewMailboxService(log logger.Logger, postgres *repository.Repositories) interfaces.MailboxService {
+func NewMailboxService(log logger.Logger, postgres *repository.Repositories, openSrsService interfaces.OpenSrsService) interfaces.MailboxService {
 	return &mailboxService{
-		log:      log,
-		postgres: postgres,
+		log:            log,
+		postgres:       postgres,
+		openSrsService: openSrsService,
 	}
 }
 
@@ -116,7 +118,7 @@ func (s *mailboxService) createMailbox(ctx context.Context, span opentracing.Spa
 		WebmailEnabled:  request.WebmailEnabled,
 		Status:          models.MailboxStatusPendingProvisioning,
 	}
-	err := s.postgres.TenantSettingsMailboxRepository.Merge(ctx, tx, &tenantSettingsMailbox)
+	err := s.postgres.TenantSettingsMailboxRepository.Create(ctx, tx, &tenantSettingsMailbox)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error saving mailbox"))
 		return err
@@ -213,6 +215,60 @@ func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.Tena
 			tracing.TraceErr(span, err)
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxId string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ConfigureMailbox")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.LogFields(log.String("mailboxId", mailboxId))
+
+	tenant := utils.GetTenantFromContext(ctx)
+
+	// Get the mailbox from the repository
+	mailbox, err := s.postgres.TenantSettingsMailboxRepository.GetById(ctx, mailboxId)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "failed to get mailbox"))
+		return errors.Wrap(err, "failed to get mailbox")
+	}
+	if mailbox == nil {
+		return er.ErrMailboxNotFound
+	}
+
+	// Verify tenant ownership
+	if mailbox.Tenant != tenant {
+		return er.ErrMailboxNotOwnedByTenant
+	}
+
+	// Parse forwarding addresses
+	forwardingTo := []string{}
+	if mailbox.ForwardingTo != "" {
+		forwardingTo = strings.Split(mailbox.ForwardingTo, ",")
+	}
+
+	// Configure mailbox with OpenSRS
+	err = s.openSrsService.SetupMailbox(ctx, tenant, mailbox.MailboxUsername, mailbox.MailboxPassword, forwardingTo, mailbox.WebmailEnabled)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "failed to configure mailbox with OpenSRS"))
+
+		mailbox.ConfigureAttemptAt = utils.NowPtr()
+		err = s.postgres.TenantSettingsMailboxRepository.Update(ctx, nil, mailbox)
+		if err != nil {
+			tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox"))
+			return errors.Wrap(err, "failed to update mailbox")
+		}
+
+		return errors.Wrap(err, "failed to configure mailbox with OpenSRS")
+	}
+
+	// Update mailbox status to provisioned
+	err = s.postgres.TenantSettingsMailboxRepository.UpdateStatus(ctx, mailboxId, models.MailboxStatusProvisioned)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox status"))
+		return errors.Wrap(err, "failed to update mailbox status")
 	}
 
 	return nil
