@@ -69,6 +69,23 @@ func (r *emailAttachmentRepository) ListByEmail(ctx context.Context, emailID str
 	return attachments, nil
 }
 
+// ListByEmail retrieves all attachments for a specific email thread
+func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID string) ([]*models.EmailAttachment, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.ListByThread")
+	defer span.Finish()
+	tracing.TagComponentPostgresRepository(span)
+
+	var attachments []*models.EmailAttachment
+	err := r.db.WithContext(ctx).
+		Where("thread_id = ?", threadID).
+		Find(&attachments).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	return attachments, nil
+}
+
 // Store saves attachment data to the configured storage service
 func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, data []byte) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.Store")

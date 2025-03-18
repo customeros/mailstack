@@ -10,7 +10,7 @@ import (
 
 type Attachment struct {
 	ID          string `json:"id"`
-	MessageID   string `json:"messageId"`
+	EmailID     string `json:"emailId"`
 	Filename    string `json:"filename"`
 	ContentType string `json:"contentType"`
 	URL         string `json:"url"`
@@ -22,6 +22,7 @@ type EmailMessage struct {
 	MailboxID       string              `json:"mailboxId"`
 	Direction       enum.EmailDirection `json:"direction"`
 	From            string              `json:"from"`
+	FromName        string              `json:"fromName"`
 	To              []string            `json:"to"`
 	Cc              []string            `json:"cc,omitempty"`
 	Bcc             []string            `json:"bcc,omitempty"`

@@ -49,9 +49,9 @@ type DirectiveRoot struct {
 type ComplexityRoot struct {
 	Attachment struct {
 		ContentType func(childComplexity int) int
+		EmailID     func(childComplexity int) int
 		Filename    func(childComplexity int) int
 		ID          func(childComplexity int) int
-		MessageID   func(childComplexity int) int
 		URL         func(childComplexity int) int
 	}
 
@@ -62,6 +62,7 @@ type ComplexityRoot struct {
 		Cc              func(childComplexity int) int
 		Direction       func(childComplexity int) int
 		From            func(childComplexity int) int
+		FromName        func(childComplexity int) int
 		ID              func(childComplexity int) int
 		MailboxID       func(childComplexity int) int
 		ReceivedAt      func(childComplexity int) int
@@ -130,6 +131,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Attachment.ContentType(childComplexity), true
 
+	case "Attachment.emailId":
+		if e.complexity.Attachment.EmailID == nil {
+			break
+		}
+
+		return e.complexity.Attachment.EmailID(childComplexity), true
+
 	case "Attachment.filename":
 		if e.complexity.Attachment.Filename == nil {
 			break
@@ -143,13 +151,6 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Attachment.ID(childComplexity), true
-
-	case "Attachment.messageId":
-		if e.complexity.Attachment.MessageID == nil {
-			break
-		}
-
-		return e.complexity.Attachment.MessageID(childComplexity), true
 
 	case "Attachment.url":
 		if e.complexity.Attachment.URL == nil {
@@ -199,6 +200,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.EmailMessage.From(childComplexity), true
+
+	case "EmailMessage.fromName":
+		if e.complexity.EmailMessage.FromName == nil {
+			break
+		}
+
+		return e.complexity.EmailMessage.FromName(childComplexity), true
 
 	case "EmailMessage.id":
 		if e.complexity.EmailMessage.ID == nil {
@@ -487,6 +495,7 @@ type EmailMessage {
   mailboxId: String!
   direction: EmailDirection!
   from: String!
+  fromName: String!
   to: [String!]!
   cc: [String!]
   bcc: [String!]
@@ -506,7 +515,7 @@ type ThreadMetadata {
 
 type Attachment {
   id: String!
-  messageId: String!
+  emailId: String!
   filename: String!
   contentType: String!
   url: String!
@@ -817,8 +826,8 @@ func (ec *executionContext) fieldContext_Attachment_id(_ context.Context, field 
 	return fc, nil
 }
 
-func (ec *executionContext) _Attachment_messageId(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Attachment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Attachment_messageId(ctx, field)
+func (ec *executionContext) _Attachment_emailId(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Attachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Attachment_emailId(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -831,7 +840,7 @@ func (ec *executionContext) _Attachment_messageId(ctx context.Context, field gra
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.MessageID, nil
+		return obj.EmailID, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -848,7 +857,7 @@ func (ec *executionContext) _Attachment_messageId(ctx context.Context, field gra
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_Attachment_messageId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Attachment_emailId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Attachment",
 		Field:      field,
@@ -1201,6 +1210,50 @@ func (ec *executionContext) _EmailMessage_from(ctx context.Context, field graphq
 }
 
 func (ec *executionContext) fieldContext_EmailMessage_from(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EmailMessage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EmailMessage_fromName(ctx context.Context, field graphql.CollectedField, obj *graphql_model.EmailMessage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EmailMessage_fromName(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.FromName, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EmailMessage_fromName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "EmailMessage",
 		Field:      field,
@@ -2001,6 +2054,8 @@ func (ec *executionContext) fieldContext_Query_getEmailsByThread(ctx context.Con
 				return ec.fieldContext_EmailMessage_direction(ctx, field)
 			case "from":
 				return ec.fieldContext_EmailMessage_from(ctx, field)
+			case "fromName":
+				return ec.fieldContext_EmailMessage_fromName(ctx, field)
 			case "to":
 				return ec.fieldContext_EmailMessage_to(ctx, field)
 			case "cc":
@@ -2522,8 +2577,8 @@ func (ec *executionContext) fieldContext_ThreadMetadata_attachments(_ context.Co
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Attachment_id(ctx, field)
-			case "messageId":
-				return ec.fieldContext_Attachment_messageId(ctx, field)
+			case "emailId":
+				return ec.fieldContext_Attachment_emailId(ctx, field)
 			case "filename":
 				return ec.fieldContext_Attachment_filename(ctx, field)
 			case "contentType":
@@ -4512,8 +4567,8 @@ func (ec *executionContext) _Attachment(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "messageId":
-			out.Values[i] = ec._Attachment_messageId(ctx, field, obj)
+		case "emailId":
+			out.Values[i] = ec._Attachment_emailId(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -4588,6 +4643,11 @@ func (ec *executionContext) _EmailMessage(ctx context.Context, sel ast.Selection
 			}
 		case "from":
 			out.Values[i] = ec._EmailMessage_from(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "fromName":
+			out.Values[i] = ec._EmailMessage_fromName(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
