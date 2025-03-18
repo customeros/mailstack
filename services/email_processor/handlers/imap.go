@@ -30,6 +30,7 @@ type IMAPHandler struct {
 	repositories       *repository.Repositories
 	eventService       *events.EventsService
 	emailFilterService interfaces.EmailFilterService
+	aiService          interfaces.AIService
 }
 
 // NewIMAPHandler creates a new IMAP email handler
@@ -37,11 +38,13 @@ func NewIMAPHandler(
 	repositories *repository.Repositories,
 	eventService *events.EventsService,
 	emailFilterService interfaces.EmailFilterService,
+	aiService interfaces.AIService,
 ) *IMAPHandler {
 	return &IMAPHandler{
 		repositories:       repositories,
 		eventService:       eventService,
 		emailFilterService: emailFilterService,
+		aiService:          aiService,
 	}
 }
 
@@ -100,6 +103,39 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 		return err
 	}
 
+	// Clean message body if email passes spam filter
+	if email.Classification == enum.EmailOK {
+		structuredData, err := h.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
+			FromName:         email.FromName,
+			FromEmailAddress: email.FromAddress,
+			ToEmailAddress:   email.ToAddresses[0],
+			EmailBodyText:    email.BodyText,
+			EmailBodyHTML:    email.BodyHTML,
+		})
+		if err != nil {
+			tracing.TraceErr(span, err)
+		}
+
+		if structuredData != nil {
+			email.HasSignature = structuredData.EmailData.HasSignature
+			email.BodyMarkdown = structuredData.EmailData.MessageBody
+		}
+
+		if email.HasSignature {
+			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.ContactInfo)
+			if err != nil {
+				tracing.TraceErr(span, err)
+			}
+
+			structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
+			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.CompanyInfo)
+			if err != nil {
+				tracing.TraceErr(span, err)
+				return err
+			}
+		}
+	}
+
 	// Save the email entity to the database
 	_, err = h.repositories.EmailRepository.Create(ctx, &email)
 	if err != nil {
@@ -112,10 +148,11 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 		h.processAttachments(email.ID, attachments)
 	}
 
-	// Publish event for downstream processing
+	// Publish events
 	if email.Classification == enum.EmailOK {
 		return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
 	}
+
 	return nil
 }
 

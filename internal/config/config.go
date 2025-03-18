@@ -83,3 +83,8 @@ type OpenSRSConfig struct {
 	ApiKey   string `env:"OPENSRS_API_KEY"`
 	Username string `env:"OPENSRS_API_USERNAME"`
 }
+
+type CustomerOSAPIConfig struct {
+	Url    string `env:"CUSTOMER_OS_API_URL" envDefault:"https://api.customeros.ai" validate:"required"`
+	ApiKey string `env:"CUSTOMER_OS_API_KEY"`
+}

@@ -18,9 +18,10 @@ func NewProcessor(
 	repositories *repository.Repositories,
 	eventService *events.EventsService,
 	emailFilterService interfaces.EmailFilterService,
+	aiService interfaces.AIService,
 ) *Processor {
 	return &Processor{
-		imapHandler: handlers.NewIMAPHandler(repositories, eventService, emailFilterService),
+		imapHandler: handlers.NewIMAPHandler(repositories, eventService, emailFilterService, aiService),
 	}
 }
 
