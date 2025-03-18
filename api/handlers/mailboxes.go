@@ -52,19 +52,21 @@ type MailboxesResponse struct {
 }
 
 type MailboxRecord struct {
-	ID                string   `json:"id,omitempty"`
-	Email             string   `json:"email"`
-	Domain            string   `json:"domain"`
-	Username          string   `json:"username"`
-	Password          string   `json:"password,omitempty"`
-	ForwardingEnabled bool     `json:"forwardingEnabled"`
-	ForwardingTo      []string `json:"forwardingTo"`
-	WebmailEnabled    bool     `json:"webmailEnabled"`
-	Provisioned       bool     `json:"provisioned"`
-	RampUpCurrent     int      `json:"rampUpCurrent"`
-	RampUpMax         int      `json:"rampUpMax"`
-	RampUpRate        int      `json:"rampUpRate"`
-	UserID            string   `json:"userId,omitempty"`
+	ID                      string   `json:"id,omitempty"`
+	Email                   string   `json:"email"`
+	Domain                  string   `json:"domain"`
+	Username                string   `json:"username"`
+	Password                string   `json:"password,omitempty"`
+	ForwardingEnabled       bool     `json:"forwardingEnabled"`
+	ForwardingTo            []string `json:"forwardingTo"`
+	WebmailEnabled          bool     `json:"webmailEnabled"`
+	Provisioned             bool     `json:"provisioned"`
+	RampUpCurrent           int      `json:"rampUpCurrent"`
+	RampUpMax               int      `json:"rampUpMax"`
+	RampUpRate              int      `json:"rampUpRate"`
+	UserID                  string   `json:"userId,omitempty"`
+	MinMinutesBetweenEmails int      `json:"minMinutesBetweenEmails"`
+	MaxMinutesBetweenEmails int      `json:"maxMinutesBetweenEmails"`
 }
 
 func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
@@ -90,18 +92,20 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		}
 		for _, mailboxRecord := range mailboxRecords {
 			response.Mailboxes = append(response.Mailboxes, MailboxRecord{
-				Email:             mailboxRecord.MailboxUsername,
-				Domain:            mailboxRecord.Domain,
-				Username:          mailboxRecord.Username,
-				Password:          mailboxRecord.MailboxPassword,
-				ForwardingEnabled: mailboxRecord.ForwardingTo != "",
-				ForwardingTo:      strings.Split(mailboxRecord.ForwardingTo, ","),
-				WebmailEnabled:    mailboxRecord.WebmailEnabled,
-				Provisioned:       mailboxRecord.Status == models.MailboxStatusProvisioned,
-				RampUpCurrent:     mailboxRecord.RampUpCurrent,
-				RampUpMax:         mailboxRecord.RampUpMax,
-				RampUpRate:        mailboxRecord.RampUpRate,
-				UserID:            mailboxRecord.UserId,
+				Email:                   mailboxRecord.MailboxUsername,
+				Domain:                  mailboxRecord.Domain,
+				Username:                mailboxRecord.Username,
+				Password:                mailboxRecord.MailboxPassword,
+				ForwardingEnabled:       mailboxRecord.ForwardingTo != "",
+				ForwardingTo:            strings.Split(mailboxRecord.ForwardingTo, ","),
+				WebmailEnabled:          mailboxRecord.WebmailEnabled,
+				Provisioned:             mailboxRecord.Status == models.MailboxStatusProvisioned,
+				RampUpCurrent:           mailboxRecord.RampUpCurrent,
+				RampUpMax:               mailboxRecord.RampUpMax,
+				RampUpRate:              mailboxRecord.RampUpRate,
+				UserID:                  mailboxRecord.UserId,
+				MinMinutesBetweenEmails: mailboxRecord.MinMinutesBetweenEmails,
+				MaxMinutesBetweenEmails: mailboxRecord.MaxMinutesBetweenEmails,
 			})
 		}
 
@@ -296,18 +300,20 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 		}
 
 		response := MailboxRecord{
-			ID:                mailbox.ID,
-			Email:             email,
-			Domain:            domain,
-			Username:          username,
-			ForwardingEnabled: mailbox.ForwardingTo != "",
-			ForwardingTo:      strings.Split(mailbox.ForwardingTo, ","),
-			WebmailEnabled:    mailbox.WebmailEnabled,
-			Provisioned:       mailbox.Status == models.MailboxStatusProvisioned,
-			RampUpCurrent:     mailbox.RampUpCurrent,
-			RampUpMax:         mailbox.RampUpMax,
-			RampUpRate:        mailbox.RampUpRate,
-			UserID:            mailbox.UserId,
+			ID:                      mailbox.ID,
+			Email:                   email,
+			Domain:                  domain,
+			Username:                username,
+			ForwardingEnabled:       mailbox.ForwardingTo != "",
+			ForwardingTo:            strings.Split(mailbox.ForwardingTo, ","),
+			WebmailEnabled:          mailbox.WebmailEnabled,
+			Provisioned:             mailbox.Status == models.MailboxStatusProvisioned,
+			RampUpCurrent:           mailbox.RampUpCurrent,
+			RampUpMax:               mailbox.RampUpMax,
+			RampUpRate:              mailbox.RampUpRate,
+			UserID:                  mailbox.UserId,
+			MinMinutesBetweenEmails: mailbox.MinMinutesBetweenEmails,
+			MaxMinutesBetweenEmails: mailbox.MaxMinutesBetweenEmails,
 		}
 
 		c.JSON(http.StatusOK, response)
