@@ -106,7 +106,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) err
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
-	email.Direction = enum.EmailOutbound
+	email.Direction = enum.EmailDirectionOutbound
 
 	if email == nil {
 		err := fmt.Errorf("email cannot be nil")

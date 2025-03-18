@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/customeros/mailstack/api/handlers/emails"
+	"github.com/customeros/mailstack/api/rest/handlers/emails"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/services"

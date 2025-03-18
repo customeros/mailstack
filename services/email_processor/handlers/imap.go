@@ -74,7 +74,7 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 
 	email := models.Email{
 		MailboxID:  mailboxID,
-		Direction:  enum.EmailInbound,
+		Direction:  enum.EmailDirectionInbound,
 		Status:     enum.EmailStatusReceived,
 		Folder:     folder,
 		ImapUID:    msg.Uid,

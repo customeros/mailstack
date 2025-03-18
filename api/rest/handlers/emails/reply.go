@@ -157,7 +157,7 @@ func (h *EmailsHandler) buildReplyEmailContainer(ctx context.Context, request *R
 	// build email model
 	email := &models.Email{
 		MailboxID:    mailbox.ID,
-		Direction:    enum.EmailOutbound,
+		Direction:    enum.EmailDirectionOutbound,
 		MessageID:    utils.GenerateMessageID(mailbox.MailboxDomain, ""),
 		ThreadID:     replyToEmail.ThreadID,
 		InReplyTo:    replyToEmail.MessageID,

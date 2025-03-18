@@ -3,11 +3,19 @@ package api
 import (
 	"context"
 
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/lru"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
+	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
+	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/customeros/mailstack/api/handlers"
+	"github.com/customeros/mailstack/api/graphql/generated"
+	"github.com/customeros/mailstack/api/graphql/resolver"
 	"github.com/customeros/mailstack/api/middleware"
+	"github.com/customeros/mailstack/api/rest/handlers"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -39,7 +47,19 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		ValidAPIKey: cfg.AppConfig.APIKey,
 	})
 
-	// API group with version and custom context
+	// GraphQL API
+	graphql := r.Group("/")
+	graphql.Use(apiKeyMiddleware)
+	graphql.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
+	graphql.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
+	{
+		graphqlHandler, playgroundHandler := SetupGraphQLServer(repos)
+
+		graphql.GET("/", playgroundHandler)    // playground
+		graphql.POST("/query", graphqlHandler) // query
+	}
+
+	// Rest API
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
 	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
@@ -109,4 +129,36 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 			drafts.POST("/:id/send", nil) // send a draft
 		}
 	}
+}
+
+// SetupGraphQLServer configures and returns the GraphQL server and playground handlers
+func SetupGraphQLServer(repos *repository.Repositories) (graphqlHandler, playgroundHandler gin.HandlerFunc) {
+	// Create the resolver with dependencies
+	resolver := resolver.NewResolver(repos)
+
+	// Create a new schema with your resolvers
+	schema := generated.NewExecutableSchema(generated.Config{
+		Resolvers: resolver,
+	})
+
+	// Create the GraphQL server with custom options
+	srv := handler.New(schema)
+
+	// Configure server options
+	srv.AddTransport(transport.POST{})          // Support POST requests
+	srv.AddTransport(transport.GET{})           // Support GET requests
+	srv.AddTransport(transport.MultipartForm{}) // Support multipart form
+	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000))
+
+	// Add extensions
+	srv.Use(extension.Introspection{}) // Enable introspection
+	srv.Use(extension.AutomaticPersistedQuery{
+		Cache: lru.New[string](100),
+	})
+
+	// Create playground handler
+	playground := playground.Handler("GraphQL", "/query")
+
+	// Return handlers wrapped for Gin
+	return gin.WrapH(srv), gin.WrapH(playground)
 }

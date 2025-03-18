@@ -33,8 +33,8 @@ func (t EmailClassification) String() string {
 type EmailDirection string
 
 const (
-	EmailInbound  EmailDirection = "inbound"
-	EmailOutbound EmailDirection = "outbound"
+	EmailDirectionInbound  EmailDirection = "inbound"
+	EmailDirectionOutbound EmailDirection = "outbound"
 )
 
 func (t EmailDirection) String() string {
