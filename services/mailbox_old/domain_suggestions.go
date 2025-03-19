@@ -16,7 +16,7 @@ import (
 )
 
 // checkDomain checks if a domain is likely available using multiple methods
-func (s *mailboxService) IsDomainAvailable(ctx context.Context, domain string) (ok, available bool) {
+func (s *mailboxServiceOld) IsDomainAvailable(ctx context.Context, domain string) (ok, available bool) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.IsDomainAvailable")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -45,7 +45,7 @@ func (s *mailboxService) IsDomainAvailable(ctx context.Context, domain string) (
 	return true, true
 }
 
-func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string {
+func (s *mailboxServiceOld) RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.RecommendOutboundDomains")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -129,7 +129,7 @@ func (s *mailboxService) RecommendOutboundDomains(ctx context.Context, domainRoo
 	return results
 }
 
-func (s *mailboxService) dnsCheck(ctx context.Context, domain string) (ok bool, exists bool) {
+func (s *mailboxServiceOld) dnsCheck(ctx context.Context, domain string) (ok bool, exists bool) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.dnsCheck")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -152,7 +152,7 @@ func (s *mailboxService) dnsCheck(ctx context.Context, domain string) (ok bool, 
 }
 
 // checkWhois runs a whois query and analyzes the output
-func (s *mailboxService) checkWhois(ctx context.Context, domain string) (ok, exists bool) {
+func (s *mailboxServiceOld) checkWhois(ctx context.Context, domain string) (ok, exists bool) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.checkWhois")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)

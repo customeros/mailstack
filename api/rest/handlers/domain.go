@@ -266,7 +266,7 @@ func (h *DomainHandler) GetRecommendations() gin.HandlerFunc {
 		}
 
 		// get domain recommendations
-		recommendations := h.svc.MailboxService.RecommendOutboundDomains(ctx, baseName, 500)
+		recommendations := h.svc.MailboxServiceOld.RecommendOutboundDomains(ctx, baseName, 500)
 
 		var response struct {
 			Recommendations []string `json:"recommendations"`

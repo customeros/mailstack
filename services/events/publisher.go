@@ -419,7 +419,7 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 		},
 		Metadata: dto.EventMetadata{
 			UberTraceId: tracingData["uber-trace-id"],
-			AppSource:   utils.GetAppSourceFromContext(ctx),
+			AppSource:   "MAILSTACK",
 			UserId:      utils.GetUserIdFromContext(ctx),
 			UserEmail:   utils.GetUserEmailFromContext(ctx),
 			Timestamp:   utils.Now().String(),

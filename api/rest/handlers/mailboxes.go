@@ -80,7 +80,7 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		// get userId from query params
 		userId, _ := c.GetQuery("userId")
 
-		mailboxRecords, err := h.mailboxService.GetMailboxes(ctx, domain, userId)
+		mailboxRecords, err := h.services.MailboxServiceOld.GetMailboxes(ctx, domain, userId)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -166,7 +166,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		additionalForwardingTo := fmt.Sprintf("bcc@%s.customeros.ai", strings.ToLower(tenant))
 		forwardingTo = append(forwardingTo, additionalForwardingTo)
 
-		err := h.mailboxService.CreateMailbox(ctx, nil, interfaces.CreateMailboxRequest{
+		err := h.services.MailboxServiceOld.CreateMailbox(ctx, nil, interfaces.CreateMailboxRequest{
 			Domain:                domain,
 			Username:              username,
 			Password:              password,
@@ -194,7 +194,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 			}
 		}
 
-		mailbox, err := h.mailboxService.GetByMailbox(ctx, username, domain)
+		mailbox, err := h.services.MailboxServiceOld.GetByMailbox(ctx, username, domain)
 		if err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -245,7 +245,7 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 			return
 		}
 
-		err := h.mailboxService.ConfigureMailbox(ctx, mailboxID)
+		err := h.services.MailboxServiceOld.ConfigureMailbox(ctx, mailboxID)
 		if err != nil {
 			if errors.Is(err, er.ErrMailboxNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "mailbox not found"})
@@ -288,7 +288,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 		username := parts[0]
 		domain := parts[1]
 
-		mailbox, err := h.mailboxService.GetByMailbox(ctx, username, domain)
+		mailbox, err := h.services.MailboxServiceOld.GetByMailbox(ctx, username, domain)
 		if err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
