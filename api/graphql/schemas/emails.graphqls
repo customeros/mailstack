@@ -3,6 +3,42 @@ enum EmailDirection {
   outbound
 }
 
+enum EmailStatus {
+  received
+  queued
+  scheduled
+  sent
+  failed
+  bounced
+}
+
+input EmailInput {
+  mailboxId: String
+  fromAddresss: String!
+  fromName: String
+  senderId: String
+  toAddresses: [String!]!
+  ccAddresses: [String!]
+  bccAddresses: [String!]
+  replyTo: String
+  subject: String!
+  body: EmailBody!
+  attachmentIds: [String!]
+  scheduleFor: DateTime
+  trackClicks: Boolean
+}
+
+input EmailBody {
+  text: String
+  html: String
+}
+
+type EmailResult {
+  emailId: String!
+  status: EmailStatus!
+  error: String
+}
+
 type EmailMessage {
   id: String!
   threadId: String!
@@ -37,4 +73,8 @@ type Attachment {
 extend type Query {
   getEmailsByThread(threadId: String!): [EmailMessage!]!
   getThreadMetadata(threadId: String!): ThreadMetadata!
+}
+
+extend type Mutation {
+  sendEmail(input: EmailInput!): EmailResult!
 }

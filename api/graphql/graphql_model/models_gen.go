@@ -10,10 +10,30 @@ import (
 
 type Attachment struct {
 	ID          string `json:"id"`
-	EmailID     string `json:"emailId"`
 	Filename    string `json:"filename"`
 	ContentType string `json:"contentType"`
 	URL         string `json:"url"`
+}
+
+type EmailBody struct {
+	Text *string `json:"text,omitempty"`
+	HTML *string `json:"html,omitempty"`
+}
+
+type EmailInput struct {
+	MailboxID     *string    `json:"mailboxId,omitempty"`
+	FromAddresss  string     `json:"fromAddresss"`
+	FromName      *string    `json:"fromName,omitempty"`
+	SenderID      *string    `json:"senderId,omitempty"`
+	ToAddresses   []string   `json:"toAddresses"`
+	CcAddresses   []string   `json:"ccAddresses,omitempty"`
+	BccAddresses  []string   `json:"bccAddresses,omitempty"`
+	ReplyTo       *string    `json:"replyTo,omitempty"`
+	Subject       string     `json:"subject"`
+	Body          *EmailBody `json:"body"`
+	AttachmentIds []string   `json:"attachmentIds,omitempty"`
+	ScheduleFor   *string    `json:"scheduleFor,omitempty"`
+	TrackClicks   *bool      `json:"trackClicks,omitempty"`
 }
 
 type EmailMessage struct {
@@ -30,6 +50,12 @@ type EmailMessage struct {
 	Body            string              `json:"body"`
 	AttachmentCount int                 `json:"attachmentCount"`
 	ReceivedAt      time.Time           `json:"receivedAt"`
+}
+
+type EmailResult struct {
+	EmailID string           `json:"emailId"`
+	Status  enum.EmailStatus `json:"status"`
+	Error   *string          `json:"error,omitempty"`
 }
 
 type EmailThread struct {
@@ -87,9 +113,11 @@ type MailboxInput struct {
 	SyncFolders     []*string          `json:"syncFolders,omitempty"`
 }
 
-type Mutation struct{}
+type Mutation struct {
+}
 
-type Query struct{}
+type Query struct {
+}
 
 type SMTPConfig struct {
 	SMTPServer   *string             `json:"smtpServer,omitempty"`
