@@ -6,18 +6,49 @@ package resolver
 
 import (
 	"context"
-	"fmt"
+
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/tracing"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 // SendEmail is the resolver for the sendEmail field.
 func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.EmailInput) (*graphql_model.EmailResult, error) {
-	panic(fmt.Errorf("not implemented: SendEmail - sendEmail"))
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.SendEmail")
+	defer span.Finish()
+	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+
+	tenant := utils.GetTenantFromContext(ctx)
+	if tenant == "" {
+		tracing.TraceErr(span, errors.New("tenant not set"))
+		return nil, api_errors.NewError("tenant not set", api_errors.CodeBadInput, nil)
+	}
+	userId := utils.GetUserIdFromContext(ctx)
+	if userId == "" {
+		tracing.TraceErr(span, errors.New("userId not set"))
+		return nil, api_errors.NewError("usedId not set", api_errors.CodeBadInput, nil)
+	}
+
+	var result graphql_model.EmailResult
+	emailID, emailStatus, err := r.services.EmailService.Send(ctx, mappers.MapGraphEmailInputToGorm(&input), input.AttachmentIds)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		errStr := err.Error()
+		result.Status = enum.EmailStatusFailed
+		result.Error = &errStr
+		return &result, err
+	}
+
+	result.EmailID = emailID
+	result.Status = emailStatus
+
+	return &result, nil
 }
 
 // GetEmailsByThread is the resolver for the getEmailsByThread field.
