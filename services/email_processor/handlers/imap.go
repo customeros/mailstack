@@ -123,19 +123,13 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	if structuredData != nil {
 		email.HasSignature = structuredData.EmailData.HasSignature
 		email.BodyMarkdown = structuredData.EmailData.MessageBody
-	}
 
-	if email.HasSignature {
-		err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.ContactInfo)
-		if err != nil {
-			tracing.TraceErr(span, err)
-		}
-
-		structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
-		err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.CONTACT, structuredData.EmailData.Signature.CompanyInfo)
-		if err != nil {
-			tracing.TraceErr(span, err)
-			return err
+		if structuredData.EmailData.HasSignature {
+			structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
+			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL_SIGNATURE, structuredData.EmailData.Signature)
+			if err != nil {
+				tracing.TraceErr(span, err)
+			}
 		}
 	}
 
@@ -152,7 +146,7 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	}
 
 	// Publish email events
-	return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
+	return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.RAW_EMAIL, dto.EmailReceived{})
 }
 
 func (h *IMAPHandler) attachMessageToThread(ctx context.Context, email *models.Email) error {
