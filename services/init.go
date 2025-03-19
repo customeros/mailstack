@@ -12,6 +12,7 @@ import (
 	"github.com/customeros/mailstack/services/events"
 	"github.com/customeros/mailstack/services/imap"
 	"github.com/customeros/mailstack/services/mailbox"
+	mailboxold "github.com/customeros/mailstack/services/mailbox_old"
 	"github.com/customeros/mailstack/services/namecheap"
 	"github.com/customeros/mailstack/services/opensrs"
 )
@@ -19,13 +20,15 @@ import (
 type Services struct {
 	EventsService      *events.EventsService
 	AIService          interfaces.AIService
+	CloudflareService  interfaces.CloudflareService
 	EmailFilterService interfaces.EmailFilterService
 	IMAPService        interfaces.IMAPService
+	MailboxService     interfaces.MailboxService
 	NamecheapService   interfaces.NamecheapService
 	OpenSrsService     interfaces.OpenSrsService
-	CloudflareService  interfaces.CloudflareService
-	MailboxService     interfaces.MailboxService
-	DomainService      interfaces.DomainService
+
+	MailboxServiceOld interfaces.MailboxServiceOld
+	DomainService     interfaces.DomainService
 }
 
 func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repositories, cfg *config.Config) (*Services, error) {
@@ -47,18 +50,20 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
-	mailboxImpl := mailbox.NewMailboxService(log, repos, opensrsImpl)
+	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
 
 	services := Services{
 		EventsService:      events,
 		AIService:          aiServiceImpl,
+		CloudflareService:  cloudflareImpl,
 		EmailFilterService: email_filter.NewEmailFilterService(),
 		IMAPService:        imap.NewIMAPService(repos),
+		MailboxService:     mailbox.NewMailboxService(repos),
 		NamecheapService:   namecheapImpl,
 		OpenSrsService:     opensrsImpl,
-		CloudflareService:  cloudflareImpl,
-		MailboxService:     mailboxImpl,
-		DomainService:      domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxImpl, opensrsImpl),
+
+		MailboxServiceOld: mailboxOldImpl,
+		DomainService:     domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxOldImpl, opensrsImpl),
 	}
 
 	return &services, nil

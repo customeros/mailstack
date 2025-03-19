@@ -1,14 +1,14 @@
-package mailbox
+package mailboxold
 
 import (
 	"context"
 	"fmt"
 
-	models "github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailwatcher/blscan"
 	"github.com/customeros/mailwatcher/domainage"
 	"github.com/opentracing/opentracing-go"
 
+	models "github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )

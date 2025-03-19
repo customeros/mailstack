@@ -40,6 +40,7 @@ type Config struct {
 }
 
 type ResolverRoot interface {
+	Mutation() MutationResolver
 	Query() QueryResolver
 }
 
@@ -84,10 +85,44 @@ type ComplexityRoot struct {
 		UserID           func(childComplexity int) int
 	}
 
+	ImapConfig struct {
+		ImapPassword func(childComplexity int) int
+		ImapPort     func(childComplexity int) int
+		ImapSecurity func(childComplexity int) int
+		ImapServer   func(childComplexity int) int
+		ImapUsername func(childComplexity int) int
+	}
+
+	Mailbox struct {
+		ConnectionErrorMessage func(childComplexity int) int
+		ConnectionStatus       func(childComplexity int) int
+		EmailAddress           func(childComplexity int) int
+		ID                     func(childComplexity int) int
+		InboundEnabled         func(childComplexity int) int
+		LastConnectionCheck    func(childComplexity int) int
+		OutboundEnabled        func(childComplexity int) int
+		Provider               func(childComplexity int) int
+		ReplyToAddress         func(childComplexity int) int
+		SenderID               func(childComplexity int) int
+	}
+
+	Mutation struct {
+		AddMailbox    func(childComplexity int, input graphql_model.MailboxInput) int
+		UpdateMailbox func(childComplexity int, id string, input graphql_model.MailboxInput) int
+	}
+
 	Query struct {
 		GetEmailsByThread func(childComplexity int, threadID string) int
 		GetThreadMetadata func(childComplexity int, threadID string) int
 		GetThreadsByUser  func(childComplexity int, userID string) int
+	}
+
+	SmtpConfig struct {
+		SMTPPassword func(childComplexity int) int
+		SMTPPort     func(childComplexity int) int
+		SMTPSecurity func(childComplexity int) int
+		SMTPServer   func(childComplexity int) int
+		SMTPUsername func(childComplexity int) int
 	}
 
 	ThreadMetadata struct {
@@ -99,6 +134,10 @@ type ComplexityRoot struct {
 	}
 }
 
+type MutationResolver interface {
+	AddMailbox(ctx context.Context, input graphql_model.MailboxInput) (*graphql_model.Mailbox, error)
+	UpdateMailbox(ctx context.Context, id string, input graphql_model.MailboxInput) (*graphql_model.Mailbox, error)
+}
 type QueryResolver interface {
 	GetEmailsByThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error)
 	GetThreadMetadata(ctx context.Context, threadID string) (*graphql_model.ThreadMetadata, error)
@@ -320,6 +359,135 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.EmailThread.UserID(childComplexity), true
 
+	case "ImapConfig.imapPassword":
+		if e.complexity.ImapConfig.ImapPassword == nil {
+			break
+		}
+
+		return e.complexity.ImapConfig.ImapPassword(childComplexity), true
+
+	case "ImapConfig.imapPort":
+		if e.complexity.ImapConfig.ImapPort == nil {
+			break
+		}
+
+		return e.complexity.ImapConfig.ImapPort(childComplexity), true
+
+	case "ImapConfig.imapSecurity":
+		if e.complexity.ImapConfig.ImapSecurity == nil {
+			break
+		}
+
+		return e.complexity.ImapConfig.ImapSecurity(childComplexity), true
+
+	case "ImapConfig.imapServer":
+		if e.complexity.ImapConfig.ImapServer == nil {
+			break
+		}
+
+		return e.complexity.ImapConfig.ImapServer(childComplexity), true
+
+	case "ImapConfig.imapUsername":
+		if e.complexity.ImapConfig.ImapUsername == nil {
+			break
+		}
+
+		return e.complexity.ImapConfig.ImapUsername(childComplexity), true
+
+	case "Mailbox.connectionErrorMessage":
+		if e.complexity.Mailbox.ConnectionErrorMessage == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.ConnectionErrorMessage(childComplexity), true
+
+	case "Mailbox.connectionStatus":
+		if e.complexity.Mailbox.ConnectionStatus == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.ConnectionStatus(childComplexity), true
+
+	case "Mailbox.emailAddress":
+		if e.complexity.Mailbox.EmailAddress == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.EmailAddress(childComplexity), true
+
+	case "Mailbox.id":
+		if e.complexity.Mailbox.ID == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.ID(childComplexity), true
+
+	case "Mailbox.inboundEnabled":
+		if e.complexity.Mailbox.InboundEnabled == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.InboundEnabled(childComplexity), true
+
+	case "Mailbox.lastConnectionCheck":
+		if e.complexity.Mailbox.LastConnectionCheck == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.LastConnectionCheck(childComplexity), true
+
+	case "Mailbox.outboundEnabled":
+		if e.complexity.Mailbox.OutboundEnabled == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.OutboundEnabled(childComplexity), true
+
+	case "Mailbox.provider":
+		if e.complexity.Mailbox.Provider == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.Provider(childComplexity), true
+
+	case "Mailbox.replyToAddress":
+		if e.complexity.Mailbox.ReplyToAddress == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.ReplyToAddress(childComplexity), true
+
+	case "Mailbox.senderId":
+		if e.complexity.Mailbox.SenderID == nil {
+			break
+		}
+
+		return e.complexity.Mailbox.SenderID(childComplexity), true
+
+	case "Mutation.addMailbox":
+		if e.complexity.Mutation.AddMailbox == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_addMailbox_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AddMailbox(childComplexity, args["input"].(graphql_model.MailboxInput)), true
+
+	case "Mutation.updateMailbox":
+		if e.complexity.Mutation.UpdateMailbox == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateMailbox_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateMailbox(childComplexity, args["id"].(string), args["input"].(graphql_model.MailboxInput)), true
+
 	case "Query.getEmailsByThread":
 		if e.complexity.Query.GetEmailsByThread == nil {
 			break
@@ -355,6 +523,41 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.GetThreadsByUser(childComplexity, args["userId"].(string)), true
+
+	case "SmtpConfig.smtpPassword":
+		if e.complexity.SmtpConfig.SMTPPassword == nil {
+			break
+		}
+
+		return e.complexity.SmtpConfig.SMTPPassword(childComplexity), true
+
+	case "SmtpConfig.smtpPort":
+		if e.complexity.SmtpConfig.SMTPPort == nil {
+			break
+		}
+
+		return e.complexity.SmtpConfig.SMTPPort(childComplexity), true
+
+	case "SmtpConfig.smtpSecurity":
+		if e.complexity.SmtpConfig.SMTPSecurity == nil {
+			break
+		}
+
+		return e.complexity.SmtpConfig.SMTPSecurity(childComplexity), true
+
+	case "SmtpConfig.smtpServer":
+		if e.complexity.SmtpConfig.SMTPServer == nil {
+			break
+		}
+
+		return e.complexity.SmtpConfig.SMTPServer(childComplexity), true
+
+	case "SmtpConfig.smtpUsername":
+		if e.complexity.SmtpConfig.SMTPUsername == nil {
+			break
+		}
+
+		return e.complexity.SmtpConfig.SMTPUsername(childComplexity), true
 
 	case "ThreadMetadata.attachments":
 		if e.complexity.ThreadMetadata.Attachments == nil {
@@ -398,7 +601,11 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
-	inputUnmarshalMap := graphql.BuildUnmarshalerMap()
+	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputImapConfigInput,
+		ec.unmarshalInputMailboxInput,
+		ec.unmarshalInputSmtpConfigInput,
+	)
 	first := true
 
 	switch opCtx.Operation.Operation {
@@ -431,6 +638,21 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 			}
 
 			return &response
+		}
+	case ast.Mutation:
+		return func(ctx context.Context) *graphql.Response {
+			if !first {
+				return nil
+			}
+			first = false
+			ctx = graphql.WithUnmarshalerMap(ctx, inputUnmarshalMap)
+			data := ec._Mutation(ctx, opCtx.Operation.SelectionSet)
+			var buf bytes.Buffer
+			data.MarshalGQL(&buf)
+
+			return &graphql.Response{
+				Data: buf.Bytes(),
+			}
 		}
 
 	default:
@@ -483,6 +705,7 @@ var sources = []*ast.Source{
 	{Name: "../schemas/_base.graphqls", Input: `scalar Time
 
 type Query
+type Mutation
 `, BuiltIn: false},
 	{Name: "../schemas/emails.graphqls", Input: `enum EmailDirection {
   inbound
@@ -526,6 +749,89 @@ extend type Query {
   getThreadMetadata(threadId: String!): ThreadMetadata!
 }
 `, BuiltIn: false},
+	{Name: "../schemas/mailboxes.graphqls", Input: `enum MailboxProvider {
+  google_workspace
+  outlook
+  mailstack
+  generic
+}
+
+enum EmailSecurity {
+  none
+  ssl
+  tls
+}
+
+enum MailboxConnectionStatus {
+  active
+  not_active
+}
+
+## Input types
+input MailboxInput {
+  id: String
+  provider: MailboxProvider! ## Not updatable
+  emailAddress: String! ## Not updatable
+  senderId: String
+  inboundEnabled: Boolean
+  outboundEnabled: Boolean
+  imapConfig: ImapConfigInput
+  smtpConfig: SmtpConfigInput
+  replyToAddress: String
+  syncFolders: [String]
+}
+
+input ImapConfigInput {
+  imapServer: String
+  imapPort: Int
+  imapUsername: String
+  imapPassword: String
+  imapSecurity: EmailSecurity
+}
+
+input SmtpConfigInput {
+  smtpServer: String
+  smtpPort: Int
+  smtpUsername: String
+  smtpPassword: String
+  smtpSecurity: EmailSecurity
+}
+
+## Output types
+type Mailbox {
+  id: String!
+  provider: MailboxProvider!
+  emailAddress: String!
+  senderId: String
+  inboundEnabled: Boolean!
+  outboundEnabled: Boolean!
+  replyToAddress: String
+  connectionStatus: MailboxConnectionStatus!
+  lastConnectionCheck: Time!
+  connectionErrorMessage: String
+}
+
+type ImapConfig {
+  imapServer: String
+  imapPort: Int
+  imapUsername: String
+  imapPassword: String
+  imapSecurity: EmailSecurity
+}
+
+type SmtpConfig {
+  smtpServer: String
+  smtpPort: Int
+  smtpUsername: String
+  smtpPassword: String
+  smtpSecurity: EmailSecurity
+}
+
+extend type Mutation {
+  addMailbox(input: MailboxInput!): Mailbox!
+  updateMailbox(id: String!, input: MailboxInput!): Mailbox!
+}
+`, BuiltIn: false},
 	{Name: "../schemas/threads.graphqls", Input: `type EmailThread {
   id: String!
   userId: String!
@@ -549,6 +855,85 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Mutation_addMailbox_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_addMailbox_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_addMailbox_argsInput(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (graphql_model.MailboxInput, error) {
+	if _, ok := rawArgs["input"]; !ok {
+		var zeroVal graphql_model.MailboxInput
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+	if tmp, ok := rawArgs["input"]; ok {
+		return ec.unmarshalNMailboxInput2githubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailboxInput(ctx, tmp)
+	}
+
+	var zeroVal graphql_model.MailboxInput
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateMailbox_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_updateMailbox_argsID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	arg1, err := ec.field_Mutation_updateMailbox_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_updateMailbox_argsID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	if _, ok := rawArgs["id"]; !ok {
+		var zeroVal string
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+	if tmp, ok := rawArgs["id"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateMailbox_argsInput(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (graphql_model.MailboxInput, error) {
+	if _, ok := rawArgs["input"]; !ok {
+		var zeroVal graphql_model.MailboxInput
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+	if tmp, ok := rawArgs["input"]; ok {
+		return ec.unmarshalNMailboxInput2githubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailboxInput(ctx, tmp)
+	}
+
+	var zeroVal graphql_model.MailboxInput
+	return zeroVal, nil
+}
 
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -2005,6 +2390,796 @@ func (ec *executionContext) fieldContext_EmailThread_lastMessageAt(_ context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _ImapConfig_imapServer(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ImapConfig_imapServer(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ImapServer, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ImapConfig_imapServer(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ImapConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ImapConfig_imapPort(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ImapConfig_imapPort(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ImapPort, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ImapConfig_imapPort(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ImapConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ImapConfig_imapUsername(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ImapConfig_imapUsername(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ImapUsername, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ImapConfig_imapUsername(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ImapConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ImapConfig_imapPassword(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ImapConfig_imapPassword(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ImapPassword, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ImapConfig_imapPassword(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ImapConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ImapConfig_imapSecurity(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ImapConfig_imapSecurity(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ImapSecurity, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*enum.EmailSecurity)
+	fc.Result = res
+	return ec.marshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ImapConfig_imapSecurity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ImapConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EmailSecurity does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_id(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_provider(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_provider(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Provider, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(enum.EmailProvider)
+	fc.Result = res
+	return ec.marshalNMailboxProvider2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailProvider(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_provider(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type MailboxProvider does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_emailAddress(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_emailAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EmailAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_emailAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_senderId(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_senderId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SenderID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_senderId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_inboundEnabled(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_inboundEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InboundEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_inboundEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_outboundEnabled(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_outboundEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OutboundEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_outboundEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_replyToAddress(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_replyToAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReplyToAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_replyToAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_connectionStatus(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_connectionStatus(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ConnectionStatus, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(enum.ConnectionStatus)
+	fc.Result = res
+	return ec.marshalNMailboxConnectionStatus2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐConnectionStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_connectionStatus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type MailboxConnectionStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_lastConnectionCheck(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_lastConnectionCheck(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LastConnectionCheck, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(time.Time)
+	fc.Result = res
+	return ec.marshalNTime2timeᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_lastConnectionCheck(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mailbox_connectionErrorMessage(ctx context.Context, field graphql.CollectedField, obj *graphql_model.Mailbox) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mailbox_connectionErrorMessage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ConnectionErrorMessage, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mailbox_connectionErrorMessage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mailbox",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_addMailbox(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_addMailbox(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AddMailbox(rctx, fc.Args["input"].(graphql_model.MailboxInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*graphql_model.Mailbox)
+	fc.Result = res
+	return ec.marshalNMailbox2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailbox(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_addMailbox(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Mailbox_id(ctx, field)
+			case "provider":
+				return ec.fieldContext_Mailbox_provider(ctx, field)
+			case "emailAddress":
+				return ec.fieldContext_Mailbox_emailAddress(ctx, field)
+			case "senderId":
+				return ec.fieldContext_Mailbox_senderId(ctx, field)
+			case "inboundEnabled":
+				return ec.fieldContext_Mailbox_inboundEnabled(ctx, field)
+			case "outboundEnabled":
+				return ec.fieldContext_Mailbox_outboundEnabled(ctx, field)
+			case "replyToAddress":
+				return ec.fieldContext_Mailbox_replyToAddress(ctx, field)
+			case "connectionStatus":
+				return ec.fieldContext_Mailbox_connectionStatus(ctx, field)
+			case "lastConnectionCheck":
+				return ec.fieldContext_Mailbox_lastConnectionCheck(ctx, field)
+			case "connectionErrorMessage":
+				return ec.fieldContext_Mailbox_connectionErrorMessage(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Mailbox", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_addMailbox_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateMailbox(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateMailbox(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateMailbox(rctx, fc.Args["id"].(string), fc.Args["input"].(graphql_model.MailboxInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*graphql_model.Mailbox)
+	fc.Result = res
+	return ec.marshalNMailbox2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailbox(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateMailbox(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Mailbox_id(ctx, field)
+			case "provider":
+				return ec.fieldContext_Mailbox_provider(ctx, field)
+			case "emailAddress":
+				return ec.fieldContext_Mailbox_emailAddress(ctx, field)
+			case "senderId":
+				return ec.fieldContext_Mailbox_senderId(ctx, field)
+			case "inboundEnabled":
+				return ec.fieldContext_Mailbox_inboundEnabled(ctx, field)
+			case "outboundEnabled":
+				return ec.fieldContext_Mailbox_outboundEnabled(ctx, field)
+			case "replyToAddress":
+				return ec.fieldContext_Mailbox_replyToAddress(ctx, field)
+			case "connectionStatus":
+				return ec.fieldContext_Mailbox_connectionStatus(ctx, field)
+			case "lastConnectionCheck":
+				return ec.fieldContext_Mailbox_lastConnectionCheck(ctx, field)
+			case "connectionErrorMessage":
+				return ec.fieldContext_Mailbox_connectionErrorMessage(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Mailbox", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateMailbox_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_getEmailsByThread(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_getEmailsByThread(ctx, field)
 	if err != nil {
@@ -2358,6 +3533,211 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SmtpConfig_smtpServer(ctx context.Context, field graphql.CollectedField, obj *graphql_model.SMTPConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SmtpConfig_smtpServer(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SMTPServer, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SmtpConfig_smtpServer(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SmtpConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SmtpConfig_smtpPort(ctx context.Context, field graphql.CollectedField, obj *graphql_model.SMTPConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SmtpConfig_smtpPort(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SMTPPort, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SmtpConfig_smtpPort(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SmtpConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SmtpConfig_smtpUsername(ctx context.Context, field graphql.CollectedField, obj *graphql_model.SMTPConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SmtpConfig_smtpUsername(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SMTPUsername, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SmtpConfig_smtpUsername(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SmtpConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SmtpConfig_smtpPassword(ctx context.Context, field graphql.CollectedField, obj *graphql_model.SMTPConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SmtpConfig_smtpPassword(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SMTPPassword, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SmtpConfig_smtpPassword(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SmtpConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SmtpConfig_smtpSecurity(ctx context.Context, field graphql.CollectedField, obj *graphql_model.SMTPConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SmtpConfig_smtpSecurity(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SMTPSecurity, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*enum.EmailSecurity)
+	fc.Result = res
+	return ec.marshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SmtpConfig_smtpSecurity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SmtpConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EmailSecurity does not have child fields")
 		},
 	}
 	return fc, nil
@@ -4543,6 +5923,206 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputImapConfigInput(ctx context.Context, obj any) (graphql_model.ImapConfigInput, error) {
+	var it graphql_model.ImapConfigInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"imapServer", "imapPort", "imapUsername", "imapPassword", "imapSecurity"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "imapServer":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapServer"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapServer = data
+		case "imapPort":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapPort"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapPort = data
+		case "imapUsername":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapUsername"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapUsername = data
+		case "imapPassword":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapPassword"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapPassword = data
+		case "imapSecurity":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapSecurity"))
+			data, err := ec.unmarshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapSecurity = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMailboxInput(ctx context.Context, obj any) (graphql_model.MailboxInput, error) {
+	var it graphql_model.MailboxInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"id", "provider", "emailAddress", "senderId", "inboundEnabled", "outboundEnabled", "imapConfig", "smtpConfig", "replyToAddress", "syncFolders"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ID = data
+		case "provider":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("provider"))
+			data, err := ec.unmarshalNMailboxProvider2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailProvider(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Provider = data
+		case "emailAddress":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("emailAddress"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EmailAddress = data
+		case "senderId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("senderId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SenderID = data
+		case "inboundEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("inboundEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.InboundEnabled = data
+		case "outboundEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("outboundEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OutboundEnabled = data
+		case "imapConfig":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("imapConfig"))
+			data, err := ec.unmarshalOImapConfigInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐImapConfigInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImapConfig = data
+		case "smtpConfig":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpConfig"))
+			data, err := ec.unmarshalOSmtpConfigInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐSMTPConfigInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPConfig = data
+		case "replyToAddress":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("replyToAddress"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ReplyToAddress = data
+		case "syncFolders":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("syncFolders"))
+			data, err := ec.unmarshalOString2ᚕᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SyncFolders = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputSmtpConfigInput(ctx context.Context, obj any) (graphql_model.SMTPConfigInput, error) {
+	var it graphql_model.SMTPConfigInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"smtpServer", "smtpPort", "smtpUsername", "smtpPassword", "smtpSecurity"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "smtpServer":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpServer"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPServer = data
+		case "smtpPort":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpPort"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPPort = data
+		case "smtpUsername":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpUsername"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPUsername = data
+		case "smtpPassword":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpPassword"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPPassword = data
+		case "smtpSecurity":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("smtpSecurity"))
+			data, err := ec.unmarshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SMTPSecurity = data
+		}
+	}
+
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
@@ -4784,6 +6364,181 @@ func (ec *executionContext) _EmailThread(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var imapConfigImplementors = []string{"ImapConfig"}
+
+func (ec *executionContext) _ImapConfig(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.ImapConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, imapConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ImapConfig")
+		case "imapServer":
+			out.Values[i] = ec._ImapConfig_imapServer(ctx, field, obj)
+		case "imapPort":
+			out.Values[i] = ec._ImapConfig_imapPort(ctx, field, obj)
+		case "imapUsername":
+			out.Values[i] = ec._ImapConfig_imapUsername(ctx, field, obj)
+		case "imapPassword":
+			out.Values[i] = ec._ImapConfig_imapPassword(ctx, field, obj)
+		case "imapSecurity":
+			out.Values[i] = ec._ImapConfig_imapSecurity(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mailboxImplementors = []string{"Mailbox"}
+
+func (ec *executionContext) _Mailbox(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.Mailbox) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mailboxImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mailbox")
+		case "id":
+			out.Values[i] = ec._Mailbox_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "provider":
+			out.Values[i] = ec._Mailbox_provider(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "emailAddress":
+			out.Values[i] = ec._Mailbox_emailAddress(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "senderId":
+			out.Values[i] = ec._Mailbox_senderId(ctx, field, obj)
+		case "inboundEnabled":
+			out.Values[i] = ec._Mailbox_inboundEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "outboundEnabled":
+			out.Values[i] = ec._Mailbox_outboundEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "replyToAddress":
+			out.Values[i] = ec._Mailbox_replyToAddress(ctx, field, obj)
+		case "connectionStatus":
+			out.Values[i] = ec._Mailbox_connectionStatus(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastConnectionCheck":
+			out.Values[i] = ec._Mailbox_lastConnectionCheck(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "connectionErrorMessage":
+			out.Values[i] = ec._Mailbox_connectionErrorMessage(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mutationImplementors = []string{"Mutation"}
+
+func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mutationImplementors)
+	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
+		Object: "Mutation",
+	})
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		innerCtx := graphql.WithRootFieldContext(ctx, &graphql.RootFieldContext{
+			Object: field.Name,
+			Field:  field,
+		})
+
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mutation")
+		case "addMailbox":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_addMailbox(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateMailbox":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateMailbox(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -4877,6 +6632,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var smtpConfigImplementors = []string{"SmtpConfig"}
+
+func (ec *executionContext) _SmtpConfig(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.SMTPConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, smtpConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SmtpConfig")
+		case "smtpServer":
+			out.Values[i] = ec._SmtpConfig_smtpServer(ctx, field, obj)
+		case "smtpPort":
+			out.Values[i] = ec._SmtpConfig_smtpPort(ctx, field, obj)
+		case "smtpUsername":
+			out.Values[i] = ec._SmtpConfig_smtpUsername(ctx, field, obj)
+		case "smtpPassword":
+			out.Values[i] = ec._SmtpConfig_smtpPassword(ctx, field, obj)
+		case "smtpSecurity":
+			out.Values[i] = ec._SmtpConfig_smtpSecurity(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -5445,6 +7244,57 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 	return res
 }
 
+func (ec *executionContext) marshalNMailbox2githubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailbox(ctx context.Context, sel ast.SelectionSet, v graphql_model.Mailbox) graphql.Marshaler {
+	return ec._Mailbox(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMailbox2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailbox(ctx context.Context, sel ast.SelectionSet, v *graphql_model.Mailbox) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Mailbox(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMailboxConnectionStatus2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐConnectionStatus(ctx context.Context, v any) (enum.ConnectionStatus, error) {
+	tmp, err := graphql.UnmarshalString(v)
+	res := enum.ConnectionStatus(tmp)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMailboxConnectionStatus2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐConnectionStatus(ctx context.Context, sel ast.SelectionSet, v enum.ConnectionStatus) graphql.Marshaler {
+	res := graphql.MarshalString(string(v))
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
+func (ec *executionContext) unmarshalNMailboxInput2githubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐMailboxInput(ctx context.Context, v any) (graphql_model.MailboxInput, error) {
+	res, err := ec.unmarshalInputMailboxInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNMailboxProvider2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailProvider(ctx context.Context, v any) (enum.EmailProvider, error) {
+	tmp, err := graphql.UnmarshalString(v)
+	res := enum.EmailProvider(tmp)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMailboxProvider2githubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailProvider(ctx context.Context, sel ast.SelectionSet, v enum.EmailProvider) graphql.Marshaler {
+	res := graphql.MarshalString(string(v))
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalString(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -5844,6 +7694,55 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return res
 }
 
+func (ec *executionContext) unmarshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx context.Context, v any) (*enum.EmailSecurity, error) {
+	if v == nil {
+		return nil, nil
+	}
+	tmp, err := graphql.UnmarshalString(v)
+	res := enum.EmailSecurity(tmp)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOEmailSecurity2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋinternalᚋenumᚐEmailSecurity(ctx context.Context, sel ast.SelectionSet, v *enum.EmailSecurity) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	res := graphql.MarshalString(string(*v))
+	return res
+}
+
+func (ec *executionContext) unmarshalOImapConfigInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐImapConfigInput(ctx context.Context, v any) (*graphql_model.ImapConfigInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputImapConfigInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalOInt2ᚖint(ctx context.Context, v any) (*int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalInt(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.SelectionSet, v *int) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	res := graphql.MarshalInt(*v)
+	return res
+}
+
+func (ec *executionContext) unmarshalOSmtpConfigInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐSMTPConfigInput(ctx context.Context, v any) (*graphql_model.SMTPConfigInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputSmtpConfigInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalOString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
 	if v == nil {
 		return nil, nil
@@ -5875,6 +7774,36 @@ func (ec *executionContext) marshalOString2ᚕstringᚄ(ctx context.Context, sel
 		if e == graphql.Null {
 			return graphql.Null
 		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) unmarshalOString2ᚕᚖstring(ctx context.Context, v any) ([]*string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*string, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalOString2ᚖstring(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOString2ᚕᚖstring(ctx context.Context, sel ast.SelectionSet, v []*string) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalOString2ᚖstring(ctx, sel, v[i])
 	}
 
 	return ret
