@@ -6,10 +6,8 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
-
-	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
 
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
@@ -17,6 +15,7 @@ import (
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	mbox "github.com/customeros/mailstack/services/mailbox"
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // AddMailbox is the resolver for the addMailbox field.

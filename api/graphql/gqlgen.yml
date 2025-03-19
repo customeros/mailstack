@@ -41,3 +41,5 @@ models:
     model: github.com/customeros/mailstack/internal/enum.EmailSecurity
   MailboxConnectionStatus:
     model: github.com/customeros/mailstack/internal/enum.ConnectionStatus
+  EmailStatus:
+    model: github.com/customeros/mailstack/internal/enum.EmailStatus

@@ -6,6 +6,7 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
@@ -13,6 +14,11 @@ import (
 	"github.com/customeros/mailstack/internal/tracing"
 	opentracing "github.com/opentracing/opentracing-go"
 )
+
+// SendEmail is the resolver for the sendEmail field.
+func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.EmailInput) (*graphql_model.EmailResult, error) {
+	panic(fmt.Errorf("not implemented: SendEmail - sendEmail"))
+}
 
 // GetEmailsByThread is the resolver for the getEmailsByThread field.
 func (r *queryResolver) GetEmailsByThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error) {
