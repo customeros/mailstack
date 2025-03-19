@@ -13,7 +13,7 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (s *mailboxService) ReputationScore(ctx context.Context, domain, tenant string) (int, error) {
+func (s *mailboxServiceOld) ReputationScore(ctx context.Context, domain, tenant string) (int, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ReputationScore")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -42,7 +42,7 @@ func (s *mailboxService) ReputationScore(ctx context.Context, domain, tenant str
 	return score, err
 }
 
-func (s *mailboxService) domainAgePenalty(span opentracing.Span, domain string) int {
+func (s *mailboxServiceOld) domainAgePenalty(span opentracing.Span, domain string) int {
 	domainDates, err := domainage.GetDomainDates(domain)
 	if err != nil {
 		tracing.TraceErr(span, fmt.Errorf("cannot determine domain dates: %v", err))
@@ -73,7 +73,7 @@ func (s *mailboxService) domainAgePenalty(span opentracing.Span, domain string) 
 	}
 }
 
-func (s *mailboxService) blacklistPenaltyPercent(domain string) int {
+func (s *mailboxServiceOld) blacklistPenaltyPercent(domain string) int {
 	blacklists := blscan.ScanBlacklists(domain, "domain")
 
 	pct := (blacklists.MajorLists * 80) + (blacklists.MinorLists * 10) + (blacklists.SpamTrapLists * 20)

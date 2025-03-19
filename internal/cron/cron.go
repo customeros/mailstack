@@ -7,6 +7,13 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v6"
+	"github.com/opentracing/opentracing-go/log"
+	cronv3 "github.com/robfig/cron/v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/config"
 	cron_config "github.com/customeros/mailstack/internal/cron/config"
@@ -14,12 +21,6 @@ import (
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
-	"github.com/opentracing/opentracing-go/log"
-	cronv3 "github.com/robfig/cron/v3"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 )
 
 // CONSTANTS
@@ -57,11 +58,11 @@ type CronManager struct {
 	stopCh   chan struct{}
 	jobIDs   map[string]cronv3.EntryID
 	domain   interfaces.DomainService
-	mailbox  interfaces.MailboxService
+	mailbox  interfaces.MailboxServiceOld
 	postgres *repository.Repositories
 }
 
-func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxService, postgres *repository.Repositories) *CronManager {
+func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxServiceOld, postgres *repository.Repositories) *CronManager {
 	return &CronManager{
 		cfg:      cfg,
 		log:      log,

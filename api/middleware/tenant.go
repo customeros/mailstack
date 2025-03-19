@@ -3,8 +3,9 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/customeros/mailstack/internal/utils"
 	"github.com/gin-gonic/gin"
+
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 func TenantValidationMiddleware() gin.HandlerFunc {
@@ -24,7 +25,7 @@ func TenantValidationMiddleware() gin.HandlerFunc {
 		}
 
 		// Store in gin context for later use
-		c.Set("tenant", tenant)
+		c.Set("Tenant", tenant)
 		c.Next()
 	}
 }

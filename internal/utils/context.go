@@ -23,12 +23,24 @@ var TenantHeaders = []string{
 	"TENANTNAME",
 }
 
+var UserIdHeaders = []string{
+	"X-USER-ID",
+	"X-USERID",
+	"X-User-Id",
+	"X-UserId",
+	"X-User-ID",
+	"X-Userid",
+	"x-user-id",
+	"User-ID",
+	"UserId",
+	"Userid",
+	"USERID",
+}
+
 type CustomContext struct {
-	AppSource  string
-	Tenant     string
-	AuthUserId string
-	UserId     string
-	UserEmail  string
+	Tenant    string
+	UserId    string
+	UserEmail string
 }
 
 var customContextKey = "CUSTOM_CONTEXT"
@@ -44,22 +56,11 @@ func WithCustomContext(ctx context.Context, customContext *CustomContext) contex
 	return context.WithValue(ctx, customContextKey, customContext)
 }
 
-func WithCustomContextFromGinRequest(c *gin.Context, appSource string) context.Context {
-	// Get tenant from headers with case-insensitive checks
-	tenant := ""
-	for _, header := range TenantHeaders {
-		if value := c.GetHeader(header); value != "" {
-			tenant = value
-			break
-		}
-	}
-
+func WithCustomContextFromGinRequest(c *gin.Context) context.Context {
 	customContext := &CustomContext{
-		AppSource:  appSource,
-		AuthUserId: c.GetString("AuthenticatedUserId"),
-		Tenant:     tenant,
-		UserId:     c.GetString("UserId"),
-		UserEmail:  c.GetString("UserEmail"),
+		Tenant:    c.GetString("Tenant"),
+		UserId:    c.GetString("UserId"),
+		UserEmail: c.GetString("UserEmail"),
 	}
 	return WithCustomContext(c.Request.Context(), customContext)
 }
@@ -72,16 +73,8 @@ func GetContext(ctx context.Context) *CustomContext {
 	return customContext
 }
 
-func GetAppSourceFromContext(ctx context.Context) string {
-	return GetContext(ctx).AppSource
-}
-
 func GetTenantFromContext(ctx context.Context) string {
 	return GetContext(ctx).Tenant
-}
-
-func GetAuthUserIdFromContext(ctx context.Context) string {
-	return GetContext(ctx).AuthUserId
 }
 
 func GetUserIdFromContext(ctx context.Context) string {
@@ -94,7 +87,6 @@ func GetUserEmailFromContext(ctx context.Context) string {
 
 func SetAppSourceInContext(ctx context.Context, appSource string) context.Context {
 	customContext := GetContext(ctx)
-	customContext.AppSource = appSource
 	return WithCustomContext(ctx, customContext)
 }
 

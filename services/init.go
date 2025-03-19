@@ -51,14 +51,15 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
 	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
+	imapImpl := imap.NewIMAPService(repos)
 
 	services := Services{
 		EventsService:      events,
 		AIService:          aiServiceImpl,
 		CloudflareService:  cloudflareImpl,
 		EmailFilterService: email_filter.NewEmailFilterService(),
-		IMAPService:        imap.NewIMAPService(repos),
-		MailboxService:     mailbox.NewMailboxService(repos),
+		IMAPService:        imapImpl,
+		MailboxService:     mailbox.NewMailboxService(repos, imapImpl),
 		NamecheapService:   namecheapImpl,
 		OpenSrsService:     opensrsImpl,
 

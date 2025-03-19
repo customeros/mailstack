@@ -48,15 +48,21 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	})
 
 	// GraphQL API
-	graphql := r.Group("/")
-	graphql.Use(apiKeyMiddleware)
-	graphql.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
-	graphql.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
-	{
-		graphqlHandler, playgroundHandler := SetupGraphQLServer(repos)
+	graphqlHandler, playgroundHandler := SetupGraphQLServer(repos, s)
 
-		graphql.GET("/", playgroundHandler)    // playground
-		graphql.POST("/query", graphqlHandler) // query
+	graphql := r.Group("/")
+	{
+		graphql.GET("/", playgroundHandler) // playground
+	}
+
+	query := r.Group("/query")
+	query.Use(apiKeyMiddleware)
+	query.Use(middleware.TenantValidationMiddleware())         // Tenant header validation
+	query.Use(middleware.UserIdMiddleware())                   // UserId header parsing
+	query.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
+	query.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
+	{
+		query.POST("", graphqlHandler) // query
 	}
 
 	// Rest API
@@ -132,9 +138,9 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 }
 
 // SetupGraphQLServer configures and returns the GraphQL server and playground handlers
-func SetupGraphQLServer(repos *repository.Repositories) (graphqlHandler, playgroundHandler gin.HandlerFunc) {
+func SetupGraphQLServer(repos *repository.Repositories, services *services.Services) (graphqlHandler, playgroundHandler gin.HandlerFunc) {
 	// Create the resolver with dependencies
-	resolver := resolver.NewResolver(repos)
+	resolver := resolver.NewResolver(repos, services)
 
 	// Create a new schema with your resolvers
 	schema := generated.NewExecutableSchema(generated.Config{

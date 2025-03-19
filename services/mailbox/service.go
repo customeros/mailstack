@@ -9,7 +9,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
@@ -19,15 +18,17 @@ import (
 
 type mailboxService struct {
 	repositories *repository.Repositories
+	imapService  interfaces.IMAPService
 }
 
-func NewMailboxService(repos *repository.Repositories) interfaces.MailboxService {
+func NewMailboxService(repos *repository.Repositories, imap interfaces.IMAPService) interfaces.MailboxService {
 	return &mailboxService{
 		repositories: repos,
+		imapService:  imap,
 	}
 }
 
-func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *graphql_model.MailboxInput) (*models.Mailbox, error) {
+func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mailbox) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.CreateMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -35,18 +36,45 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *graphql_mod
 	// validate input
 	err := validateMailboxInput(mailbox)
 	if err != nil {
+		tracing.TraceErr(span, err)
 		return nil, err
 	}
 
 	// validate mailbox does not exist
+	mboxCheck, err := s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, mailbox.EmailAddress)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	if mboxCheck != nil {
+		err = errors.New("mailbox already exists")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
 
 	// save mailbox
+	mailboxId, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	if mailboxId == "" {
+		err = errors.New("unable to create mailbox")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	mailbox.ID = mailboxId
 
 	// determine if we should sync
-	return nil, nil
+	if mailbox.Provider == enum.EmailMailstack && mailbox.InboundEnabled {
+		s.imapService.AddMailbox(ctx, mailbox)
+	}
+
+	return mailbox, nil
 }
 
-func validateMailboxInput(input *graphql_model.MailboxInput) error {
+func validateMailboxInput(input *models.Mailbox) error {
 	var validationErrors []string
 
 	if input == nil {
@@ -69,30 +97,9 @@ func validateMailboxInput(input *graphql_model.MailboxInput) error {
 	}
 	input.EmailAddress = validation.CleanEmail
 
-	// Validate IMAP configuration if provided
-	if input.ImapConfig != nil {
-		if input.ImapConfig.ImapUsername == nil {
-			validationErrors = append(validationErrors, "IMAP username is required when IMAP config is provided")
-		}
-		if input.ImapConfig.ImapPassword == nil {
-			validationErrors = append(validationErrors, "IMAP password is required when IMAP config is provided")
-		}
-	}
-
-	// Validate SMTP configuration if provided
-	if input.SMTPConfig != nil {
-		if input.SMTPConfig.SMTPUsername == nil {
-			validationErrors = append(validationErrors, "SMTP username is required when SMTP config is provided")
-		}
-		if input.SMTPConfig.SMTPPassword == nil {
-			validationErrors = append(validationErrors, "SMTP password is required when SMTP config is provided")
-		}
-	}
-
 	// Set default values for providers
 	switch input.Provider {
 	case enum.EmailMailstack:
-		setTrue := true
 		inbox := "INBOX"
 		sent := "Sent"
 		spam := "Spam"
@@ -100,14 +107,14 @@ func validateMailboxInput(input *graphql_model.MailboxInput) error {
 		imapPort := 993
 		smtpPort := 587
 		security := enum.EmailSecurityTLS
-		input.InboundEnabled = &setTrue
-		input.SyncFolders = []*string{&inbox, &sent, &spam}
-		input.SMTPConfig.SMTPServer = &server
-		input.ImapConfig.ImapServer = &server
-		input.SMTPConfig.SMTPPort = &smtpPort
-		input.ImapConfig.ImapPort = &imapPort
-		input.SMTPConfig.SMTPSecurity = &security
-		input.ImapConfig.ImapSecurity = &security
+		input.InboundEnabled = true
+		input.SyncFolders = []string{inbox, sent, spam}
+		input.SmtpServer = server
+		input.ImapServer = server
+		input.SmtpPort = smtpPort
+		input.ImapPort = imapPort
+		input.SmtpSecurity = security
+		input.ImapSecurity = security
 
 	case enum.EmailGeneric:
 		if input.SyncFolders == nil || len(input.SyncFolders) == 0 {
@@ -116,9 +123,40 @@ func validateMailboxInput(input *graphql_model.MailboxInput) error {
 		// TODO validate full imap/smtp inputs
 	}
 
-	if input.SenderID != nil {
-		setTrue := true
-		input.OutboundEnabled = &setTrue
+	// Validate IMAP configuration if provided
+	if input.ImapPassword != "" {
+		if input.ImapUsername == "" {
+			validationErrors = append(validationErrors, "IMAP username is required when IMAP config is provided")
+		}
+		if input.ImapServer == "" {
+			validationErrors = append(validationErrors, "IMAP server is required when IMAP config is provided")
+		}
+		if input.ImapUsername == "" {
+			validationErrors = append(validationErrors, "IMAP username is required when IMAP config is provided")
+		}
+		if input.ImapSecurity == "" {
+			validationErrors = append(validationErrors, "IMAP security is required when IMAP config is provided")
+		}
+	}
+
+	// Validate SMTP configuration if provided
+	if input.SmtpPassword != "" {
+		if input.SmtpUsername == "" {
+			validationErrors = append(validationErrors, "SMTP username is required when SMTP config is provided")
+		}
+		if input.SmtpServer == "" {
+			validationErrors = append(validationErrors, "SMTP server is required when SMTP config is provided")
+		}
+		if input.SmtpUsername == "" {
+			validationErrors = append(validationErrors, "SMTP username is required when SMTP config is provided")
+		}
+		if input.SmtpSecurity == "" {
+			validationErrors = append(validationErrors, "SMTP security is required when SMTP config is provided")
+		}
+	}
+
+	if input.SenderID != "" {
+		input.OutboundEnabled = true
 	}
 
 	// Check if there are any validation errors
