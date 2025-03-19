@@ -8,6 +8,7 @@ const (
 	CodeBadInput     = "BAD_USER_INPUT"
 	CodeInternal     = "INTERNAL_ERROR"
 	CodeUnauthorized = "UNAUTHORIZED"
+	CodeExists       = "ALREADY_EXISTS"
 )
 
 // NewError creates a standardized GraphQL error

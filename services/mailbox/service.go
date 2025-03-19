@@ -8,12 +8,14 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type mailboxService struct {
@@ -28,10 +30,28 @@ func NewMailboxService(repos *repository.Repositories, imap interfaces.IMAPServi
 	}
 }
 
+var ErrMailboxExists = errors.New("Mailbox already exists")
+
 func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mailbox) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.CreateMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	tenant := utils.GetTenantFromContext(ctx)
+	if tenant == "" {
+		err := errors.New("Tenant is nil")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	userId := utils.GetUserIdFromContext(ctx)
+	if userId == "" {
+		err := errors.New("UserId is nil")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	mailbox.Tenant = tenant
+	mailbox.UserID = userId
 
 	// validate input
 	err := validateMailboxInput(mailbox)
@@ -42,14 +62,13 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 
 	// validate mailbox does not exist
 	mboxCheck, err := s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, mailbox.EmailAddress)
-	if err != nil {
+	if err != nil && err != gorm.ErrRecordNotFound {
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
 	if mboxCheck != nil {
-		err = errors.New("mailbox already exists")
-		tracing.TraceErr(span, err)
-		return nil, err
+		tracing.TraceErr(span, ErrMailboxExists)
+		return nil, ErrMailboxExists
 	}
 
 	// save mailbox
