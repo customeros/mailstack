@@ -8,10 +8,8 @@ import (
 func MapGormAttachmentToGraph(attachment *models.EmailAttachment) *graphql_model.Attachment {
 	return &graphql_model.Attachment{
 		ID:          attachment.ID,
-		EmailID:     attachment.Emails[0],
 		Filename:    attachment.Filename,
 		ContentType: attachment.ContentType,
-		// TODO implement attachment URLs behind CDN
-		URL: "https://attachment.dummyurl.com",
+		URL:         "https://files.cust.cx/" + attachment.StorageKey,
 	}
 }

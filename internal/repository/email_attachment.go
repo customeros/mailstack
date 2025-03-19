@@ -54,7 +54,7 @@ func (r *emailAttachmentRepository) ListByEmail(ctx context.Context, emailID str
 
 	var attachments []*models.EmailAttachment
 	err := r.db.WithContext(ctx).
-		Where("email_id = ?", emailID).
+		Where("? = ANY(emails)", emailID).
 		Find(&attachments).Error
 	if err != nil {
 		tracing.TraceErr(span, err)
@@ -63,7 +63,7 @@ func (r *emailAttachmentRepository) ListByEmail(ctx context.Context, emailID str
 	return attachments, nil
 }
 
-// ListByEmail retrieves all attachments for a specific email thread
+// ListByThread retrieves all attachments for a specific email thread
 func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID string) ([]*models.EmailAttachment, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.ListByThread")
 	defer span.Finish()
@@ -71,7 +71,7 @@ func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID s
 
 	var attachments []*models.EmailAttachment
 	err := r.db.WithContext(ctx).
-		Where("thread_id = ?", threadID).
+		Where("? = ANY(threads)", threadID).
 		Find(&attachments).Error
 	if err != nil {
 		tracing.TraceErr(span, err)

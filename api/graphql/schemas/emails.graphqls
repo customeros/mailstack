@@ -29,7 +29,6 @@ type ThreadMetadata {
 
 type Attachment {
   id: String!
-  emailId: String!
   filename: String!
   contentType: String!
   url: String!
