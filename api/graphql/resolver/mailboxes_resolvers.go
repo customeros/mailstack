@@ -16,6 +16,7 @@ import (
 	"github.com/customeros/mailstack/api/graphql/mappers"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
+	mbox "github.com/customeros/mailstack/services/mailbox"
 )
 
 // AddMailbox is the resolver for the addMailbox field.
@@ -38,7 +39,14 @@ func (r *mutationResolver) AddMailbox(ctx context.Context, input graphql_model.M
 	mailbox, err := r.services.MailboxService.EnrollMailbox(ctx, mappers.MapGraphMailboxInputToGorm(&input))
 	if err != nil || mailbox == nil {
 		tracing.TraceErr(span, err)
-		return nil, api_errors.NewError("unable to add mailbox", api_errors.CodeInternal, nil)
+
+		switch err {
+		case mbox.ErrMailboxExists:
+			return nil, api_errors.NewError("unable to add mailbox", api_errors.CodeExists, nil)
+		default:
+			return nil, api_errors.NewError("unable to add mailbox", api_errors.CodeInternal, nil)
+
+		}
 	}
 
 	return mappers.MapGormMailboxToGraph(mailbox), nil

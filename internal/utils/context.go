@@ -41,6 +41,7 @@ type CustomContext struct {
 	Tenant    string
 	UserId    string
 	UserEmail string
+	RequestID string
 }
 
 var customContextKey = "CUSTOM_CONTEXT"
@@ -61,6 +62,7 @@ func WithCustomContextFromGinRequest(c *gin.Context) context.Context {
 		Tenant:    c.GetString("Tenant"),
 		UserId:    c.GetString("UserId"),
 		UserEmail: c.GetString("UserEmail"),
+		RequestID: c.GetHeader("X-Request-Id"),
 	}
 	return WithCustomContext(c.Request.Context(), customContext)
 }
