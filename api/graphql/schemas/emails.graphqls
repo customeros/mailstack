@@ -16,7 +16,6 @@ input EmailInput {
   mailboxId: String
   fromAddresss: String!
   fromName: String
-  senderId: String
   toAddresses: [String!]!
   ccAddresses: [String!]
   bccAddresses: [String!]
@@ -24,7 +23,7 @@ input EmailInput {
   subject: String!
   body: EmailBody!
   attachmentIds: [String!]
-  scheduleFor: DateTime
+  scheduleFor: Time
   trackClicks: Boolean
 }
 

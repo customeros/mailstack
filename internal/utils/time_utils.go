@@ -276,3 +276,7 @@ func ConvertToUTC(datetimeStr string) (time.Time, error) {
 func CloseToNow(t time.Time) bool {
 	return math.Abs(time.Since(t).Seconds()) < time.Minute.Seconds()
 }
+
+func IsInFuture(timestamp time.Time) bool {
+	return timestamp.After(time.Now())
+}

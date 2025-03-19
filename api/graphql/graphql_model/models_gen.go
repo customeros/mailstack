@@ -24,7 +24,6 @@ type EmailInput struct {
 	MailboxID     *string    `json:"mailboxId,omitempty"`
 	FromAddresss  string     `json:"fromAddresss"`
 	FromName      *string    `json:"fromName,omitempty"`
-	SenderID      *string    `json:"senderId,omitempty"`
 	ToAddresses   []string   `json:"toAddresses"`
 	CcAddresses   []string   `json:"ccAddresses,omitempty"`
 	BccAddresses  []string   `json:"bccAddresses,omitempty"`
@@ -32,7 +31,7 @@ type EmailInput struct {
 	Subject       string     `json:"subject"`
 	Body          *EmailBody `json:"body"`
 	AttachmentIds []string   `json:"attachmentIds,omitempty"`
-	ScheduleFor   *string    `json:"scheduleFor,omitempty"`
+	ScheduleFor   *time.Time `json:"scheduleFor,omitempty"`
 	TrackClicks   *bool      `json:"trackClicks,omitempty"`
 }
 
@@ -113,11 +112,9 @@ type MailboxInput struct {
 	SyncFolders     []*string          `json:"syncFolders,omitempty"`
 }
 
-type Mutation struct {
-}
+type Mutation struct{}
 
-type Query struct {
-}
+type Query struct{}
 
 type SMTPConfig struct {
 	SMTPServer   *string             `json:"smtpServer,omitempty"`

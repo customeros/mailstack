@@ -36,6 +36,7 @@ type Email struct {
 	ToAddresses  pq.StringArray `gorm:"column:to_addresses;type:text[]" json:"toAddresses"`
 	CcAddresses  pq.StringArray `gorm:"column:cc_addresses;type:text[]" json:"ccAddresses"`
 	BccAddresses pq.StringArray `gorm:"column:bcc_addresses;type:text[]" json:"bccAddresses"`
+	TrackClicks  bool           `gorm:"column:track_clicks;default:false" json:"trackClicks"`
 
 	// Content
 	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`

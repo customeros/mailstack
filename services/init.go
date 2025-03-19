@@ -8,6 +8,7 @@ import (
 	"github.com/customeros/mailstack/services/ai"
 	"github.com/customeros/mailstack/services/cloudflare"
 	"github.com/customeros/mailstack/services/domain"
+	"github.com/customeros/mailstack/services/email"
 	"github.com/customeros/mailstack/services/email_filter"
 	"github.com/customeros/mailstack/services/events"
 	"github.com/customeros/mailstack/services/imap"
@@ -21,6 +22,7 @@ type Services struct {
 	EventsService      *events.EventsService
 	AIService          interfaces.AIService
 	CloudflareService  interfaces.CloudflareService
+	EmailService       interfaces.EmailService
 	EmailFilterService interfaces.EmailFilterService
 	IMAPService        interfaces.IMAPService
 	MailboxService     interfaces.MailboxService
@@ -57,6 +59,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		EventsService:      events,
 		AIService:          aiServiceImpl,
 		CloudflareService:  cloudflareImpl,
+		EmailService:       email.NewEmailService(repos),
 		EmailFilterService: email_filter.NewEmailFilterService(),
 		IMAPService:        imapImpl,
 		MailboxService:     mailbox.NewMailboxService(repos, imapImpl),
