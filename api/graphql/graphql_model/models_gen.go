@@ -45,7 +45,68 @@ type EmailThread struct {
 	LastMessageAt    *time.Time `json:"lastMessageAt,omitempty"`
 }
 
+type ImapConfig struct {
+	ImapServer   *string             `json:"imapServer,omitempty"`
+	ImapPort     *int                `json:"imapPort,omitempty"`
+	ImapUsername *string             `json:"imapUsername,omitempty"`
+	ImapPassword *string             `json:"imapPassword,omitempty"`
+	ImapSecurity *enum.EmailSecurity `json:"imapSecurity,omitempty"`
+}
+
+type ImapConfigInput struct {
+	ImapServer   *string             `json:"imapServer,omitempty"`
+	ImapPort     *int                `json:"imapPort,omitempty"`
+	ImapUsername *string             `json:"imapUsername,omitempty"`
+	ImapPassword *string             `json:"imapPassword,omitempty"`
+	ImapSecurity *enum.EmailSecurity `json:"imapSecurity,omitempty"`
+}
+
+type Mailbox struct {
+	ID                     string                `json:"id"`
+	Provider               enum.EmailProvider    `json:"provider"`
+	EmailAddress           string                `json:"emailAddress"`
+	SenderID               *string               `json:"senderId,omitempty"`
+	InboundEnabled         bool                  `json:"inboundEnabled"`
+	OutboundEnabled        bool                  `json:"outboundEnabled"`
+	ReplyToAddress         *string               `json:"replyToAddress,omitempty"`
+	ConnectionStatus       enum.ConnectionStatus `json:"connectionStatus"`
+	LastConnectionCheck    time.Time             `json:"lastConnectionCheck"`
+	ConnectionErrorMessage *string               `json:"connectionErrorMessage,omitempty"`
+}
+
+type MailboxInput struct {
+	ID              *string            `json:"id,omitempty"`
+	Provider        enum.EmailProvider `json:"provider"`
+	EmailAddress    string             `json:"emailAddress"`
+	SenderID        *string            `json:"senderId,omitempty"`
+	InboundEnabled  *bool              `json:"inboundEnabled,omitempty"`
+	OutboundEnabled *bool              `json:"outboundEnabled,omitempty"`
+	ImapConfig      *ImapConfigInput   `json:"imapConfig,omitempty"`
+	SMTPConfig      *SMTPConfigInput   `json:"smtpConfig,omitempty"`
+	ReplyToAddress  *string            `json:"replyToAddress,omitempty"`
+	SyncFolders     []*string          `json:"syncFolders,omitempty"`
+}
+
+type Mutation struct {
+}
+
 type Query struct {
+}
+
+type SMTPConfig struct {
+	SMTPServer   *string             `json:"smtpServer,omitempty"`
+	SMTPPort     *int                `json:"smtpPort,omitempty"`
+	SMTPUsername *string             `json:"smtpUsername,omitempty"`
+	SMTPPassword *string             `json:"smtpPassword,omitempty"`
+	SMTPSecurity *enum.EmailSecurity `json:"smtpSecurity,omitempty"`
+}
+
+type SMTPConfigInput struct {
+	SMTPServer   *string             `json:"smtpServer,omitempty"`
+	SMTPPort     *int                `json:"smtpPort,omitempty"`
+	SMTPUsername *string             `json:"smtpUsername,omitempty"`
+	SMTPPassword *string             `json:"smtpPassword,omitempty"`
+	SMTPSecurity *enum.EmailSecurity `json:"smtpSecurity,omitempty"`
 }
 
 type ThreadMetadata struct {

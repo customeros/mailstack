@@ -6,26 +6,26 @@ import (
 
 	"github.com/customeros/mailwatcher/blscan"
 	"github.com/customeros/mailwatcher/domainage"
+	"github.com/opentracing/opentracing-go"
+	tracingLog "github.com/opentracing/opentracing-go/log"
+	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
-	"github.com/pkg/errors"
 )
 
 type domainService struct {
 	postgres   *repository.Repositories
 	cloudflare interfaces.CloudflareService
-	mailbox    interfaces.MailboxService
+	mailbox    interfaces.MailboxServiceOld
 	namecheap  interfaces.NamecheapService
 	opensrs    interfaces.OpenSrsService
 }
 
-func NewDomainService(postgres *repository.Repositories, cloudflare interfaces.CloudflareService, namecheap interfaces.NamecheapService, mailbox interfaces.MailboxService, opensrs interfaces.OpenSrsService) interfaces.DomainService {
+func NewDomainService(postgres *repository.Repositories, cloudflare interfaces.CloudflareService, namecheap interfaces.NamecheapService, mailbox interfaces.MailboxServiceOld, opensrs interfaces.OpenSrsService) interfaces.DomainService {
 	return &domainService{
 		postgres:   postgres,
 		cloudflare: cloudflare,

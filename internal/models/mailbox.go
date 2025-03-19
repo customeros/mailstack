@@ -51,7 +51,6 @@ type Mailbox struct {
 	ReplyToAddress string `gorm:"column:reply_to_address;type:varchar(255)" json:"replyToAddress"`
 
 	// Sync configuration
-	SyncEnabled bool           `gorm:"column:sync_enabled;default:true" json:"syncEnabled"`
 	SyncFolders pq.StringArray `gorm:"column:sync_folders;type:text[]" json:"syncFolders"`
 
 	// Status tracking

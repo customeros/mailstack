@@ -35,3 +35,9 @@ models:
       - github.com/99designs/gqlgen/graphql.Int32
   EmailDirection:
     model: github.com/customeros/mailstack/internal/enum.EmailDirection
+  MailboxProvider:
+    model: github.com/customeros/mailstack/internal/enum.EmailProvider
+  EmailSecurity:
+    model: github.com/customeros/mailstack/internal/enum.EmailSecurity
+  MailboxConnectionStatus:
+    model: github.com/customeros/mailstack/internal/enum.ConnectionStatus
