@@ -447,7 +447,7 @@ func (s *SMTPClient) addAttachment(ctx context.Context, writer *multipart.Writer
 	}
 
 	// download content from storage
-	content, err := s.repositories.EmailAttachmentRepository.GetAttachment(ctx, attachment.ID)
+	content, err := s.repositories.EmailAttachmentRepository.DownloadAttachment(ctx, attachment.ID)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err

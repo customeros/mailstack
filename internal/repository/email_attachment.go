@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type emailAttachmentRepository struct {
@@ -24,15 +27,6 @@ func NewEmailAttachmentRepository(db *gorm.DB, storageService interfaces.Storage
 		db:      db,
 		storage: storageService,
 	}
-}
-
-// Create adds a new attachment to the database
-func (r *emailAttachmentRepository) Create(ctx context.Context, attachment *models.EmailAttachment) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.Create")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-
-	return r.db.WithContext(ctx).Create(attachment).Error
 }
 
 // GetByID retrieves an attachment by its ID
@@ -86,32 +80,88 @@ func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID s
 	return attachments, nil
 }
 
+func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []byte) (*models.EmailAttachment, string, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.CheckFileExists")
+	defer span.Finish()
+	tracing.TagComponentPostgresRepository(span)
+
+	hash := sha256.New()
+	hash.Write(data)
+	contentHash := hex.EncodeToString(hash.Sum(nil))
+	var existingAttachment models.EmailAttachment
+	err := r.db.WithContext(ctx).Where("content_hash = ?", contentHash).First(&existingAttachment).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			tracing.TraceErr(span, err)
+			return nil, contentHash, err
+		}
+		return nil, contentHash, nil
+	}
+	return &existingAttachment, contentHash, nil
+}
+
 // Store saves attachment data to the configured storage service
-func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, data []byte) error {
+func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, threadID, emailID string, data []byte) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.Store")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)
 
-	// Generate a storage key if one doesn't exist
-	if attachment.StorageKey == "" {
-		attachment.StorageKey = fmt.Sprintf("%s/%s", attachment.EmailID, attachment.ID)
+	if attachment == nil {
+		err := errors.New("Nil attachment")
+		tracing.TraceErr(span, err)
+		return err
 	}
+
+	existingAttachment, fileHash, err := r.CheckFileExists(ctx, data)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// If file exists, update email and thread references
+	if existingAttachment != nil {
+		if !utils.IsStringInSlice(emailID, existingAttachment.Emails) {
+			existingAttachment.Emails = append(existingAttachment.Emails, emailID)
+		}
+		if !utils.IsStringInSlice(threadID, existingAttachment.Threads) {
+			existingAttachment.Threads = append(existingAttachment.Threads, threadID)
+		}
+		if attachment.Filename != "" {
+			existingAttachment.Filename = attachment.Filename
+		}
+		return r.db.WithContext(ctx).Save(existingAttachment).Error
+	}
+
+	// This is a new file, proceed with upload
+	attachment.ContentHash = fileHash
+	attachment.Size = len(data)
+	attachment.UpdatedAt = time.Now()
+	attachment.Emails = []string{emailID}
+	attachment.Threads = []string{threadID}
+
+	fileExt := utils.GetFileExtensionFromContentType(attachment.ContentType)
+	if attachment.ID == "" {
+		attachment.ID = utils.GenerateNanoIDWithPrefix("file", 12)
+	}
+	filename := attachment.ID
+	if fileExt != "other" && fileExt != "audio" && fileExt != "video" {
+		filename = filename + "." + fileExt
+	}
+
+	attachment.StorageKey = fmt.Sprintf("%s/%s", fileExt, filename)
 
 	// Store the file in the storage service
 	if err := r.storage.Upload(ctx, attachment.StorageKey, data, attachment.ContentType); err != nil {
 		tracing.TraceErr(span, err)
+		tracing.LogObjectAsJson(span, "attachment", attachment)
 		return fmt.Errorf("failed to upload attachment: %w", err)
 	}
-
-	// Update the attachment record with the storage key and size
-	attachment.Size = len(data)
-	attachment.UpdatedAt = time.Now()
 
 	return r.db.WithContext(ctx).Save(attachment).Error
 }
 
 // GetAttachment retrieves the attachment data from storage
-func (r *emailAttachmentRepository) GetAttachment(ctx context.Context, id string) ([]byte, error) {
+func (r *emailAttachmentRepository) DownloadAttachment(ctx context.Context, id string) ([]byte, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.GetData")
 	defer span.Finish()
 	tracing.TagComponentPostgresRepository(span)

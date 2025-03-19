@@ -134,15 +134,20 @@ func (h *IMAPHandler) processIMAPMessage(ctx context.Context, mailboxID, folder 
 	}
 
 	// Save the email entity to the database
-	_, err = h.repositories.EmailRepository.Create(ctx, &email)
+	emailID, err := h.repositories.EmailRepository.Create(ctx, &email)
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
 	}
+	email.ID = emailID
 
 	// Create attachment records if any
 	if email.HasAttachment && len(attachments) > 0 {
-		h.processAttachments(email.ID, email.ThreadID, attachments)
+		err := h.processAttachments(ctx, email.ID, email.ThreadID, attachments)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
 	}
 
 	// Publish email events
@@ -759,16 +764,32 @@ func (h *IMAPHandler) extractContentManually(email *models.Email, msg *go_imap.M
 }
 
 // Process attachments - create attachment records
-func (h *IMAPHandler) processAttachments(emailID, threadID string, attachmentsData []map[string]interface{}) {
+func (h *IMAPHandler) processAttachments(ctx context.Context, emailID, threadID string, attachmentsData []map[string]interface{}) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPhandler.processAttachments")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	if emailID == "" {
+		err := errors.New("emailID is empty")
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if threadID == "" {
+		err := errors.New("threadID is empty")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	var err error
 	for _, attachmentData := range attachmentsData {
 		// Create attachment entity
 		attachment := models.EmailAttachment{
-			EmailID:     emailID,
-			ThreadID:    threadID,
-			Filename:    attachmentData["filename"].(string),
-			ContentType: attachmentData["content_type"].(string),
-			Size:        attachmentData["size"].(int),
-			IsInline:    attachmentData["disposition"] == "inline",
+			Filename:       attachmentData["filename"].(string),
+			ContentType:    attachmentData["content_type"].(string),
+			Size:           attachmentData["size"].(int),
+			IsInline:       attachmentData["disposition"] == "inline",
+			StorageService: "R2",
+			StorageBucket:  "attachments",
 		}
 
 		// Set ContentID for inline attachments
@@ -776,24 +797,21 @@ func (h *IMAPHandler) processAttachments(emailID, threadID string, attachmentsDa
 			attachment.ContentID = attachmentData["content_id"].(string)
 		}
 
-		// Save attachment metadata
-		if err := h.repositories.EmailAttachmentRepository.Create(context.Background(), &attachment); err != nil {
-			log.Printf("Error saving attachment: %v", err)
-			continue
-		}
-
 		// Upload attachment content to storage
 		if content, ok := attachmentData["content"].([]byte); ok && len(content) > 0 {
 			err := h.repositories.EmailAttachmentRepository.Store(
 				context.Background(),
 				&attachment,
+				threadID,
+				emailID,
 				content,
 			)
 			if err != nil {
-				log.Printf("Error storing attachment content: %v", err)
+				tracing.TraceErr(span, errors.Wrap(err, "Error storing attachment content"))
 			}
 		}
 	}
+	return err
 }
 
 // Helper function to convert addresses to string array
