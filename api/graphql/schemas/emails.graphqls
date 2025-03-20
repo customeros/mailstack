@@ -74,6 +74,12 @@ extend type Query {
   getThreadMetadata(threadId: String!): ThreadMetadata!
 }
 
+// i would like this 
+extend type Query {
+  getEmailThread(threadId: String!): [EmailMessage!]!
+  getThreadMetadata(threadId: String!): ThreadMetadata!
+}
+
 extend type Mutation {
   sendEmail(input: EmailInput!): EmailResult!
 }
