@@ -11,6 +11,7 @@ import (
 )
 
 type JaegerConfig struct {
+	Endpoint     string  `env:"JAEGER_ENDPOINT"`
 	ServiceName  string  `env:"JAEGER_SERVICE_NAME" validate:"required"`
 	AgentHost    string  `env:"JAEGER_AGENT_HOST" envDefault:"localhost" validate:"required"`
 	AgentPort    string  `env:"JAEGER_AGENT_PORT" envDefault:"6831" validate:"required"`
@@ -30,18 +31,21 @@ func initJaeger(jaegerConfig *JaegerConfig) *config.Configuration {
 	cfg := &config.Configuration{
 		ServiceName: jaegerConfig.ServiceName,
 		Disabled:    !jaegerConfig.Enabled,
-
-		// "const" sampler is a binary sampling strategy: 0=never sample, 1=always sample.
 		Sampler: &config.SamplerConfig{
 			Type:  jaegerConfig.SamplerType,
 			Param: jaegerConfig.SamplerParam,
 		},
-
-		// Log the emitted spans to stdout.
 		Reporter: &config.ReporterConfig{
-			LogSpans:           jaegerConfig.LogSpans,
-			LocalAgentHostPort: jaegerConfig.AgentHost + ":" + jaegerConfig.AgentPort,
+			LogSpans: jaegerConfig.LogSpans,
 		},
 	}
+
+	// Use HTTP endpoint if provided, otherwise fall back to agent
+	if jaegerConfig.Endpoint != "" {
+		cfg.Reporter.CollectorEndpoint = jaegerConfig.Endpoint
+	} else {
+		cfg.Reporter.LocalAgentHostPort = jaegerConfig.AgentHost + ":" + jaegerConfig.AgentPort
+	}
+
 	return cfg
 }
