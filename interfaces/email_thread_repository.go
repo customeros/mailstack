@@ -10,6 +10,8 @@ import (
 type EmailThreadRepository interface {
 	Create(ctx context.Context, thread *models.EmailThread) (string, error)
 	GetByID(ctx context.Context, id string) (*models.EmailThread, error)
+	GetByMailboxIDs(ctx context.Context, mailboxIDs []string, limit int, offset int) ([]*models.EmailThread, error)
+	CountByMailboxIDs(ctx context.Context, mailboxIDs []string) (int64, error)
 	Update(ctx context.Context, thread *models.EmailThread) error
 	List(ctx context.Context, mailboxID string, limit, offset int) ([]*models.EmailThread, error)
 	GetByMessageID(ctx context.Context, messageID string) (*models.EmailThread, error)

@@ -106,6 +106,66 @@ func (r *emailThreadRepository) GetByID(ctx context.Context, id string) (*models
 	return &thread, nil
 }
 
+// GetByMailboxIDsPaginated retrieves threads for an array of mailboxes with pagination
+func (r *emailThreadRepository) GetByMailboxIDs(ctx context.Context, mailboxIDs []string, limit int, offset int) ([]*models.EmailThread, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.GetByMailboxIDsPaginated")
+	defer span.Finish()
+
+	tracing.TagComponentPostgresRepository(span)
+	span.SetTag("mailbox_ids", strings.Join(mailboxIDs, ","))
+	span.SetTag("limit", limit)
+	span.SetTag("offset", offset)
+
+	if len(mailboxIDs) == 0 {
+		err := errors.New("mailbox IDs list cannot be empty")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	var threads []*models.EmailThread
+
+	err := r.db.WithContext(ctx).
+		Where("mailbox_id IN ?", mailboxIDs).
+		Order("last_message_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&threads).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	return threads, nil
+}
+
+// CountByMailboxIDs counts total number of threads across all specified mailboxes
+func (r *emailThreadRepository) CountByMailboxIDs(ctx context.Context, mailboxIDs []string) (int64, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.CountByMailboxIDs")
+	defer span.Finish()
+
+	tracing.TagComponentPostgresRepository(span)
+	span.SetTag("mailbox_ids", strings.Join(mailboxIDs, ","))
+
+	if len(mailboxIDs) == 0 {
+		err := errors.New("mailbox IDs list cannot be empty")
+		tracing.TraceErr(span, err)
+		return 0, err
+	}
+
+	var count int64
+
+	err := r.db.WithContext(ctx).
+		Model(&models.EmailThread{}).
+		Where("mailbox_id IN ?", mailboxIDs).
+		Count(&count).Error
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return 0, err
+	}
+
+	return count, nil
+}
+
 // Update updates an existing email thread
 func (r *emailThreadRepository) Update(ctx context.Context, thread *models.EmailThread) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.Update")

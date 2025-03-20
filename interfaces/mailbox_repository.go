@@ -9,6 +9,7 @@ import (
 
 type MailboxRepository interface {
 	GetMailboxes(ctx context.Context) ([]*models.Mailbox, error)
+	GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error)
 	GetMailbox(ctx context.Context, id string) (*models.Mailbox, error)
 	GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error)
 	SaveMailbox(ctx context.Context, mailbox models.Mailbox) (string, error)

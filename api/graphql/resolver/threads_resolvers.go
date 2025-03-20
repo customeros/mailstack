@@ -6,27 +6,81 @@ package resolver
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/opentracing/opentracing-go"
+
+	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
+	"github.com/customeros/mailstack/api/graphql/mappers"
+	"github.com/customeros/mailstack/internal/tracing"
 )
 
 // GetAllThreads is the resolver for the getAllThreads field.
-func (r *queryResolver) GetAllThreads(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error) {
-	panic(fmt.Errorf("not implemented: GetAllThreads - getAllThreads"))
-}
+func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagination *graphql_model.PaginationInput) (*graphql_model.EmailThreadConnection, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetAllThreads")
+	defer span.Finish()
+	tracing.SetDefaultGraphqlSpanTags(ctx, span)
 
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *queryResolver) GetThreadsByUser(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error) {
-	// get all mailboxes for user
+	// Set default pagination if not provided
+	limit := 50
+	offset := 0
 
-	// get all threads for each mailbox
-	panic(fmt.Errorf("not implemented: GetThreadsByUser - getThreadsByUser"))
+	if pagination != nil {
+		if pagination.Limit != nil {
+			limit = *pagination.Limit
+		}
+		if pagination.Offset != nil {
+			offset = *pagination.Offset
+		}
+	}
+
+	// Get all mailboxes for userID
+	mailboxes, err := r.repositories.MailboxRepository.GetMailboxesByUserID(ctx, userID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("unable to get mailboxes for user", api_errors.CodeInternal, nil)
+	}
+	if mailboxes == nil {
+		return nil, api_errors.NewError("no mailboxes found for user", api_errors.CodeNotFound, nil)
+	}
+
+	mailboxIds := make([]string, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		mailboxIds = append(mailboxIds, mailbox.ID)
+	}
+
+	// Get total count for pageInfo
+	totalCount, err := r.repositories.EmailThreadRepository.CountByMailboxIDs(ctx, mailboxIds)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("no threads found for user", api_errors.CodeNotFound, nil)
+	}
+
+	// Get paginated threads
+	threads, err := r.repositories.EmailThreadRepository.GetByMailboxIDs(ctx, mailboxIds, limit, offset)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("unable to retreive threads for user", api_errors.CodeNotFound, nil)
+	}
+	if threads == nil {
+		return nil, api_errors.NewError("no threads found", api_errors.CodeNotFound, nil)
+	}
+
+	var apiThreads []*graphql_model.EmailThread
+	for _, thread := range threads {
+		apiThreads = append(apiThreads, mappers.MapGormThreadToGraph(thread))
+	}
+
+	// Calculate pagination info
+	hasNextPage := offset+len(threads) < int(totalCount)
+	hasPreviousPage := offset > 0
+
+	return &graphql_model.EmailThreadConnection{
+		Edges:      apiThreads,
+		TotalCount: int(totalCount),
+		PageInfo: &graphql_model.PageInfo{
+			HasNextPage:     hasNextPage,
+			HasPreviousPage: hasPreviousPage,
+		},
+	}, nil
 }
-*/

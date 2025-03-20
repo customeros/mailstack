@@ -7,7 +7,6 @@ package resolver
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
@@ -53,7 +52,32 @@ func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.Em
 
 // GetAllEmailsInThread is the resolver for the getAllEmailsInThread field.
 func (r *queryResolver) GetAllEmailsInThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error) {
-	panic(fmt.Errorf("not implemented: GetAllEmailsInThread - getAllEmailsInThread"))
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetEmailsByThread")
+	defer span.Finish()
+	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+
+	emails, err := r.repositories.EmailRepository.ListByThread(ctx, threadID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
+	}
+	if emails == nil {
+		return nil, api_errors.NewError("thread not found", api_errors.CodeNotFound, nil)
+	}
+
+	messages := make([]*graphql_model.EmailMessage, 0, len(emails))
+	for _, email := range emails {
+		message := mappers.MapGormEmailToGraph(email)
+		attachments, err := r.repositories.EmailAttachmentRepository.ListByEmail(ctx, email.ID)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, api_errors.NewError("error getting attachment count", api_errors.CodeInternal, nil)
+		}
+		message.AttachmentCount = len(attachments)
+		messages = append(messages, message)
+	}
+
+	return messages, nil
 }
 
 // GetThreadMetadata is the resolver for the getThreadMetadata field.
@@ -98,40 +122,3 @@ func (r *queryResolver) GetThreadMetadata(ctx context.Context, threadID string) 
 
 	return threadMetadata, nil
 }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *queryResolver) GetEmailsByThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetEmailsByThread")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
-
-	emails, err := r.repositories.EmailRepository.ListByThread(ctx, threadID)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
-	}
-	if emails == nil {
-		return nil, api_errors.NewError("thread not found", api_errors.CodeNotFound, nil)
-	}
-
-	messages := make([]*graphql_model.EmailMessage, 0, len(emails))
-	for _, email := range emails {
-		message := mappers.MapGormEmailToGraph(email)
-		attachments, err := r.repositories.EmailAttachmentRepository.ListByEmail(ctx, email.ID)
-		if err != nil {
-			tracing.TraceErr(span, err)
-			return nil, api_errors.NewError("error getting attachment count", api_errors.CodeInternal, nil)
-		}
-		message.AttachmentCount = len(attachments)
-		messages = append(messages, message)
-	}
-
-	return messages, nil
-}
-*/

@@ -11,7 +11,15 @@ type EmailThread {
   lastMessageAt: Time
 }
 
-extend type Query {
-  getAllThreads(userId: String!): [EmailThread!]!
+type EmailThreadConnection implements Connection {
+  edges: [EmailThread!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
 }
 
+extend type Query {
+  getAllThreads(
+    userId: String!
+    pagination: PaginationInput
+  ): EmailThreadConnection!
+}
