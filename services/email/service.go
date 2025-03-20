@@ -32,6 +32,7 @@ var (
 	ErrEmptyEmailBody         = errors.New("empty email body")
 	ErrAttachmentDoesNotExist = errors.New("attachment does not exist")
 	ErrScheduledSendNotValid  = errors.New("invalid scheduled for time")
+	ErrInvalidSender          = errors.New("invalid sender")
 )
 
 func ValidateEmailAddress(email *string) error {

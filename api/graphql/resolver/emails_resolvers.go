@@ -6,9 +6,9 @@ package resolver
 
 import (
 	"context"
+	"errors"
 
 	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
 
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
@@ -36,7 +36,7 @@ func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.Em
 	}
 
 	var result graphql_model.EmailResult
-	emailID, emailStatus, err := r.services.EmailService.Send(ctx, mappers.MapGraphEmailInputToGorm(&input), input.AttachmentIds)
+	emailID, emailStatus, err := r.services.EmailService.ScheduleSend(ctx, mappers.MapGraphEmailInputToGorm(&input), input.AttachmentIds)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		errStr := err.Error()

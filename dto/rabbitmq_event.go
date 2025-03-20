@@ -23,3 +23,12 @@ type EventMetadata struct {
 	UserEmail   string `json:"userEmail"`
 	Timestamp   string `json:"timestamp"`
 }
+
+type EventCompleted struct {
+	Tenant     string          `json:"tenant"`
+	EntityType enum.EntityType `json:"entityType"`
+	EntityIds  []string        `json:"entityIds"`
+	Create     bool            `json:"create"`
+	Update     bool            `json:"update"`
+	Delete     bool            `json:"delete"`
+}

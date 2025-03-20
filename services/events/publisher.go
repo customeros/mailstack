@@ -12,6 +12,7 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 
 	"github.com/customeros/mailstack/dto"
+	mailstack_errors "github.com/customeros/mailstack/errors"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -20,34 +21,20 @@ import (
 
 const (
 	// Exchange names
-	ExchangeDirect        = "customeros-direct"
-	ExchangeCustomerOS    = "customeros"
-	ExchangeNotifications = "notifications"
-	ExchangeDeadLetter    = "dead-letter"
+	ExchangeMailstackDirect = "mailstack-direct"
+	ExchangeCustomerOS      = "customeros"
+	ExchangeNotifications   = "notifications"
+	ExchangeDeadLetter      = "dead-letter"
 
-	// Notification queues
+	// queues
 	QueueNotifications = "notifications"
+	QueueMailstack     = "events-mailstack"
+	DLQMailstack       = QueueMailstack + "-dlq"
+	DLQNotifications   = QueueNotifications + "-dlq"
 
-	// CustomerOS queues
-	QueueEvents     = "events"
-	QueueOpensearch = "events-opensearch"
-	QueueAgents     = "events-agents"
-
-	// CustomerOS Direct queues
-	QueueFlowParticipantSchedule = "events-flow-participant-schedule"
-
-	// Dead Letter Queues
-	DLQNotificatins            = QueueNotifications + "-dlq"
-	DLQEvents                  = QueueEvents + "-dlq"
-	DLQOpensearch              = QueueOpensearch + "-dlq"
-	DLQAgents                  = QueueAgents + "-dlq"
-	DLQFlowParticipantSchedule = QueueFlowParticipantSchedule + "-dlq"
-
-	// CustomerOS Direct routing keys
-	RoutingKeyFlowParticipantSchedule = "flow-participant-schedule"
-
-	// Dead Letter routing key
+	// routing keys
 	RoutingKeyDeadLetter = "dead-letter"
+	RoutingKeyMailstack  = "mailstack-direct"
 
 	// Default configurations
 	DefaultMessageTTL          = 240 * time.Hour // after TTL message moves to DLQ
@@ -109,12 +96,48 @@ func (r *RabbitMQPublisher) PublishFanoutEvent(ctx context.Context, entityId str
 	return r.publishEventOnExchange(ctx, entityId, entityType, message, ExchangeCustomerOS, "")
 }
 
-func (r *RabbitMQPublisher) PublishDirectEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
-	err := utils.ValidateTenant(ctx)
-	if err != nil {
-		return err
+func (r *RabbitMQPublisher) PublishNotification(ctx context.Context, tenant string, entityId string, entityType enum.EntityType, details *utils.EventCompletedDetails) {
+	r.PublishNotificationBulk(ctx, tenant, []string{entityId}, entityType, details)
+}
+
+func (r *RabbitMQPublisher) PublishDirectMailstackEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
+	tenant := utils.GetTenantFromContext(ctx)
+	if tenant == "" {
+		return mailstack_errors.ErrTenantNotSet
 	}
-	return r.publishEventOnExchange(ctx, entityId, entityType, message, ExchangeDirect, RoutingKeyFlowParticipantSchedule)
+	return r.publishEventOnExchange(ctx, entityId, entityType, message, ExchangeMailstackDirect, RoutingKeyMailstack)
+}
+
+func (r *RabbitMQPublisher) PublishNotificationBulk(ctx context.Context, tenant string, entityIds []string, entityType enum.EntityType, details *utils.EventCompletedDetails) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishEventCompletedBulk")
+	defer span.Finish()
+	tracing.TagTenant(span, tenant)
+	if len(entityIds) == 1 {
+		tracing.TagEntity(span, entityIds[0])
+	}
+	span.LogKV("entityType", entityType, "entityIds", entityIds)
+
+	event := dto.EventCompleted{
+		Tenant:     tenant,
+		EntityType: entityType,
+		EntityIds:  entityIds,
+		Create:     false,
+		Update:     false,
+		Delete:     false,
+	}
+
+	if details != nil {
+		event.Create = details.Create
+		event.Update = details.Update
+		event.Delete = details.Delete
+	}
+
+	err := r.publishMessageOnExchange(ctx, event, ExchangeNotifications, "")
+	if err != nil {
+		tracing.TraceErr(span, err)
+		r.logger.Errorf("Failed to publish event completed notification: %v", err)
+	}
+	span.LogKV("result.published", true)
 }
 
 func (r *RabbitMQPublisher) setupPublishChannel() error {
@@ -228,9 +251,9 @@ func (r *RabbitMQPublisher) declareExchanges(channel *amqp091.Channel) error {
 		return errors.Wrap(err, "Failed to declare customeros exchange")
 	}
 
-	// CustomerOS direct exchange
+	// Mailstack direct exchange
 	err = channel.ExchangeDeclare(
-		ExchangeDirect,
+		ExchangeMailstackDirect,
 		"direct",
 		true,
 		false,
@@ -247,7 +270,7 @@ func (r *RabbitMQPublisher) declareExchanges(channel *amqp091.Channel) error {
 
 func (r *RabbitMQPublisher) declareAndBindQueues(channel *amqp091.Channel) error {
 	// Notifications queue with DLQ
-	err := r.declareQueueWithDLQ(channel, QueueNotifications, DLQNotificatins)
+	err := r.declareQueueWithDLQ(channel, QueueNotifications, DLQNotifications)
 	if err != nil {
 		return err
 	}
@@ -267,9 +290,7 @@ func (r *RabbitMQPublisher) declareAndBindQueues(channel *amqp091.Channel) error
 		queueName string
 		dlqName   string
 	}{
-		{QueueEvents, DLQEvents},
-		{QueueOpensearch, DLQOpensearch},
-		{QueueAgents, DLQAgents},
+		{QueueMailstack, DLQMailstack},
 	}
 
 	for _, q := range customerosQueues {
@@ -287,22 +308,6 @@ func (r *RabbitMQPublisher) declareAndBindQueues(channel *amqp091.Channel) error
 		if err != nil {
 			return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", q.queueName, ExchangeCustomerOS)
 		}
-	}
-
-	// CustomerOS direct queue with DLQ
-	err = r.declareQueueWithDLQ(channel, QueueFlowParticipantSchedule, DLQFlowParticipantSchedule)
-	if err != nil {
-		return err
-	}
-	err = channel.QueueBind(
-		QueueFlowParticipantSchedule,
-		RoutingKeyFlowParticipantSchedule,
-		ExchangeDirect,
-		false,
-		nil,
-	)
-	if err != nil {
-		return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", QueueFlowParticipantSchedule, ExchangeDirect)
 	}
 
 	return nil
@@ -419,10 +424,9 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 		},
 		Metadata: dto.EventMetadata{
 			UberTraceId: tracingData["uber-trace-id"],
-			AppSource:   "MAILSTACK",
 			UserId:      utils.GetUserIdFromContext(ctx),
 			UserEmail:   utils.GetUserEmailFromContext(ctx),
-			Timestamp:   utils.Now().String(),
+			Timestamp:   utils.Now().Format(time.RFC3339),
 		},
 	}
 

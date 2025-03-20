@@ -738,7 +738,6 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 
 var sources = []*ast.Source{
 	{Name: "../schemas/_base.graphqls", Input: `scalar Time
-scalar DateTime
 
 type Query
 type Mutation
@@ -761,7 +760,6 @@ input EmailInput {
   mailboxId: String
   fromAddresss: String!
   fromName: String
-  senderId: String
   toAddresses: [String!]!
   ccAddresses: [String!]
   bccAddresses: [String!]
@@ -769,7 +767,7 @@ input EmailInput {
   subject: String!
   body: EmailBody!
   attachmentIds: [String!]
-  scheduleFor: DateTime
+  scheduleFor: Time
   trackClicks: Boolean
 }
 
@@ -6213,7 +6211,7 @@ func (ec *executionContext) unmarshalInputEmailInput(ctx context.Context, obj an
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"mailboxId", "fromAddresss", "fromName", "senderId", "toAddresses", "ccAddresses", "bccAddresses", "replyTo", "subject", "body", "attachmentIds", "scheduleFor", "trackClicks"}
+	fieldsInOrder := [...]string{"mailboxId", "fromAddresss", "fromName", "toAddresses", "ccAddresses", "bccAddresses", "replyTo", "subject", "body", "attachmentIds", "scheduleFor", "trackClicks"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -6241,13 +6239,6 @@ func (ec *executionContext) unmarshalInputEmailInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.FromName = data
-		case "senderId":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("senderId"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.SenderID = data
 		case "toAddresses":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("toAddresses"))
 			data, err := ec.unmarshalNString2ᚕstringᚄ(ctx, v)
@@ -6299,7 +6290,7 @@ func (ec *executionContext) unmarshalInputEmailInput(ctx context.Context, obj an
 			it.AttachmentIds = data
 		case "scheduleFor":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scheduleFor"))
-			data, err := ec.unmarshalODateTime2ᚖstring(ctx, v)
+			data, err := ec.unmarshalOTime2ᚖtimeᚐTime(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -8173,22 +8164,6 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 		return graphql.Null
 	}
 	res := graphql.MarshalBoolean(*v)
-	return res
-}
-
-func (ec *executionContext) unmarshalODateTime2ᚖstring(ctx context.Context, v any) (*string, error) {
-	if v == nil {
-		return nil, nil
-	}
-	res, err := graphql.UnmarshalString(v)
-	return &res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalODateTime2ᚖstring(ctx context.Context, sel ast.SelectionSet, v *string) graphql.Marshaler {
-	if v == nil {
-		return graphql.Null
-	}
-	res := graphql.MarshalString(*v)
 	return res
 }
 
