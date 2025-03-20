@@ -90,6 +90,12 @@ type ComplexityRoot struct {
 		UserID           func(childComplexity int) int
 	}
 
+	EmailThreadConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
 	ImapConfig struct {
 		ImapPassword func(childComplexity int) int
 		ImapPort     func(childComplexity int) int
@@ -117,9 +123,16 @@ type ComplexityRoot struct {
 		UpdateMailbox func(childComplexity int, id string, input graphql_model.MailboxInput) int
 	}
 
+	PageInfo struct {
+		EndCursor       func(childComplexity int) int
+		HasNextPage     func(childComplexity int) int
+		HasPreviousPage func(childComplexity int) int
+		StartCursor     func(childComplexity int) int
+	}
+
 	Query struct {
 		GetAllEmailsInThread func(childComplexity int, threadID string) int
-		GetAllThreads        func(childComplexity int, userID string) int
+		GetAllThreads        func(childComplexity int, userID string, pagination *graphql_model.PaginationInput) int
 		GetThreadMetadata    func(childComplexity int, threadID string) int
 	}
 
@@ -148,7 +161,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	GetAllEmailsInThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error)
 	GetThreadMetadata(ctx context.Context, threadID string) (*graphql_model.ThreadMetadata, error)
-	GetAllThreads(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error)
+	GetAllThreads(ctx context.Context, userID string, pagination *graphql_model.PaginationInput) (*graphql_model.EmailThreadConnection, error)
 }
 
 type executableSchema struct {
@@ -380,6 +393,27 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.EmailThread.UserID(childComplexity), true
 
+	case "EmailThreadConnection.edges":
+		if e.complexity.EmailThreadConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.EmailThreadConnection.Edges(childComplexity), true
+
+	case "EmailThreadConnection.pageInfo":
+		if e.complexity.EmailThreadConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.EmailThreadConnection.PageInfo(childComplexity), true
+
+	case "EmailThreadConnection.totalCount":
+		if e.complexity.EmailThreadConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.EmailThreadConnection.TotalCount(childComplexity), true
+
 	case "ImapConfig.imapPassword":
 		if e.complexity.ImapConfig.ImapPassword == nil {
 			break
@@ -521,6 +555,34 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.UpdateMailbox(childComplexity, args["id"].(string), args["input"].(graphql_model.MailboxInput)), true
 
+	case "PageInfo.endCursor":
+		if e.complexity.PageInfo.EndCursor == nil {
+			break
+		}
+
+		return e.complexity.PageInfo.EndCursor(childComplexity), true
+
+	case "PageInfo.hasNextPage":
+		if e.complexity.PageInfo.HasNextPage == nil {
+			break
+		}
+
+		return e.complexity.PageInfo.HasNextPage(childComplexity), true
+
+	case "PageInfo.hasPreviousPage":
+		if e.complexity.PageInfo.HasPreviousPage == nil {
+			break
+		}
+
+		return e.complexity.PageInfo.HasPreviousPage(childComplexity), true
+
+	case "PageInfo.startCursor":
+		if e.complexity.PageInfo.StartCursor == nil {
+			break
+		}
+
+		return e.complexity.PageInfo.StartCursor(childComplexity), true
+
 	case "Query.getAllEmailsInThread":
 		if e.complexity.Query.GetAllEmailsInThread == nil {
 			break
@@ -543,7 +605,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.GetAllThreads(childComplexity, args["userId"].(string)), true
+		return e.complexity.Query.GetAllThreads(childComplexity, args["userId"].(string), args["pagination"].(*graphql_model.PaginationInput)), true
 
 	case "Query.getThreadMetadata":
 		if e.complexity.Query.GetThreadMetadata == nil {
@@ -639,6 +701,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputEmailInput,
 		ec.unmarshalInputImapConfigInput,
 		ec.unmarshalInputMailboxInput,
+		ec.unmarshalInputPaginationInput,
 		ec.unmarshalInputSmtpConfigInput,
 	)
 	first := true
@@ -741,6 +804,25 @@ var sources = []*ast.Source{
 
 type Query
 type Mutation
+
+input PaginationInput {
+  offset: Int
+  limit: Int
+}
+
+# Standard pagination metadata
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+# Generic connection interface that specific connections can implement
+interface Connection {
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
 `, BuiltIn: false},
 	{Name: "../schemas/emails.graphqls", Input: `enum EmailDirection {
   inbound
@@ -918,10 +1000,18 @@ extend type Mutation {
   lastMessageAt: Time
 }
 
-extend type Query {
-  getAllThreads(userId: String!): [EmailThread!]!
+type EmailThreadConnection implements Connection {
+  edges: [EmailThread!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
 }
 
+extend type Query {
+  getAllThreads(
+    userId: String!
+    pagination: PaginationInput
+  ): EmailThreadConnection!
+}
 `, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
@@ -1101,6 +1191,11 @@ func (ec *executionContext) field_Query_getAllThreads_args(ctx context.Context, 
 		return nil, err
 	}
 	args["userId"] = arg0
+	arg1, err := ec.field_Query_getAllThreads_argsPagination(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["pagination"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Query_getAllThreads_argsUserID(
@@ -1118,6 +1213,24 @@ func (ec *executionContext) field_Query_getAllThreads_argsUserID(
 	}
 
 	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Query_getAllThreads_argsPagination(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (*graphql_model.PaginationInput, error) {
+	if _, ok := rawArgs["pagination"]; !ok {
+		var zeroVal *graphql_model.PaginationInput
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("pagination"))
+	if tmp, ok := rawArgs["pagination"]; ok {
+		return ec.unmarshalOPaginationInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐPaginationInput(ctx, tmp)
+	}
+
+	var zeroVal *graphql_model.PaginationInput
 	return zeroVal, nil
 }
 
@@ -2577,6 +2690,170 @@ func (ec *executionContext) fieldContext_EmailThread_lastMessageAt(_ context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _EmailThreadConnection_edges(ctx context.Context, field graphql.CollectedField, obj *graphql_model.EmailThreadConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EmailThreadConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*graphql_model.EmailThread)
+	fc.Result = res
+	return ec.marshalNEmailThread2ᚕᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EmailThreadConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EmailThreadConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_EmailThread_id(ctx, field)
+			case "userId":
+				return ec.fieldContext_EmailThread_userId(ctx, field)
+			case "mailboxId":
+				return ec.fieldContext_EmailThread_mailboxId(ctx, field)
+			case "subject":
+				return ec.fieldContext_EmailThread_subject(ctx, field)
+			case "summary":
+				return ec.fieldContext_EmailThread_summary(ctx, field)
+			case "isViewed":
+				return ec.fieldContext_EmailThread_isViewed(ctx, field)
+			case "isDone":
+				return ec.fieldContext_EmailThread_isDone(ctx, field)
+			case "lastSender":
+				return ec.fieldContext_EmailThread_lastSender(ctx, field)
+			case "lastSenderDomain":
+				return ec.fieldContext_EmailThread_lastSenderDomain(ctx, field)
+			case "lastMessageAt":
+				return ec.fieldContext_EmailThread_lastMessageAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EmailThread", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EmailThreadConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *graphql_model.EmailThreadConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EmailThreadConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*graphql_model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EmailThreadConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EmailThreadConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EmailThreadConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *graphql_model.EmailThreadConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EmailThreadConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EmailThreadConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EmailThreadConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ImapConfig_imapServer(ctx context.Context, field graphql.CollectedField, obj *graphql_model.ImapConfig) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_ImapConfig_imapServer(ctx, field)
 	if err != nil {
@@ -3430,6 +3707,176 @@ func (ec *executionContext) fieldContext_Mutation_updateMailbox(ctx context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _PageInfo_hasNextPage(ctx context.Context, field graphql.CollectedField, obj *graphql_model.PageInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HasNextPage, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PageInfo_hasNextPage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PageInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PageInfo_hasPreviousPage(ctx context.Context, field graphql.CollectedField, obj *graphql_model.PageInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HasPreviousPage, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PageInfo_hasPreviousPage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PageInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PageInfo_startCursor(ctx context.Context, field graphql.CollectedField, obj *graphql_model.PageInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PageInfo_startCursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.StartCursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PageInfo_startCursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PageInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PageInfo_endCursor(ctx context.Context, field graphql.CollectedField, obj *graphql_model.PageInfo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PageInfo_endCursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EndCursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PageInfo_endCursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PageInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_getAllEmailsInThread(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_getAllEmailsInThread(ctx, field)
 	if err != nil {
@@ -3594,7 +4041,7 @@ func (ec *executionContext) _Query_getAllThreads(ctx context.Context, field grap
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().GetAllThreads(rctx, fc.Args["userId"].(string))
+		return ec.resolvers.Query().GetAllThreads(rctx, fc.Args["userId"].(string), fc.Args["pagination"].(*graphql_model.PaginationInput))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -3606,9 +4053,9 @@ func (ec *executionContext) _Query_getAllThreads(ctx context.Context, field grap
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]*graphql_model.EmailThread)
+	res := resTmp.(*graphql_model.EmailThreadConnection)
 	fc.Result = res
-	return ec.marshalNEmailThread2ᚕᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadᚄ(ctx, field.Selections, res)
+	return ec.marshalNEmailThreadConnection2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadConnection(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Query_getAllThreads(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3619,28 +4066,14 @@ func (ec *executionContext) fieldContext_Query_getAllThreads(ctx context.Context
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
-			case "id":
-				return ec.fieldContext_EmailThread_id(ctx, field)
-			case "userId":
-				return ec.fieldContext_EmailThread_userId(ctx, field)
-			case "mailboxId":
-				return ec.fieldContext_EmailThread_mailboxId(ctx, field)
-			case "subject":
-				return ec.fieldContext_EmailThread_subject(ctx, field)
-			case "summary":
-				return ec.fieldContext_EmailThread_summary(ctx, field)
-			case "isViewed":
-				return ec.fieldContext_EmailThread_isViewed(ctx, field)
-			case "isDone":
-				return ec.fieldContext_EmailThread_isDone(ctx, field)
-			case "lastSender":
-				return ec.fieldContext_EmailThread_lastSender(ctx, field)
-			case "lastSenderDomain":
-				return ec.fieldContext_EmailThread_lastSenderDomain(ctx, field)
-			case "lastMessageAt":
-				return ec.fieldContext_EmailThread_lastMessageAt(ctx, field)
+			case "edges":
+				return ec.fieldContext_EmailThreadConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_EmailThreadConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_EmailThreadConnection_totalCount(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type EmailThread", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type EmailThreadConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -6454,6 +6887,40 @@ func (ec *executionContext) unmarshalInputMailboxInput(ctx context.Context, obj 
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputPaginationInput(ctx context.Context, obj any) (graphql_model.PaginationInput, error) {
+	var it graphql_model.PaginationInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"offset", "limit"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "offset":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("offset"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Offset = data
+		case "limit":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("limit"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Limit = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputSmtpConfigInput(ctx context.Context, obj any) (graphql_model.SMTPConfigInput, error) {
 	var it graphql_model.SMTPConfigInput
 	asMap := map[string]any{}
@@ -6512,6 +6979,22 @@ func (ec *executionContext) unmarshalInputSmtpConfigInput(ctx context.Context, o
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
+
+func (ec *executionContext) _Connection(ctx context.Context, sel ast.SelectionSet, obj graphql_model.Connection) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case graphql_model.EmailThreadConnection:
+		return ec._EmailThreadConnection(ctx, sel, &obj)
+	case *graphql_model.EmailThreadConnection:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EmailThreadConnection(ctx, sel, obj)
+	default:
+		panic(fmt.Errorf("unexpected type %T", obj))
+	}
+}
 
 // endregion ************************** interface.gotpl ***************************
 
@@ -6791,6 +7274,55 @@ func (ec *executionContext) _EmailThread(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var emailThreadConnectionImplementors = []string{"EmailThreadConnection", "Connection"}
+
+func (ec *executionContext) _EmailThreadConnection(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.EmailThreadConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, emailThreadConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EmailThreadConnection")
+		case "edges":
+			out.Values[i] = ec._EmailThreadConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._EmailThreadConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._EmailThreadConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var imapConfigImplementors = []string{"ImapConfig"}
 
 func (ec *executionContext) _ImapConfig(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.ImapConfig) graphql.Marshaler {
@@ -6950,6 +7482,54 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var pageInfoImplementors = []string{"PageInfo"}
+
+func (ec *executionContext) _PageInfo(ctx context.Context, sel ast.SelectionSet, obj *graphql_model.PageInfo) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, pageInfoImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PageInfo")
+		case "hasNextPage":
+			out.Values[i] = ec._PageInfo_hasNextPage(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hasPreviousPage":
+			out.Values[i] = ec._PageInfo_hasPreviousPage(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "startCursor":
+			out.Values[i] = ec._PageInfo_startCursor(ctx, field, obj)
+		case "endCursor":
+			out.Values[i] = ec._PageInfo_endCursor(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7703,6 +8283,20 @@ func (ec *executionContext) marshalNEmailThread2ᚖgithubᚗcomᚋcustomerosᚋm
 	return ec._EmailThread(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNEmailThreadConnection2githubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadConnection(ctx context.Context, sel ast.SelectionSet, v graphql_model.EmailThreadConnection) graphql.Marshaler {
+	return ec._EmailThreadConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEmailThreadConnection2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadConnection(ctx context.Context, sel ast.SelectionSet, v *graphql_model.EmailThreadConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EmailThreadConnection(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -7767,6 +8361,16 @@ func (ec *executionContext) marshalNMailboxProvider2githubᚗcomᚋcustomerosᚋ
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNPageInfo2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐPageInfo(ctx context.Context, sel ast.SelectionSet, v *graphql_model.PageInfo) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PageInfo(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -8207,6 +8811,14 @@ func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.Sele
 	}
 	res := graphql.MarshalInt(*v)
 	return res
+}
+
+func (ec *executionContext) unmarshalOPaginationInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐPaginationInput(ctx context.Context, v any) (*graphql_model.PaginationInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputPaginationInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOSmtpConfigInput2ᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐSMTPConfigInput(ctx context.Context, v any) (*graphql_model.SMTPConfigInput, error) {

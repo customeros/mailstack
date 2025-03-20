@@ -8,6 +8,12 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 )
 
+type Connection interface {
+	IsConnection()
+	GetPageInfo() *PageInfo
+	GetTotalCount() int
+}
+
 type Attachment struct {
 	ID          string `json:"id"`
 	Filename    string `json:"filename"`
@@ -70,6 +76,16 @@ type EmailThread struct {
 	LastMessageAt    *time.Time `json:"lastMessageAt,omitempty"`
 }
 
+type EmailThreadConnection struct {
+	Edges      []*EmailThread `json:"edges"`
+	PageInfo   *PageInfo      `json:"pageInfo"`
+	TotalCount int            `json:"totalCount"`
+}
+
+func (EmailThreadConnection) IsConnection()               {}
+func (this EmailThreadConnection) GetPageInfo() *PageInfo { return this.PageInfo }
+func (this EmailThreadConnection) GetTotalCount() int     { return this.TotalCount }
+
 type ImapConfig struct {
 	ImapServer   *string             `json:"imapServer,omitempty"`
 	ImapPort     *int                `json:"imapPort,omitempty"`
@@ -113,6 +129,18 @@ type MailboxInput struct {
 }
 
 type Mutation struct {
+}
+
+type PageInfo struct {
+	HasNextPage     bool    `json:"hasNextPage"`
+	HasPreviousPage bool    `json:"hasPreviousPage"`
+	StartCursor     *string `json:"startCursor,omitempty"`
+	EndCursor       *string `json:"endCursor,omitempty"`
+}
+
+type PaginationInput struct {
+	Offset *int `json:"offset,omitempty"`
+	Limit  *int `json:"limit,omitempty"`
 }
 
 type Query struct {

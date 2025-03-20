@@ -36,6 +36,24 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 	return mailboxes, nil
 }
 
+func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxesByUserID")
+	defer span.Finish()
+
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.SetTag("user_id", userID)
+
+	var mailboxes []*models.Mailbox
+
+	result := r.db.Where("user_id = ?", userID).Find(&mailboxes)
+	if result.Error != nil {
+		tracing.TraceErr(span, result.Error)
+		return nil, result.Error
+	}
+
+	return mailboxes, nil
+}
+
 func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailbox")
 	defer span.Finish()
