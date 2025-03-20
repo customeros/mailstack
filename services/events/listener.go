@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/dto"
-	mailstack_errors "github.com/customeros/mailstack/errors"
+	mailstack_errors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
@@ -53,7 +53,7 @@ func (b BaseEventListener) ValidateBaseEvent(ctx context.Context, input any) (*d
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
-		err := mailstack_errors.ErrTenantNotSet
+		err := mailstack_errors.ErrTenantMissing
 		tracing.TraceErr(span, err)
 		return nil, err
 	}

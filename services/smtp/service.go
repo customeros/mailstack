@@ -33,13 +33,7 @@ func NewSMTPClient(repos *repository.Repositories, mailbox *models.Mailbox) *SMT
 	}
 }
 
-type SendResult struct {
-	Success      bool
-	MessageID    string
-	ErrorMessage string
-}
-
-func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment) *SendResult {
+func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.Send")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -48,20 +42,14 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	err := s.validateEmail(ctx, email)
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return &SendResult{
-			Success:      false,
-			ErrorMessage: err.Error(),
-		}
+		return err
 	}
 
 	// Prepare the email message
 	allRecipients, messageBuffer, err := s.prepareMessage(ctx, email, attachments)
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return &SendResult{
-			Success:      false,
-			ErrorMessage: fmt.Sprintf("failed to prepare email: %v", err),
-		}
+		return err
 	}
 
 	// Send the email
@@ -75,10 +63,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 		if err != nil {
 			tracing.TraceErr(span, err)
 		}
-		return &SendResult{
-			Success:      false,
-			ErrorMessage: err.Error(),
-		}
+		return err
 	}
 
 	// update db with success
@@ -88,16 +73,10 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	err = s.repositories.EmailRepository.Update(ctx, email)
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return &SendResult{
-			Success:      false,
-			ErrorMessage: err.Error(),
-		}
+		return err
 	}
 
-	return &SendResult{
-		Success:   true,
-		MessageID: email.MessageID,
-	}
+	return nil
 }
 
 // validateEmail performs basic validation on the email

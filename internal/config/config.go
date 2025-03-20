@@ -1,17 +1,10 @@
 package config
 
-import (
-	"github.com/customeros/mailstack/internal/logger"
-	"github.com/customeros/mailstack/internal/tracing"
-)
-
 type AppConfig struct {
 	APIPort           string `env:"PORT,required" envDefault:"12222"`
 	APIKey            string `env:"API_KEY,required"`
 	RabbitMQURL       string `env:"RABBITMQ_URL"`
 	TrackingPublicUrl string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`
-	Logger            *logger.Config
-	Tracing           *tracing.JaegerConfig
 }
 
 type MailstackDatabaseConfig struct {

@@ -22,7 +22,7 @@ type EmailBody struct {
 
 type EmailInput struct {
 	MailboxID     *string    `json:"mailboxId,omitempty"`
-	FromAddresss  string     `json:"fromAddresss"`
+	FromAddress   string     `json:"fromAddress"`
 	FromName      *string    `json:"fromName,omitempty"`
 	ToAddresses   []string   `json:"toAddresses"`
 	CcAddresses   []string   `json:"ccAddresses,omitempty"`

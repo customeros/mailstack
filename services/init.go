@@ -53,6 +53,9 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	if err != nil {
 		return nil, err
 	}
+	if events == nil {
+		log.Fatalf("events not initialized")
+	}
 
 	aiServiceImpl := ai.NewAIService(cfg.CustomerOSAPIConfig)
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
@@ -65,7 +68,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		EventsService:      events,
 		AIService:          aiServiceImpl,
 		CloudflareService:  cloudflareImpl,
-		EmailService:       email.NewEmailService(repos),
+		EmailService:       email.NewEmailService(events, repos),
 		EmailFilterService: email_filter.NewEmailFilterService(),
 		IMAPService:        imapImpl,
 		MailboxService:     mailbox.NewMailboxService(repos, imapImpl),

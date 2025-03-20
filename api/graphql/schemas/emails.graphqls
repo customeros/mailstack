@@ -14,7 +14,7 @@ enum EmailStatus {
 
 input EmailInput {
   mailboxId: String
-  fromAddresss: String!
+  fromAddress: String!
   fromName: String
   toAddresses: [String!]!
   ccAddresses: [String!]

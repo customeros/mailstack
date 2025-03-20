@@ -1,6 +1,7 @@
 package events
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/customeros/mailstack/internal/logger"
@@ -16,10 +17,16 @@ func NewEventsService(rabbitmqURL string, log logger.Logger, publisherConfig *Pu
 	if err != nil {
 		return nil, err
 	}
+	if publisher == nil {
+		return nil, errors.New("events publisher not initialized")
+	}
 
 	subscriber, err := NewRabbitMQSubscriber(rabbitmqURL, log, subscriberConfig)
 	if err != nil {
 		return nil, err
+	}
+	if subscriber == nil {
+		return nil, errors.New("events subscriber not initialized")
 	}
 
 	return &EventsService{
