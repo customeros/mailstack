@@ -12,25 +12,6 @@ type EmailThread {
 }
 
 extend type Query {
-  getThreadsByUser(userId: String!): [EmailThread!]!
+  getAllThreads(userId: String!): [EmailThread!]!
 }
 
-
-// i would like this 
-type Emails {
-  id: String!
-  userId: String!
-  mailboxId: String!
-  subject: String!
-  summary: String!
-  isViewed: Boolean!
-  isDone: Boolean!
-  lastSender: String!
-  lastSenderDomain: String!
-  lastMessageAt: Time
-}
-
-
-extend type Query{
-getInboxEmails():[Emails!]!
-}
