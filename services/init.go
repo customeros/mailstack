@@ -43,7 +43,13 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		MaxReconnectBackoff: events.DefaultMaxReconnectBackoff,
 	}
 
-	events, err := events.NewEventsService(rabbitmqURL, log, publisherConfig)
+	subscriberConfig := &events.SubscriberConfig{
+		MaxRetries:          events.DefaultMaxRetries,
+		ReconnectBackoff:    events.DefaultReconnectBackoff,
+		MaxReconnectBackoff: events.DefaultMaxReconnectBackoff,
+	}
+
+	events, err := events.NewEventsService(rabbitmqURL, log, publisherConfig, subscriberConfig)
 	if err != nil {
 		return nil, err
 	}

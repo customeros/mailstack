@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 
+	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
@@ -23,16 +24,61 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.Email, at
 		return "", enum.EmailStatusFailed, err
 	}
 
-	// get sender profile if exists and needed to complete send
-
-	// conplete emailRecord
+	setDefaultSendingValues(email)
 
 	// create a new email thraed & attach email to it
+	err = s.createNewEmailThreadForEmail(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", enum.EmailStatusFailed, err
+	}
 
-	// queue email for sending & return -- handle immedeate and future sends
-	return "", enum.EmailStatusQueued, nil
+	// save email to db
+	emailID, err := s.repositories.EmailRepository.Create(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return "", enum.EmailStatusFailed, err
+	}
 
-	// async process email send
+	// if scheduleFor is empty, fire event to send now
+	return emailID, email.Status, nil
+}
+
+func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *models.Email) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.createNewEmailThreadForEmail")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	thread := &models.EmailThread{
+		MailboxID:      email.MailboxID,
+		Subject:        email.Subject,
+		Participants:   email.AllParticipants(),
+		LastMessageID:  email.MessageID,
+		HasAttachments: email.HasAttachment,
+		FirstMessageAt: utils.NowPtr(),
+		LastMessageAt:  utils.NowPtr(),
+	}
+
+	threadID, err := s.repositories.EmailThreadRepository.Create(ctx, thread)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if threadID == "" {
+		err = errors.New("failed to create new email thread")
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	email.ThreadID = threadID
+	return nil
+}
+
+func setDefaultSendingValues(email *models.Email) {
+	email.Direction = enum.EmailDirectionOutbound
+	email.Status = enum.EmailStatusQueued
+	email.MessageID = utils.GenerateMessageID(email.FromDomain, "")
+	email.SendAttempts = 1
 }
 
 func (s *emailService) validateEmail(ctx context.Context, email *models.Email, attachmentIDs []string) error {
@@ -139,19 +185,7 @@ func (s *emailService) validateSender(ctx context.Context, email *models.Email) 
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// validate mailbox/email exists
-	var mailbox *models.Mailbox
-	var err error
-
-	if email.MailboxID != "" {
-		mailbox, err = s.repositories.MailboxRepository.GetMailbox(ctx, email.MailboxID)
-	} else {
-		if email.FromAddress == "" {
-			err = ErrUnknownSender
-			tracing.TraceErr(span, err)
-			return err
-		}
-		mailbox, err = s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, email.FromAddress)
-	}
+	mailbox, err := s.getMailbox(ctx, email)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -161,6 +195,7 @@ func (s *emailService) validateSender(ctx context.Context, email *models.Email) 
 		tracing.TraceErr(span, err)
 		return err
 	}
+	email.MailboxID = mailbox.ID
 
 	// validate user/tenant owns mailbox/email
 	tenant := utils.GetTenantFromContext(ctx)
@@ -185,6 +220,16 @@ func (s *emailService) validateSender(ctx context.Context, email *models.Email) 
 		return err
 	}
 
+	// validate sender email and set user and domain on email
+	validateSender := mailvalidate.ValidateEmailSyntax(email.FromAddress)
+	if !validateSender.IsValid || validateSender.IsSystemGenerated || validateSender.IsFreeAccount {
+		err = ErrInvalidSender
+		tracing.TraceErr(span, err)
+		return err
+	}
+	email.FromUser = validateSender.User
+	email.FromDomain = validateSender.Domain
+
 	// validate sender profile exists or sender info provided in request
 	if mailbox.SenderID == "" && email.FromName == "" {
 		err = ErrUnknownSender
@@ -193,8 +238,65 @@ func (s *emailService) validateSender(ctx context.Context, email *models.Email) 
 		return err
 	}
 
+	err = s.buildEmailSender(ctx, email, mailbox)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	if mailbox.ReplyToAddress != "" && email.ReplyTo == "" {
 		email.ReplyTo = mailbox.ReplyToAddress
 	}
+
+	return nil
+}
+
+func (s *emailService) getMailbox(ctx context.Context, email *models.Email) (*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.getMailbox")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	if email.MailboxID != "" {
+		return s.repositories.MailboxRepository.GetMailbox(ctx, email.MailboxID)
+	}
+
+	if email.FromAddress == "" {
+		err := ErrUnknownSender
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	return s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, email.FromAddress)
+}
+
+// buildEmailSender fills in sender details.  Values provided in the email request override default values
+// attached to senderID.  SenderID only used to fill in gaps in the request.
+func (s *emailService) buildEmailSender(ctx context.Context, email *models.Email, mailbox *models.Mailbox) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.buildEmailService")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	if mailbox.SenderID == "" {
+		return nil
+	}
+
+	if email.FromName != "" {
+		return nil
+	}
+
+	// get sender
+	sender, err := s.repositories.SenderRepository.GetByID(ctx, mailbox.SenderID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if sender == nil {
+		tracing.TraceErr(span, ErrUnknownSender)
+		return ErrUnknownSender
+	}
+
+	email.FromName = sender.DisplayName
+
+	// TODO add signatures to outgoing emails
 	return nil
 }

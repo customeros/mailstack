@@ -4,7 +4,7 @@ type EntityType string
 
 const (
 	EMAIL_SIGNATURE EntityType = "EMAIL_SIGNATURE"
-	RAW_EMAIL       EntityType = "RAW_EMAIL"
+	EMAIL           EntityType = "EMAIL"
 )
 
 func (entityType EntityType) String() string {

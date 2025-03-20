@@ -7,17 +7,24 @@ import (
 )
 
 type EventsService struct {
-	Publisher *RabbitMQPublisher
+	Publisher  *RabbitMQPublisher
+	Subscriber *RabbitMQSubscriber
 }
 
-func NewEventsService(rabbitmqURL string, log logger.Logger, publisherConfig *PublisherConfig) (*EventsService, error) {
+func NewEventsService(rabbitmqURL string, log logger.Logger, publisherConfig *PublisherConfig, subscriberConfig *SubscriberConfig) (*EventsService, error) {
 	publisher, err := NewRabbitMQPublisher(rabbitmqURL, log, publisherConfig)
 	if err != nil {
 		return nil, err
 	}
 
+	subscriber, err := NewRabbitMQSubscriber(rabbitmqURL, log, subscriberConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return &EventsService{
-		Publisher: publisher,
+		Publisher:  publisher,
+		Subscriber: subscriber,
 	}, nil
 }
 
@@ -26,6 +33,12 @@ func (s *EventsService) Close() error {
 
 	if s.Publisher != nil {
 		if err := s.Publisher.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if s.Subscriber != nil {
+		if err := s.Subscriber.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

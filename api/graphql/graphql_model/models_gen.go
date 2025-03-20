@@ -112,9 +112,11 @@ type MailboxInput struct {
 	SyncFolders     []*string          `json:"syncFolders,omitempty"`
 }
 
-type Mutation struct{}
+type Mutation struct {
+}
 
-type Query struct{}
+type Query struct {
+}
 
 type SMTPConfig struct {
 	SMTPServer   *string             `json:"smtpServer,omitempty"`

@@ -8,14 +8,14 @@ db:
 debug:
     dlv debug . -- server
 
-down:
-	cd ./deployments && podman-compose down
-
 gen-api:
     go run github.com/99designs/gqlgen generate --config ./api/graphql/gqlgen.yml
 
 migrate:
     go run main.go migrate
+
+rabbit:
+    open "http://localhost:15672"
 
 run:
     go run main.go server
@@ -23,5 +23,6 @@ run:
 tidy:
     go mod tidy
 
-up:
-	cd ./deployments && podman-compose up -d
+trace:
+    open "http://localhost:16686"
+
