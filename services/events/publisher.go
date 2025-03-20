@@ -12,9 +12,10 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 
 	"github.com/customeros/mailstack/dto"
-	mailstack_errors "github.com/customeros/mailstack/errors"
 	"github.com/customeros/mailstack/internal/enum"
+	mailstack_errors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -29,8 +30,10 @@ const (
 	// queues
 	QueueNotifications = "notifications"
 	QueueMailstack     = "events-mailstack"
+	QueueSendEmail     = "send-email"
 	DLQMailstack       = QueueMailstack + "-dlq"
 	DLQNotifications   = QueueNotifications + "-dlq"
+	DLQSendEmail       = QueueSendEmail + "-dlq"
 
 	// routing keys
 	RoutingKeyDeadLetter = "dead-letter"
@@ -88,6 +91,10 @@ func NewRabbitMQPublisher(rabbitmqURL string, logger logger.Logger, config *Publ
 	return publisher, nil
 }
 
+func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *models.Email) error {
+	return r.PublishDirectMailstackEvent(ctx, email.ID, enum.EMAIL, dto.SendEmail{Email: email})
+}
+
 func (r *RabbitMQPublisher) PublishFanoutEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
 	err := utils.ValidateTenant(ctx)
 	if err != nil {
@@ -103,7 +110,7 @@ func (r *RabbitMQPublisher) PublishNotification(ctx context.Context, tenant stri
 func (r *RabbitMQPublisher) PublishDirectMailstackEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
-		return mailstack_errors.ErrTenantNotSet
+		return mailstack_errors.ErrTenantMissing
 	}
 	return r.publishEventOnExchange(ctx, entityId, entityType, message, ExchangeMailstackDirect, RoutingKeyMailstack)
 }
@@ -308,6 +315,21 @@ func (r *RabbitMQPublisher) declareAndBindQueues(channel *amqp091.Channel) error
 		if err != nil {
 			return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", q.queueName, ExchangeCustomerOS)
 		}
+	}
+	// Mailstack direct queue with DLQ
+	err = r.declareQueueWithDLQ(channel, QueueSendEmail, DLQSendEmail)
+	if err != nil {
+		return err
+	}
+	err = channel.QueueBind(
+		QueueSendEmail,
+		RoutingKeyMailstack,
+		ExchangeMailstackDirect,
+		false,
+		nil,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", QueueSendEmail, ExchangeMailstackDirect)
 	}
 
 	return nil

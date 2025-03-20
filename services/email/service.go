@@ -7,17 +7,21 @@ import (
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/services/events"
 )
 
 type emailService struct {
-	repositories *repository.Repositories
+	eventsService *events.EventsService
+	repositories  *repository.Repositories
 }
 
 func NewEmailService(
+	eventsService *events.EventsService,
 	repositories *repository.Repositories,
 ) interfaces.EmailService {
 	return &emailService{
-		repositories: repositories,
+		repositories:  repositories,
+		eventsService: eventsService,
 	}
 }
 

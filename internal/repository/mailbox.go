@@ -40,6 +40,7 @@ func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailbox")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogKV("mailboxId", id)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "id = ?", id).Error

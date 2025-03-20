@@ -8,14 +8,13 @@ import (
 	"context"
 	"errors"
 
-	opentracing "github.com/opentracing/opentracing-go"
-
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // SendEmail is the resolver for the sendEmail field.

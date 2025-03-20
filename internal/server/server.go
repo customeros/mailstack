@@ -21,11 +21,13 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/listeners"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
 	"github.com/customeros/mailstack/services/email_processor"
+	"github.com/customeros/mailstack/services/events"
 )
 
 type Server struct {
@@ -62,6 +64,15 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 
 	// Set up handler for email events
 	emailProcessor := email_processor.NewProcessor(repos, svcs.EventsService, svcs.EmailFilterService, svcs.AIService)
+
+	// Initialize listeners
+	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(logger, repos, svcs.EmailService))
+
+	// Start Listening on rabbit queues
+	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueSendEmail)
+	if err != nil {
+		logger.Errorf("Failed to start listening on send email queue: %v", err)
+	}
 
 	// Initialize Gin
 	gin.SetMode(gin.ReleaseMode)

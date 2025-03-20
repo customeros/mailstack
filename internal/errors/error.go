@@ -1,4 +1,4 @@
-package errors
+package mailstack_errors
 
 import "github.com/pkg/errors"
 

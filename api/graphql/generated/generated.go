@@ -758,7 +758,7 @@ enum EmailStatus {
 
 input EmailInput {
   mailboxId: String
-  fromAddresss: String!
+  fromAddress: String!
   fromName: String
   toAddresses: [String!]!
   ccAddresses: [String!]
@@ -6211,7 +6211,7 @@ func (ec *executionContext) unmarshalInputEmailInput(ctx context.Context, obj an
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"mailboxId", "fromAddresss", "fromName", "toAddresses", "ccAddresses", "bccAddresses", "replyTo", "subject", "body", "attachmentIds", "scheduleFor", "trackClicks"}
+	fieldsInOrder := [...]string{"mailboxId", "fromAddress", "fromName", "toAddresses", "ccAddresses", "bccAddresses", "replyTo", "subject", "body", "attachmentIds", "scheduleFor", "trackClicks"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -6225,13 +6225,13 @@ func (ec *executionContext) unmarshalInputEmailInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.MailboxID = data
-		case "fromAddresss":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("fromAddresss"))
+		case "fromAddress":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("fromAddress"))
 			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.FromAddresss = data
+			it.FromAddress = data
 		case "fromName":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("fromName"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
