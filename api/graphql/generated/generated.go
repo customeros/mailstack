@@ -118,9 +118,9 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		GetEmailsByThread func(childComplexity int, threadID string) int
-		GetThreadMetadata func(childComplexity int, threadID string) int
-		GetThreadsByUser  func(childComplexity int, userID string) int
+		GetAllEmailsInThread func(childComplexity int, threadID string) int
+		GetAllThreads        func(childComplexity int, userID string) int
+		GetThreadMetadata    func(childComplexity int, threadID string) int
 	}
 
 	SmtpConfig struct {
@@ -146,9 +146,9 @@ type MutationResolver interface {
 	UpdateMailbox(ctx context.Context, id string, input graphql_model.MailboxInput) (*graphql_model.Mailbox, error)
 }
 type QueryResolver interface {
-	GetEmailsByThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error)
+	GetAllEmailsInThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error)
 	GetThreadMetadata(ctx context.Context, threadID string) (*graphql_model.ThreadMetadata, error)
-	GetThreadsByUser(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error)
+	GetAllThreads(ctx context.Context, userID string) ([]*graphql_model.EmailThread, error)
 }
 
 type executableSchema struct {
@@ -521,17 +521,29 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.UpdateMailbox(childComplexity, args["id"].(string), args["input"].(graphql_model.MailboxInput)), true
 
-	case "Query.getEmailsByThread":
-		if e.complexity.Query.GetEmailsByThread == nil {
+	case "Query.getAllEmailsInThread":
+		if e.complexity.Query.GetAllEmailsInThread == nil {
 			break
 		}
 
-		args, err := ec.field_Query_getEmailsByThread_args(context.TODO(), rawArgs)
+		args, err := ec.field_Query_getAllEmailsInThread_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Query.GetEmailsByThread(childComplexity, args["threadId"].(string)), true
+		return e.complexity.Query.GetAllEmailsInThread(childComplexity, args["threadId"].(string)), true
+
+	case "Query.getAllThreads":
+		if e.complexity.Query.GetAllThreads == nil {
+			break
+		}
+
+		args, err := ec.field_Query_getAllThreads_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.GetAllThreads(childComplexity, args["userId"].(string)), true
 
 	case "Query.getThreadMetadata":
 		if e.complexity.Query.GetThreadMetadata == nil {
@@ -544,18 +556,6 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.GetThreadMetadata(childComplexity, args["threadId"].(string)), true
-
-	case "Query.getThreadsByUser":
-		if e.complexity.Query.GetThreadsByUser == nil {
-			break
-		}
-
-		args, err := ec.field_Query_getThreadsByUser_args(context.TODO(), rawArgs)
-		if err != nil {
-			return 0, false
-		}
-
-		return e.complexity.Query.GetThreadsByUser(childComplexity, args["userId"].(string)), true
 
 	case "SmtpConfig.smtpPassword":
 		if e.complexity.SmtpConfig.SMTPPassword == nil {
@@ -814,7 +814,7 @@ type Attachment {
 }
 
 extend type Query {
-  getEmailsByThread(threadId: String!): [EmailMessage!]!
+  getAllEmailsInThread(threadId: String!): [EmailMessage!]!
   getThreadMetadata(threadId: String!): ThreadMetadata!
 }
 
@@ -919,8 +919,9 @@ extend type Mutation {
 }
 
 extend type Query {
-  getThreadsByUser(userId: String!): [EmailThread!]!
+  getAllThreads(userId: String!): [EmailThread!]!
 }
+
 `, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
@@ -1064,17 +1065,17 @@ func (ec *executionContext) field_Query___type_argsName(
 	return zeroVal, nil
 }
 
-func (ec *executionContext) field_Query_getEmailsByThread_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Query_getAllEmailsInThread_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_getEmailsByThread_argsThreadID(ctx, rawArgs)
+	arg0, err := ec.field_Query_getAllEmailsInThread_argsThreadID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
 	args["threadId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_getEmailsByThread_argsThreadID(
+func (ec *executionContext) field_Query_getAllEmailsInThread_argsThreadID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
@@ -1085,6 +1086,34 @@ func (ec *executionContext) field_Query_getEmailsByThread_argsThreadID(
 
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("threadId"))
 	if tmp, ok := rawArgs["threadId"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Query_getAllThreads_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Query_getAllThreads_argsUserID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["userId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Query_getAllThreads_argsUserID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	if _, ok := rawArgs["userId"]; !ok {
+		var zeroVal string
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
+	if tmp, ok := rawArgs["userId"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -1113,34 +1142,6 @@ func (ec *executionContext) field_Query_getThreadMetadata_argsThreadID(
 
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("threadId"))
 	if tmp, ok := rawArgs["threadId"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_getThreadsByUser_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Query_getThreadsByUser_argsUserID(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["userId"] = arg0
-	return args, nil
-}
-func (ec *executionContext) field_Query_getThreadsByUser_argsUserID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["userId"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
-	if tmp, ok := rawArgs["userId"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -3429,8 +3430,8 @@ func (ec *executionContext) fieldContext_Mutation_updateMailbox(ctx context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _Query_getEmailsByThread(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_getEmailsByThread(ctx, field)
+func (ec *executionContext) _Query_getAllEmailsInThread(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_getAllEmailsInThread(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -3443,7 +3444,7 @@ func (ec *executionContext) _Query_getEmailsByThread(ctx context.Context, field 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().GetEmailsByThread(rctx, fc.Args["threadId"].(string))
+		return ec.resolvers.Query().GetAllEmailsInThread(rctx, fc.Args["threadId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -3460,7 +3461,7 @@ func (ec *executionContext) _Query_getEmailsByThread(ctx context.Context, field 
 	return ec.marshalNEmailMessage2ᚕᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailMessageᚄ(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_Query_getEmailsByThread(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Query_getAllEmailsInThread(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
 		Field:      field,
@@ -3505,7 +3506,7 @@ func (ec *executionContext) fieldContext_Query_getEmailsByThread(ctx context.Con
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Query_getEmailsByThread_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Query_getAllEmailsInThread_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -3579,8 +3580,8 @@ func (ec *executionContext) fieldContext_Query_getThreadMetadata(ctx context.Con
 	return fc, nil
 }
 
-func (ec *executionContext) _Query_getThreadsByUser(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_getThreadsByUser(ctx, field)
+func (ec *executionContext) _Query_getAllThreads(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_getAllThreads(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -3593,7 +3594,7 @@ func (ec *executionContext) _Query_getThreadsByUser(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().GetThreadsByUser(rctx, fc.Args["userId"].(string))
+		return ec.resolvers.Query().GetAllThreads(rctx, fc.Args["userId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -3610,7 +3611,7 @@ func (ec *executionContext) _Query_getThreadsByUser(ctx context.Context, field g
 	return ec.marshalNEmailThread2ᚕᚖgithubᚗcomᚋcustomerosᚋmailstackᚋapiᚋgraphqlᚋgraphql_modelᚐEmailThreadᚄ(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_Query_getThreadsByUser(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Query_getAllThreads(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
 		Field:      field,
@@ -3649,7 +3650,7 @@ func (ec *executionContext) fieldContext_Query_getThreadsByUser(ctx context.Cont
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Query_getThreadsByUser_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Query_getAllThreads_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -6991,7 +6992,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
-		case "getEmailsByThread":
+		case "getAllEmailsInThread":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -7000,7 +7001,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_getEmailsByThread(ctx, field)
+				res = ec._Query_getAllEmailsInThread(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -7035,7 +7036,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
-		case "getThreadsByUser":
+		case "getAllThreads":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -7044,7 +7045,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_getThreadsByUser(ctx, field)
+				res = ec._Query_getAllThreads(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}

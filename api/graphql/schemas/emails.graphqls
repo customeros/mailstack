@@ -70,13 +70,7 @@ type Attachment {
 }
 
 extend type Query {
-  getEmailsByThread(threadId: String!): [EmailMessage!]!
-  getThreadMetadata(threadId: String!): ThreadMetadata!
-}
-
-// i would like this 
-extend type Query {
-  getEmailThread(threadId: String!): [EmailMessage!]!
+  getAllEmailsInThread(threadId: String!): [EmailMessage!]!
   getThreadMetadata(threadId: String!): ThreadMetadata!
 }
 
