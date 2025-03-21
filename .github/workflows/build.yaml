@@ -63,6 +63,7 @@ jobs:
 
   # Generate common metadata for all builds
   prepare:
+    needs: [ build ]
     runs-on: ubicloud-standard-2
     if: github.ref == 'refs/heads/otter' || github.event_name == 'release'
     outputs:
