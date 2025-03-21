@@ -8,8 +8,12 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  MAILSTACK_IMAGE_NAME: ${{ github.repository }}
-  DOCKER_BUILDKIT: 1
+  IMAGE_NAME: ${{ github.repository }}
+  GOMODCACHE: ${{ github.workspace }}/go/pkg/mod
+  GOBIN: ${{ github.workspace }}/go/bin
+  CGO_ENABLED: 0
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
 
 permissions:
   contents: write
@@ -85,7 +89,7 @@ jobs:
               run_id: context.runId
             });
 
-  create-release:
+  generate-version:
     needs: check-release-needed
     # Only run if version_bump is not 'skip' - this acts as a failsafe
     if: needs.check-release-needed.outputs.version_bump != 'skip'
@@ -150,53 +154,134 @@ jobs:
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Set up Docker for the release image
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+  # Build amd64 image for release
+  build-release-amd64:
+    needs: [generate-version]
+    runs-on: ubicloud-standard-2
+    outputs:
+      digest: ${{ steps.digest.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            network=host
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-          cache: true
-
+      # Log in to registry
       - name: Log in to the Container registry
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and push image with the new version tag
-      - name: Build and push release image
-        uses: docker/build-push-action@v6.15.0
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and push amd64 image
+      - name: Build and push amd64 image
+        id: docker_build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./deployments/Containerfile
+          platforms: linux/amd64
           push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ env.REGISTRY }}/${{ env.MAILSTACK_IMAGE_NAME }}:${{ steps.generate_version.outputs.next_version }}
-          cache-from: |
-            type=gha,scope=mailstack-build
-          cache-to: |
-            type=gha,mode=max,scope=mailstack-build
-          build-args: |
-            "GO_VERSION=1.23.7"
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-amd64
+          provenance: false
+          outputs: type=registry,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Get image digest
+      - name: Get image digest
+        id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-amd64 --format "{{json .Manifest}}" | jq -r '.digest')
+          echo "value=$digest" >> $GITHUB_OUTPUT
+        shell: bash
+
+  # Build arm64 image for release
+  build-release-arm64:
+    needs: [generate-version]
+    runs-on: ubicloud-standard-2-arm
+    outputs:
+      digest: ${{ steps.digest.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Log in to registry
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and push arm64 image
+      - name: Build and push arm64 image
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deployments/Containerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-arm64
+          provenance: false
+          outputs: type=registry,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Get image digest
+      - name: Get image digest
+        id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-arm64 --format "{{json .Manifest}}" | jq -r '.digest')
+          echo "value=$digest" >> $GITHUB_OUTPUT
+        shell: bash
+
+  # Create multi-arch manifests for release
+  create-release-manifest:
+    needs: [generate-version, build-release-amd64, build-release-arm64]
+    runs-on: ubicloud-standard-2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Log in to the Container registry
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Create and push manifest
+      - name: Create and push manifest
+        run: |
+          # Create and push the versioned manifest
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}-arm64
+
+      # Inspect the created manifest
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.generate-version.outputs.next_version }}
+        shell: bash
 
       # Save outputs for potential deployment workflows
       - name: Save workflow outputs
         run: |
-          echo "{\"next_version\": \"${{ steps.generate_version.outputs.next_version }}\"}" > workflow-data.json
+          echo "{\"next_version\": \"${{ needs.generate-version.outputs.next_version }}\"}" > workflow-data.json
 
       - name: Upload workflow outputs
         uses: actions/upload-artifact@v4
         with:
           name: workflow-data
           path: workflow-data.json
-
