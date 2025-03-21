@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/emersion/go-imap"
+
 	"github.com/customeros/mailstack/internal/models"
 )
 
@@ -12,6 +14,7 @@ type IMAPService interface {
 	Stop() error
 	AddMailbox(ctx context.Context, mailbox *models.Mailbox) error
 	RemoveMailbox(ctx context.Context, mailboxID string) error
+	GetMessageByUID(ctx context.Context, mailboxID, folderName string, uid uint32) (*imap.Message, error)
 	Status() map[string]MailboxStatus
 }
 

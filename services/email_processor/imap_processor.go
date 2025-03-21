@@ -23,11 +23,13 @@ import (
 
 type ImapProcessor struct {
 	interfaces.EmailProcessor
+	imapService interfaces.IMAPService
 }
 
-func NewImapProcessor(processor interfaces.EmailProcessor) *ImapProcessor {
+func NewImapProcessor(processor interfaces.EmailProcessor, imapService interfaces.IMAPService) *ImapProcessor {
 	return &ImapProcessor{
-		processor,
+		EmailProcessor: processor,
+		imapService:    imapService,
 	}
 }
 
@@ -36,18 +38,24 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
-	email := p.NewInboundEmail()
+	msg, err := p.imapService.GetMessageByUID(ctx, inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	email := p.EmailProcessor.NewInboundEmail()
 	email.MailboxID = inboundEmail.MailboxID
 	email.Folder = inboundEmail.Folder
-	email.ImapUID = inboundEmail.ImapMessage.Uid
+	email.ImapUID = msg.Uid
 
 	// Process envelope data
-	processEnvelope(email, inboundEmail.ImapMessage.Envelope)
+	processEnvelope(email, msg.Envelope)
 
 	// Process message content
-	attachments := processMessageContent(email, inboundEmail.ImapMessage)
+	attachments := processMessageContent(email, msg)
 
-	err := p.EmailFilter(ctx, email)
+	err = p.EmailProcessor.EmailFilter(ctx, email)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -60,7 +68,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 
 	// Create attachment records if any
 	if !email.HasAttachment || len(attachments) == 0 {
-		return p.ProcessEmail(ctx, email, nil, nil)
+		return p.EmailProcessor.ProcessEmail(ctx, email, nil, nil)
 	}
 
 	attachmentRecords, files := p.processAttachments(attachments)
@@ -69,7 +77,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 		return err
 	}
 
-	return p.ProcessEmail(ctx, email, attachmentRecords, files)
+	return p.EmailProcessor.ProcessEmail(ctx, email, attachmentRecords, files)
 }
 
 func processEnvelope(email *models.Email, envelope *go_imap.Envelope) {
@@ -530,7 +538,7 @@ func (p *ImapProcessor) processAttachments(attachmentsData []map[string]interfac
 }
 
 func (p *ImapProcessor) processAttachment(attachmentData map[string]interface{}) (*models.EmailAttachment, []*interfaces.AttachmentFile) {
-	attachment := p.NewAttachment()
+	attachment := p.EmailProcessor.NewAttachment()
 	attachment.Filename = attachmentData["filename"].(string)
 	attachment.ContentType = attachmentData["content_type"].(string)
 	attachment.Size = attachmentData["size"].(int)
@@ -545,7 +553,7 @@ func (p *ImapProcessor) processAttachment(attachmentData map[string]interface{})
 	var files []*interfaces.AttachmentFile
 	content, ok := attachmentData["content"].([]byte)
 	if ok && len(content) > 0 {
-		files = append(files, p.NewAttachmentFile(attachment.ID, content))
+		files = append(files, p.EmailProcessor.NewAttachmentFile(attachment.ID, content))
 	}
 
 	return attachment, files

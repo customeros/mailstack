@@ -27,25 +27,25 @@ import (
 )
 
 type IMAPService struct {
-	events       *events.EventsService
-	repositories *repository.Repositories
-	clients      map[string]*client.Client
-	configs      map[string]*models.Mailbox
-	clientsMutex sync.RWMutex
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancel       context.CancelFunc
-	statuses     map[string]interfaces.MailboxStatus
-	statusMutex  sync.RWMutex
+	events         *events.EventsService
+	repositories   *repository.Repositories
+	clients        map[string]*client.Client
+	mailboxConfigs map[string]*models.Mailbox
+	clientsMutex   sync.RWMutex
+	wg             sync.WaitGroup
+	ctx            context.Context
+	cancel         context.CancelFunc
+	statuses       map[string]interfaces.MailboxStatus
+	statusMutex    sync.RWMutex
 }
 
 func NewIMAPService(events *events.EventsService, repos *repository.Repositories) interfaces.IMAPService {
 	return &IMAPService{
-		events:       events,
-		repositories: repos,
-		clients:      make(map[string]*client.Client),
-		configs:      make(map[string]*models.Mailbox),
-		statuses:     make(map[string]interfaces.MailboxStatus),
+		events:         events,
+		repositories:   repos,
+		clients:        make(map[string]*client.Client),
+		mailboxConfigs: make(map[string]*models.Mailbox),
+		statuses:       make(map[string]interfaces.MailboxStatus),
 	}
 }
 
@@ -63,12 +63,16 @@ func (s *IMAPService) Start(ctx context.Context) error {
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	span.LogFields(tracingLog.Int("mailbox_count", len(s.configs)))
+	span.LogFields(tracingLog.Int("mailbox_count", len(s.mailboxConfigs)))
 
 	// Start each mailbox sequentially for easier debugging
-	for id, config := range s.configs {
+	for id, config := range s.mailboxConfigs {
+		// Create a mailbox-specific context with tenant information
+		// but don't create a span here since we're passing to a goroutine
+		mailboxCtx := utils.SetTenantInContext(ctx, config.Tenant)
+
 		log.Printf("Starting mailbox: %s (%s)", id, config.ImapUsername)
-		go s.runSingleMailbox(s.ctx, id, config)
+		go s.runSingleMailbox(mailboxCtx, id, config)
 	}
 
 	return nil
@@ -142,7 +146,7 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	defer s.clientsMutex.Unlock()
 
 	// Check for duplicate
-	if _, exists := s.configs[config.ID]; exists {
+	if _, exists := s.mailboxConfigs[config.ID]; exists {
 		err := fmt.Errorf("mailbox with ID %s already exists", config.ID)
 		tracing.TraceErr(span, err)
 		return err
@@ -168,7 +172,7 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	}
 
 	// Store configuration
-	s.configs[config.ID] = config
+	s.mailboxConfigs[config.ID] = config
 
 	// Start monitoring if service is running
 	if s.ctx != nil {
@@ -194,7 +198,7 @@ func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error
 	}
 
 	// Remove configuration
-	delete(s.configs, mailboxID)
+	delete(s.mailboxConfigs, mailboxID)
 	err := s.repositories.MailboxSyncRepository.DeleteMailboxSyncStates(ctx, mailboxID)
 	if err != nil {
 		tracing.TraceErr(span, err)
@@ -209,8 +213,83 @@ func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error
 	return nil
 }
 
+// getConnectedClient returns an established IMAP client for the given mailbox
+// It will reuse an existing connection if available, or create a new one if needed
+func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) (*client.Client, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.getConnectedClient")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+	span.SetTag("mailbox_id", mailboxID)
+
+	// First check if we already have a connected client
+	s.clientsMutex.RLock()
+	existingClient, exists := s.clients[mailboxID]
+	config, configExists := s.mailboxConfigs[mailboxID]
+	s.clientsMutex.RUnlock()
+
+	if !configExists {
+		err := fmt.Errorf("no configuration found for mailbox %s", mailboxID)
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// If we have an existing client, check if it's still connected
+	if exists {
+		// Perform a simple NOOP operation to check connection health
+		_, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		existingClient.Timeout = 10 * time.Second
+		err := existingClient.Noop()
+		existingClient.Timeout = 0
+
+		if err == nil {
+			// Connection is healthy, return it
+			return existingClient, nil
+		}
+
+		// Connection is broken, log it
+		log.Printf("[%s] Existing connection is broken, will establish a new one: %v", mailboxID, err)
+		span.LogFields(tracingLog.String("connection_status", "broken"), tracingLog.Error(err))
+
+		// Clean up the broken connection
+		s.clientsMutex.Lock()
+		delete(s.clients, mailboxID)
+		s.clientsMutex.Unlock()
+	}
+
+	// We need to establish a new connection
+	connectCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+
+	client, err := s.connectToIMAPServer(connectCtx, config)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// Store the new client
+	s.clientsMutex.Lock()
+	s.clients[mailboxID] = client
+	s.clientsMutex.Unlock()
+
+	// Update connection status
+	err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionActive, "")
+	if err != nil {
+		// Log but continue since we have a working connection
+		tracing.TraceErr(span, err)
+		span.LogFields(tracingLog.String("warning", "Failed to update connection status in repository"))
+	}
+
+	return client, nil
+}
+
 // runSingleMailbox handles a single mailbox with reconnection
 func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, config *models.Mailbox) {
+	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.runSingleMailbox")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	s.wg.Add(1)
 	defer s.wg.Done()
 
@@ -594,7 +673,7 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 					strings.Contains(err.Error(), "i/o timeout") ||
 					strings.Contains(err.Error(), "connection reset") {
 					err = fmt.Errorf("connection lost: %w", err)
-					tracing.TraceErr(span, err)
+					span.LogKV("error", err)
 					return err
 				}
 
@@ -624,7 +703,7 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 						strings.Contains(err.Error(), "i/o timeout") ||
 						strings.Contains(err.Error(), "connection reset") {
 						err = fmt.Errorf("connection lost during fetch: %w", err)
-						tracing.TraceErr(span, err)
+						span.LogKV("error", err)
 						return err
 					}
 				}
@@ -694,12 +773,12 @@ func (s *IMAPService) fetchNewMessages(
 
 		// Process the message
 		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
-			Source:        enum.EmailImportIMAP,
-			MailboxID:     mailboxID,
-			Folder:        folderName,
-			ImapMessageID: msg.SeqNum,
-			InitialSync:   false,
-			ImapMessage:   msg,
+			Source:      enum.EmailImportIMAP,
+			MailboxID:   mailboxID,
+			Folder:      folderName,
+			ImapSeqNum:  msg.SeqNum,
+			ImapUID:     msg.Uid,
+			InitialSync: false,
 		})
 	}
 
@@ -810,12 +889,12 @@ func (s *IMAPService) syncNewMessagesSince(
 
 		// Process the message
 		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
-			Source:        enum.EmailImportIMAP,
-			MailboxID:     mailboxID,
-			Folder:        folderName,
-			ImapMessageID: msg.SeqNum,
-			InitialSync:   false,
-			ImapMessage:   msg,
+			Source:      enum.EmailImportIMAP,
+			MailboxID:   mailboxID,
+			Folder:      folderName,
+			ImapSeqNum:  msg.SeqNum,
+			ImapUID:     msg.Uid,
+			InitialSync: false,
 		})
 	}
 

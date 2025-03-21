@@ -91,6 +91,9 @@ func (p *emailProcessor) ProcessEmail(
 	}
 	email.ID = emailID
 
+	// Throw events
+	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: email.AllParticipants()})
+
 	return nil
 }
 
