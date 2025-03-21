@@ -68,7 +68,21 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 
 	var apiThreads []*graphql_model.EmailThread
 	for _, thread := range threads {
-		apiThreads = append(apiThreads, mappers.MapGormThreadToGraph(thread))
+		mappedThread := mappers.MapGormThreadToGraph(thread)
+		mappedThread.UserID = userID
+
+		email, err := r.repositories.EmailRepository.GetByID(ctx, thread.LastMessageID)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return nil, api_errors.NewError("unable to retrieve email", api_errors.CodeInternal, nil)
+		}
+		if email == nil {
+			return nil, api_errors.NewError("no email found", api_errors.CodeNotFound, nil)
+		}
+
+		mappedThread.LastSender = email.FromAddress
+		mappedThread.LastSenderDomain = email.FromDomain
+		apiThreads = append(apiThreads, mappedThread)
 	}
 
 	// Calculate pagination info

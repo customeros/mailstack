@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
-	mailstack_errors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
@@ -31,13 +31,16 @@ const (
 	QueueNotifications = "notifications"
 	QueueMailstack     = "events-mailstack"
 	QueueSendEmail     = "send-email"
+	QueueReceiveEmail  = "receive-email"
 	DLQMailstack       = QueueMailstack + "-dlq"
 	DLQNotifications   = QueueNotifications + "-dlq"
 	DLQSendEmail       = QueueSendEmail + "-dlq"
+	DLQReceiveEmail    = QueueReceiveEmail + "-dlq"
 
 	// routing keys
-	RoutingKeyDeadLetter = "dead-letter"
-	RoutingKeyMailstack  = "mailstack-direct"
+	RoutingKeyDeadLetter   = "dead-letter"
+	RoutingKeySendEmail    = "mailstack-send-email"
+	RoutingKeyReceiveEmail = "mailstack-receive-email"
 
 	// Default configurations
 	DefaultMessageTTL          = 240 * time.Hour // after TTL message moves to DLQ
@@ -91,8 +94,18 @@ func NewRabbitMQPublisher(rabbitmqURL string, logger logger.Logger, config *Publ
 	return publisher, nil
 }
 
+func (r *RabbitMQPublisher) PublishRecieveEmailEvent(ctx context.Context, message dto.EmailReceived) error {
+	switch message.Source {
+	case enum.EmailImportIMAP:
+		id := fmt.Sprintf("%s-%s-%s", message.MailboxID, message.Folder, message.ImapMessageID)
+		return r.publishEventOnExchange(ctx, id, enum.EMAIL, message, ExchangeMailstackDirect, RoutingKeyReceiveEmail)
+	default:
+		return errors.New("not implemented yet")
+	}
+}
+
 func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *models.Email) error {
-	return r.PublishDirectMailstackEvent(ctx, email.ID, enum.EMAIL, dto.SendEmail{Email: email})
+	return r.publishEventOnExchange(ctx, email.ID, enum.EMAIL, dto.SendEmail{Email: email}, ExchangeMailstackDirect, RoutingKeySendEmail)
 }
 
 func (r *RabbitMQPublisher) PublishFanoutEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
@@ -105,14 +118,6 @@ func (r *RabbitMQPublisher) PublishFanoutEvent(ctx context.Context, entityId str
 
 func (r *RabbitMQPublisher) PublishNotification(ctx context.Context, tenant string, entityId string, entityType enum.EntityType, details *utils.EventCompletedDetails) {
 	r.PublishNotificationBulk(ctx, tenant, []string{entityId}, entityType, details)
-}
-
-func (r *RabbitMQPublisher) PublishDirectMailstackEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {
-	tenant := utils.GetTenantFromContext(ctx)
-	if tenant == "" {
-		return mailstack_errors.ErrTenantMissing
-	}
-	return r.publishEventOnExchange(ctx, entityId, entityType, message, ExchangeMailstackDirect, RoutingKeyMailstack)
 }
 
 func (r *RabbitMQPublisher) PublishNotificationBulk(ctx context.Context, tenant string, entityIds []string, entityType enum.EntityType, details *utils.EventCompletedDetails) {
@@ -316,14 +321,31 @@ func (r *RabbitMQPublisher) declareAndBindQueues(channel *amqp091.Channel) error
 			return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", q.queueName, ExchangeCustomerOS)
 		}
 	}
-	// Mailstack direct queue with DLQ
+
+	// Mailstack SendEmail direct queue with DLQ
 	err = r.declareQueueWithDLQ(channel, QueueSendEmail, DLQSendEmail)
 	if err != nil {
 		return err
 	}
 	err = channel.QueueBind(
 		QueueSendEmail,
-		RoutingKeyMailstack,
+		RoutingKeySendEmail,
+		ExchangeMailstackDirect,
+		false,
+		nil,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to bind queue %s to exchange %s", QueueSendEmail, ExchangeMailstackDirect)
+	}
+
+	// Mailstack ReceiveEmail direct queue with DLQ
+	err = r.declareQueueWithDLQ(channel, QueueReceiveEmail, DLQReceiveEmail)
+	if err != nil {
+		return err
+	}
+	err = channel.QueueBind(
+		QueueReceiveEmail,
+		RoutingKeyReceiveEmail,
 		ExchangeMailstackDirect,
 		false,
 		nil,

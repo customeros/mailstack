@@ -37,6 +37,7 @@ type Email struct {
 	CcAddresses  pq.StringArray `gorm:"column:cc_addresses;type:text[]" json:"ccAddresses"`
 	BccAddresses pq.StringArray `gorm:"column:bcc_addresses;type:text[]" json:"bccAddresses"`
 	TrackClicks  bool           `gorm:"column:track_clicks;default:false" json:"trackClicks"`
+	IsViewed     bool           `gorm:"column:isViewed;default:false" json:"isViewed"`
 
 	// Content
 	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`
@@ -58,7 +59,6 @@ type Email struct {
 	// Extensions and provider-specific data
 	GmailLabels       pq.StringArray `gorm:"column:gmail_labels;type:text[]" json:"gmailLabels"`
 	OutlookCategories pq.StringArray `gorm:"column:outlook_categories;type:text[]" json:"outlookCategories"`
-	MailstackFlags    pq.StringArray `gorm:"column:mailstack_flags;type:text[]" json:"mailstackFlags"`
 
 	// Raw data
 	RawHeaders    JSONMap `gorm:"column:raw_headers;type:jsonb" json:"rawHeaders"`
@@ -80,7 +80,7 @@ func (Email) TableName() string {
 
 func (e *Email) BeforeCreate(tx *gorm.DB) error {
 	if e.ID == "" {
-		e.ID = utils.GenerateNanoIDWithPrefix("email", 24)
+		e.ID = utils.GenerateNanoIDWithPrefix("email", 21)
 	}
 	e.CreatedAt = utils.Now()
 	return nil

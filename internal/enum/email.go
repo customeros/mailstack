@@ -69,3 +69,13 @@ const (
 func (t EmailSecurity) String() string {
 	return string(t)
 }
+
+type EmailImportSource string
+
+const (
+	EmailImportIMAP EmailImportSource = "imap"
+)
+
+func (t EmailImportSource) String() string {
+	return string(t)
+}

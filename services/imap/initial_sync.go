@@ -13,7 +13,8 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/opentracing/opentracing-go"
 
-	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/dto"
+	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
@@ -294,13 +295,13 @@ func (s *IMAPService) processMessages(
 						}
 					}()
 
-					s.eventHandler(eventCtx, interfaces.MailEvent{
-						Source:    "imap",
-						MailboxID: mailboxID,
-						Folder:    folderName,
-						MessageID: msg.SeqNum,
-						EventType: "new",
-						Message:   msg,
+					s.events.Publisher.PublishRecieveEmailEvent(eventCtx, dto.EmailReceived{
+						Source:        enum.EmailImportIMAP,
+						MailboxID:     mailboxID,
+						Folder:        folderName,
+						ImapMessageID: msg.SeqNum,
+						InitialSync:   true,
+						ImapMessage:   msg,
 					})
 				}()
 			}

@@ -16,15 +16,18 @@ import (
 	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/services/events"
 )
 
 type IMAPService struct {
+	events       *events.EventsService
 	repositories *repository.Repositories
 	clients      map[string]*client.Client
 	configs      map[string]*models.Mailbox
@@ -37,8 +40,9 @@ type IMAPService struct {
 	statusMutex  sync.RWMutex
 }
 
-func NewIMAPService(repos *repository.Repositories) interfaces.IMAPService {
+func NewIMAPService(events *events.EventsService, repos *repository.Repositories) interfaces.IMAPService {
 	return &IMAPService{
+		events:       events,
 		repositories: repos,
 		clients:      make(map[string]*client.Client),
 		configs:      make(map[string]*models.Mailbox),
@@ -695,16 +699,14 @@ func (s *IMAPService) fetchNewMessages(
 		}
 
 		// Process the message
-		if s.eventHandler != nil {
-			s.eventHandler(ctx, interfaces.MailEvent{
-				Source:    "imap",
-				MailboxID: mailboxID,
-				Folder:    folderName,
-				MessageID: msg.SeqNum,
-				EventType: "new",
-				Message:   msg,
-			})
-		}
+		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
+			Source:        enum.EmailImportIMAP,
+			MailboxID:     mailboxID,
+			Folder:        folderName,
+			ImapMessageID: msg.SeqNum,
+			InitialSync:   false,
+			ImapMessage:   msg,
+		})
 	}
 
 	// Reset timeout
