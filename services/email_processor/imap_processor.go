@@ -22,12 +22,12 @@ import (
 )
 
 type ImapProcessor struct {
-	*emailProcessor
+	interfaces.EmailProcessor
 }
 
-func NewImapProcessor(processor *emailProcessor) *ImapProcessor {
+func NewImapProcessor(processor interfaces.EmailProcessor) *ImapProcessor {
 	return &ImapProcessor{
-		emailProcessor: processor,
+		processor,
 	}
 }
 
@@ -124,20 +124,22 @@ func processInReplyTo(email *models.Email, envelope *go_imap.Envelope) {
 	var allReferences []string
 
 	// Process In-Reply-To (can contain multiple IDs space-separated)
-	if envelope.InReplyTo != "" {
-		inReplyToRefs := strings.Split(envelope.InReplyTo, " ")
-		for _, ref := range inReplyToRefs {
-			// Clean angle brackets
-			ref = strings.Trim(ref, "<>")
-			if ref != "" && !utils.IsStringInSlice(ref, allReferences) {
-				allReferences = append(allReferences, ref)
-			}
-		}
+	if envelope.InReplyTo == "" {
+		return
+	}
 
-		// Set the cleaned In-Reply-To (using first reference if multiple exist)
-		if len(allReferences) > 0 {
-			email.InReplyTo = allReferences[0] // Store without <>
+	inReplyToRefs := strings.Split(envelope.InReplyTo, " ")
+	for _, ref := range inReplyToRefs {
+		// Clean angle brackets
+		ref = strings.Trim(ref, "<>")
+		if ref != "" && !utils.IsStringInSlice(ref, allReferences) {
+			allReferences = append(allReferences, ref)
 		}
+	}
+
+	// Set the cleaned In-Reply-To (using first reference if multiple exist)
+	if len(allReferences) > 0 {
+		email.InReplyTo = allReferences[0] // Store without <>
 	}
 
 	email.References = allReferences

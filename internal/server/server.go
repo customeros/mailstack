@@ -18,7 +18,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/api"
-	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/listeners"
@@ -26,19 +25,17 @@ import (
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
-	"github.com/customeros/mailstack/services/email_processor"
 	"github.com/customeros/mailstack/services/events"
 )
 
 type Server struct {
-	config         *config.Config
-	httpServer     *http.Server
-	router         *gin.Engine
-	services       *services.Services
-	repositories   *repository.Repositories
-	emailProcessor *email_processor.Processor
-	tracerCloser   io.Closer
-	logger         logger.Logger
+	config       *config.Config
+	logger       logger.Logger
+	tracerCloser io.Closer
+	httpServer   *http.Server
+	router       *gin.Engine
+	services     *services.Services
+	repositories *repository.Repositories
 }
 
 func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
@@ -62,9 +59,6 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 		return nil, err
 	}
 
-	// Set up handler for email events
-	emailProcessor := email_processor.NewProcessor(repos, svcs.EventsService, svcs.EmailFilterService, svcs.AIService)
-
 	// Initialize listeners
 	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(logger, repos, svcs.EmailService))
 
@@ -79,12 +73,11 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 	router := gin.Default()
 
 	return &Server{
-		config:         cfg,
-		router:         router,
-		services:       svcs,
-		repositories:   repos,
-		emailProcessor: emailProcessor,
-		tracerCloser:   closer,
+		config:       cfg,
+		router:       router,
+		services:     svcs,
+		repositories: repos,
+		tracerCloser: closer,
 		httpServer: &http.Server{
 			Addr:    ":" + cfg.AppConfig.APIPort,
 			Handler: router,
@@ -96,15 +89,6 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 func (s *Server) Initialize(ctx context.Context) error {
 	// Register webhook handler
 	log.Println("Registering event handler...")
-
-	// Create an adapter function that wraps ProcessMailEvent with panic recovery
-	eventHandler := func(ctx context.Context, mailEvent interfaces.MailEvent) {
-		s.wrapGoroutine("event_handler", func() {
-			s.emailProcessor.ProcessMailEvent(ctx, mailEvent)
-		})
-	}
-
-	s.services.IMAPService.SetEventHandler(eventHandler)
 
 	// Setup mailboxes
 	if err := internal.InitMailboxes(s.services, s.repositories); err != nil {

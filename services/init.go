@@ -9,7 +9,6 @@ import (
 	"github.com/customeros/mailstack/services/cloudflare"
 	"github.com/customeros/mailstack/services/domain"
 	"github.com/customeros/mailstack/services/email"
-	"github.com/customeros/mailstack/services/email_filter"
 	"github.com/customeros/mailstack/services/email_processor"
 	"github.com/customeros/mailstack/services/events"
 	"github.com/customeros/mailstack/services/imap"
@@ -20,16 +19,16 @@ import (
 )
 
 type Services struct {
-	EventsService      *events.EventsService
-	AIService          interfaces.AIService
-	CloudflareService  interfaces.CloudflareService
-	EmailService       interfaces.EmailService
-	EmailFilterService interfaces.EmailFilterService
-	IMAPProcessor      interfaces.EmailProcessor
-	IMAPService        interfaces.IMAPService
-	MailboxService     interfaces.MailboxService
-	NamecheapService   interfaces.NamecheapService
-	OpenSrsService     interfaces.OpenSrsService
+	EventsService     *events.EventsService
+	AIService         interfaces.AIService
+	CloudflareService interfaces.CloudflareService
+	EmailProcessor    interfaces.EmailProcessor
+	EmailService      interfaces.EmailService
+	IMAPProcessor     interfaces.EmailProcessor
+	IMAPService       interfaces.IMAPService
+	MailboxService    interfaces.MailboxService
+	NamecheapService  interfaces.NamecheapService
+	OpenSrsService    interfaces.OpenSrsService
 
 	MailboxServiceOld interfaces.MailboxServiceOld
 	DomainService     interfaces.DomainService
@@ -65,18 +64,19 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
 	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
 	imapImpl := imap.NewIMAPService(events, repos)
+	emailProcessorImpl := email_processor.NewEmailProcessor(repos, events, aiServiceImpl)
 
 	services := Services{
-		EventsService:      events,
-		AIService:          aiServiceImpl,
-		CloudflareService:  cloudflareImpl,
-		EmailService:       email.NewEmailService(events, repos),
-		EmailFilterService: email_filter.NewEmailFilterService(),
-		IMAPProcessor:      email_processor.NewImapProcessor(repos),
-		IMAPService:        imapImpl,
-		MailboxService:     mailbox.NewMailboxService(repos, imapImpl),
-		NamecheapService:   namecheapImpl,
-		OpenSrsService:     opensrsImpl,
+		EventsService:     events,
+		AIService:         aiServiceImpl,
+		CloudflareService: cloudflareImpl,
+		EmailProcessor:    emailProcessorImpl,
+		EmailService:      email.NewEmailService(events, repos),
+		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl),
+		IMAPService:       imapImpl,
+		MailboxService:    mailbox.NewMailboxService(repos, imapImpl),
+		NamecheapService:  namecheapImpl,
+		OpenSrsService:    opensrsImpl,
 
 		MailboxServiceOld: mailboxOldImpl,
 		DomainService:     domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxOldImpl, opensrsImpl),

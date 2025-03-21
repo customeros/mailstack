@@ -278,33 +278,31 @@ func (s *IMAPService) processMessages(
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if s.eventHandler != nil {
-				// Create context with timeout for event handler
-				eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
+			// Create context with timeout for event handler
+			eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
 
-				// Handle the message
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							select {
-							case eventErrors <- fmt.Errorf("panic in event handler: %v", r):
-							default:
-								log.Printf("[%s][%s] Failed to send error: %v", mailboxID, folderName, r)
-							}
+			// Handle the message
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						select {
+						case eventErrors <- fmt.Errorf("panic in event handler: %v", r):
+						default:
+							log.Printf("[%s][%s] Failed to send error: %v", mailboxID, folderName, r)
 						}
-					}()
-
-					s.events.Publisher.PublishRecieveEmailEvent(eventCtx, dto.EmailReceived{
-						Source:        enum.EmailImportIMAP,
-						MailboxID:     mailboxID,
-						Folder:        folderName,
-						ImapMessageID: msg.SeqNum,
-						InitialSync:   true,
-						ImapMessage:   msg,
-					})
+					}
 				}()
-			}
+
+				s.events.Publisher.PublishRecieveEmailEvent(eventCtx, dto.EmailReceived{
+					Source:        enum.EmailImportIMAP,
+					MailboxID:     mailboxID,
+					Folder:        folderName,
+					ImapMessageID: msg.SeqNum,
+					InitialSync:   true,
+					ImapMessage:   msg,
+				})
+			}()
 		}(msg)
 	}
 
