@@ -10,23 +10,31 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/services/events"
 )
 
 type emailProcessor struct {
-	repositories *repository.Repositories
+	repositories  *repository.Repositories
+	eventsService *events.EventsService
+	aiService     interfaces.AIService
 }
 
 func NewEmailProcessor(
 	repositories *repository.Repositories,
+	eventsService *events.EventsService,
+	aiService interfaces.AIService,
 ) interfaces.EmailProcessor {
 	return &emailProcessor{
-		repositories: repositories,
+		repositories:  repositories,
+		eventsService: eventsService,
+		aiService:     aiService,
 	}
 }
 
@@ -57,15 +65,41 @@ func (p *emailProcessor) NewAttachmentFile(attachmentID string, data []byte) *in
 func (p *emailProcessor) ProcessEmail(
 	ctx context.Context, email *models.Email, attachments []*models.EmailAttachment, files []*interfaces.AttachmentFile,
 ) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.ProcessEmail")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	// attach message to thread
-	err = h.attachMessageToThread(ctx, &email)
+	err := p.attachEmailToThread(ctx, email)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
 	}
 
 	// Clean message body
-	structuredData, err := h.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
+	err = p.getStructuredMessageBody(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	// Save the email entity to the database
+	emailID, err := p.repositories.EmailRepository.Create(ctx, email)
+	if err != nil {
+		err = errors.Wrap(err, "Error saving email")
+		return err
+	}
+	email.ID = emailID
+
+	return nil
+}
+
+func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *models.Email) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.getStructuredMessageBody")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	structuredData, err := p.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
 		FromName:         email.FromName,
 		FromEmailAddress: email.FromAddress,
 		ToEmailAddress:   email.ToAddresses[0],
@@ -74,31 +108,27 @@ func (p *emailProcessor) ProcessEmail(
 	})
 	if err != nil {
 		tracing.TraceErr(span, err)
-	}
-
-	if structuredData != nil {
-		email.HasSignature = structuredData.EmailData.HasSignature
-		email.BodyMarkdown = structuredData.EmailData.MessageBody
-
-		if structuredData.EmailData.HasSignature {
-			structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
-			err = h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL_SIGNATURE, structuredData.EmailData.Signature)
-			if err != nil {
-				tracing.TraceErr(span, err)
-			}
-		}
-	}
-
-	// Save the email entity to the database
-	emailID, err := h.repositories.EmailRepository.Create(ctx, &email)
-	if err != nil {
-		err = errors.Wrap(err, "Error saving email")
 		return err
 	}
-	email.ID = emailID
 
-	// Publish email events
-	return h.eventService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL, dto.EmailReceived{})
+	if structuredData == nil {
+		return nil
+	}
+
+	email.HasSignature = structuredData.EmailData.HasSignature
+	email.BodyMarkdown = structuredData.EmailData.MessageBody
+
+	if !structuredData.EmailData.HasSignature {
+		return nil
+	}
+
+	structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
+	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL_SIGNATURE, structuredData.EmailData.Signature)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	return nil
 }
 

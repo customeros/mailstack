@@ -13,7 +13,6 @@ type IMAPService interface {
 	AddMailbox(ctx context.Context, mailbox *models.Mailbox) error
 	RemoveMailbox(ctx context.Context, mailboxID string) error
 	Status() map[string]MailboxStatus
-	SetEventHandler(handler func(ctx context.Context, mailEvent MailEvent))
 }
 
 type MailboxStatus struct {

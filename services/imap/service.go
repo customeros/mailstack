@@ -31,7 +31,6 @@ type IMAPService struct {
 	repositories *repository.Repositories
 	clients      map[string]*client.Client
 	configs      map[string]*models.Mailbox
-	eventHandler func(context.Context, interfaces.MailEvent)
 	clientsMutex sync.RWMutex
 	wg           sync.WaitGroup
 	ctx          context.Context
@@ -56,11 +55,6 @@ const (
 	INITIAL_SYNC_BATCH_SIZE = 20
 	INITIAL_SYNC_MAX_TOTAL  = 50000
 )
-
-// SetEventHandler sets the event handler
-func (s *IMAPService) SetEventHandler(handler func(context.Context, interfaces.MailEvent)) {
-	s.eventHandler = handler
-}
 
 // Start initializes the service and connects to mailboxes
 func (s *IMAPService) Start(ctx context.Context) error {
@@ -815,16 +809,14 @@ func (s *IMAPService) syncNewMessagesSince(
 		}
 
 		// Process the message
-		if s.eventHandler != nil {
-			s.eventHandler(ctx, interfaces.MailEvent{
-				Source:    "imap",
-				MailboxID: mailboxID,
-				Folder:    folderName,
-				MessageID: msg.SeqNum,
-				EventType: "new",
-				Message:   msg,
-			})
-		}
+		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
+			Source:        enum.EmailImportIMAP,
+			MailboxID:     mailboxID,
+			Folder:        folderName,
+			ImapMessageID: msg.SeqNum,
+			InitialSync:   false,
+			ImapMessage:   msg,
+		})
 	}
 
 	// Reset timeout
