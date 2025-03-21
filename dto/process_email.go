@@ -6,8 +6,8 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 )
 
-type EmailReceived struct {
-	Source        enum.EmailImportSource
+type ProcessEmail struct {
+	Source        enum.EmailProvider
 	InitialSync   bool
 	MailboxID     string
 	Folder        string

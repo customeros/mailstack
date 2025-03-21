@@ -10,6 +10,7 @@ import (
 	"github.com/customeros/mailstack/services/domain"
 	"github.com/customeros/mailstack/services/email"
 	"github.com/customeros/mailstack/services/email_filter"
+	"github.com/customeros/mailstack/services/email_processor"
 	"github.com/customeros/mailstack/services/events"
 	"github.com/customeros/mailstack/services/imap"
 	"github.com/customeros/mailstack/services/mailbox"
@@ -24,6 +25,7 @@ type Services struct {
 	CloudflareService  interfaces.CloudflareService
 	EmailService       interfaces.EmailService
 	EmailFilterService interfaces.EmailFilterService
+	IMAPProcessor      interfaces.EmailProcessor
 	IMAPService        interfaces.IMAPService
 	MailboxService     interfaces.MailboxService
 	NamecheapService   interfaces.NamecheapService
@@ -62,7 +64,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
 	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
-	imapImpl := imap.NewIMAPService(repos)
+	imapImpl := imap.NewIMAPService(events, repos)
 
 	services := Services{
 		EventsService:      events,
@@ -70,6 +72,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		CloudflareService:  cloudflareImpl,
 		EmailService:       email.NewEmailService(events, repos),
 		EmailFilterService: email_filter.NewEmailFilterService(),
+		IMAPProcessor:      email_processor.NewImapProcessor(repos),
 		IMAPService:        imapImpl,
 		MailboxService:     mailbox.NewMailboxService(repos, imapImpl),
 		NamecheapService:   namecheapImpl,
