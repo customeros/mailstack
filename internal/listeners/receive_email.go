@@ -12,18 +12,17 @@ import (
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/tracing"
-	"github.com/customeros/mailstack/services/email_processor"
 	"github.com/customeros/mailstack/services/events"
 )
 
 type ReceiveEmailListener struct {
 	events.BaseEventListener
 	repositories  *repository.Repositories
-	imapProcessor *email_processor.ImapProcessor
+	imapProcessor interfaces.IMAPProcessor
 }
 
 func NewReceiveEmailListener(
-	logger logger.Logger, repos *repository.Repositories, imapProcessor *email_processor.ImapProcessor,
+	logger logger.Logger, repos *repository.Repositories, imapProcessor interfaces.IMAPProcessor,
 ) interfaces.EventListener {
 	return &ReceiveEmailListener{
 		BaseEventListener: events.NewBaseEventListener(
@@ -37,7 +36,7 @@ func NewReceiveEmailListener(
 }
 
 func (l *ReceiveEmailListener) Handle(ctx context.Context, baseEvent any) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "FlowParticipantScheduleListener.Handle")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ReceiveEmailListener.Handle")
 	defer span.Finish()
 	tracing.SetDefaultListenerSpanTags(ctx, span)
 	tracing.LogObjectAsJson(span, "event", baseEvent)

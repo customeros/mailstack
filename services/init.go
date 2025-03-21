@@ -24,7 +24,7 @@ type Services struct {
 	CloudflareService interfaces.CloudflareService
 	EmailProcessor    interfaces.EmailProcessor
 	EmailService      interfaces.EmailService
-	IMAPProcessor     interfaces.EmailProcessor
+	IMAPProcessor     interfaces.IMAPProcessor
 	IMAPService       interfaces.IMAPService
 	MailboxService    interfaces.MailboxService
 	NamecheapService  interfaces.NamecheapService
@@ -72,7 +72,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		CloudflareService: cloudflareImpl,
 		EmailProcessor:    emailProcessorImpl,
 		EmailService:      email.NewEmailService(events, repos),
-		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl),
+		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl, imapImpl),
 		IMAPService:       imapImpl,
 		MailboxService:    mailbox.NewMailboxService(repos, imapImpl),
 		NamecheapService:  namecheapImpl,

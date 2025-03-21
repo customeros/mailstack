@@ -61,11 +61,16 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 
 	// Initialize listeners
 	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(logger, repos, svcs.EmailService))
+	svcs.EventsService.Subscriber.RegisterListener(listeners.NewReceiveEmailListener(logger, repos, svcs.IMAPProcessor))
 
 	// Start Listening on rabbit queues
 	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueSendEmail)
 	if err != nil {
 		logger.Errorf("Failed to start listening on send email queue: %v", err)
+	}
+	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueReceiveEmail)
+	if err != nil {
+		logger.Errorf("Failed to start listening on receive email queue: %v", err)
 	}
 
 	// Initialize Gin
