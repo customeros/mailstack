@@ -7,7 +7,7 @@ import (
 )
 
 // CustomContextMiddleware adds custom context to all requests
-func CustomContextMiddleware(appSource string) gin.HandlerFunc {
+func CustomContextMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := utils.WithCustomContextFromGinRequest(c)
 		c.Request = c.Request.WithContext(ctx)
