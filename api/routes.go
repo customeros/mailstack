@@ -57,10 +57,10 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 
 	query := r.Group("/query")
 	query.Use(apiKeyMiddleware)
-	query.Use(middleware.TenantValidationMiddleware())         // Tenant header validation
-	query.Use(middleware.UserIdMiddleware())                   // UserId header parsing
-	query.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
-	query.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
+	query.Use(middleware.TenantValidationMiddleware()) // Tenant header validation
+	query.Use(middleware.UserIdMiddleware())           // UserId header parsing
+	query.Use(middleware.CustomContextMiddleware())    // Add custom context
+	query.Use(middleware.TracingMiddleware(ctx))       // Add tracing with parent context
 	{
 		query.POST("", graphqlHandler) // query
 	}
@@ -68,12 +68,12 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	// Rest API
 	api := r.Group("/v1")
 	api.Use(apiKeyMiddleware)
-	api.Use(middleware.CustomContextMiddleware("mailstack")) // Add custom context
-	api.Use(middleware.TracingMiddleware(ctx))               // Add tracing with parent context
 	{
 		// Domain endpoints
 		domains := api.Group("/domains")
 		domains.Use(middleware.TenantValidationMiddleware()) // Tenant validation for domains
+		domains.Use(middleware.CustomContextMiddleware())    // Add custom context
+		domains.Use(middleware.TracingMiddleware(ctx))       // Add tracing with parent context
 		{
 			// Domain discovery and acquisition
 			domains.GET("/check-availability/:domain", apiHandlers.Domains.CheckAvailability())
@@ -96,6 +96,8 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		// Mailbox endpoints
 		mailboxes := api.Group("/mailboxes")
 		mailboxes.Use(middleware.TenantValidationMiddleware())
+		mailboxes.Use(middleware.CustomContextMiddleware()) // Add custom context
+		mailboxes.Use(middleware.TracingMiddleware(ctx))    // Add tracing with parent context
 		{
 			mailboxes.GET("", apiHandlers.Mailbox.GetMailboxes())
 			mailboxes.POST("", apiHandlers.Mailbox.RegisterNewMailbox())
