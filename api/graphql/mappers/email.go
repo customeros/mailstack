@@ -17,16 +17,16 @@ func MapGormEmailToGraph(email *models.Email) *graphql_model.EmailMessage {
 		To:         email.ToAddresses,
 		Cc:         email.CcAddresses,
 		Bcc:        email.BccAddresses,
-		Subject:    email.CleanSubject,
-		Body:       email.BodyMarkdown,
+		Subject:    email.Subject,
+		Body:       email.Body,
 		ReceivedAt: *email.SentAt,
 	}
 }
 
-func MapGraphEmailInputToGorm(email *graphql_model.EmailInput) *models.Email {
-	return &models.Email{
+func MapGraphEmailInputToGorm(email *graphql_model.EmailInput) *models.EmailStore {
+	return &models.EmailStore{
 		MailboxID:    utils.GetOrDefault(email.MailboxID, ""),
-		Direction:    enum.EmailDirectionOutbound,
+		Direction:    enum.EmailDirectionOutbound.String(),
 		FromAddress:  email.FromAddress,
 		FromName:     utils.GetOrDefault(email.FromName, ""),
 		ToAddresses:  email.ToAddresses,

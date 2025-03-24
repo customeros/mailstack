@@ -10,7 +10,7 @@ import (
 	"github.com/customeros/mailstack/services/smtp"
 )
 
-func (s *emailService) SendWithSMTP(ctx context.Context, mailbox *models.Mailbox, email *models.Email, attachments []*models.EmailAttachment) error {
+func (s *emailService) SendWithSMTP(ctx context.Context, mailbox *models.Mailbox, email *models.EmailStore, attachments []*models.EmailAttachment) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.SendWithSMTP")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
