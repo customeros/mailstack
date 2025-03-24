@@ -7,12 +7,11 @@ package resolver
 import (
 	"context"
 
-	"github.com/opentracing/opentracing-go"
-
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
 	"github.com/customeros/mailstack/internal/tracing"
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // GetAllThreads is the resolver for the getAllThreads field.

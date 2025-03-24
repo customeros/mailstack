@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type mailboxRepository struct {
@@ -39,18 +41,20 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxesByUserID")
 	defer span.Finish()
-
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.SetTag("user_id", userID)
+	span.LogKV("userId", userID)
 
+	tenant := utils.GetTenantFromContext(ctx)
 	var mailboxes []*models.Mailbox
 
-	result := r.db.Where("user_id = ?", userID).Find(&mailboxes)
+	// search by user and tenant
+	result := r.db.Where("user_id = ? AND tenant = ?", userID, tenant).Find(&mailboxes)
 	if result.Error != nil {
 		tracing.TraceErr(span, result.Error)
 		return nil, result.Error
 	}
 
+	span.LogKV("result.count", len(mailboxes))
 	return mailboxes, nil
 }
 
@@ -73,13 +77,45 @@ func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailA
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddress")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogKV("emailAddress", emailAddress)
+
+	tenant := utils.GetTenantFromContext(ctx)
+
+	var mailbox models.Mailbox
+	err := r.db.First(&mailbox, "tenant = ? AND email_address = ?", tenant, emailAddress).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			span.LogKV("result.found", false)
+			return nil, nil
+		}
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	span.LogKV("result.found", true)
+	span.LogKV("result.mailbox.id", mailbox.ID)
+	return &mailbox, nil
+}
+
+func (r *mailboxRepository) GetMailboxByEmailAddressCrossTenant(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddressCrossTenant")
+	defer span.Finish()
+	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	span.LogKV("emailAddress", emailAddress)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "email_address = ?", emailAddress).Error
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			span.LogKV("result.found", false)
+			return nil, nil
+		}
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
+
+	span.LogKV("result.found", true)
+	span.LogKV("result.mailbox.id", mailbox.ID)
 	return &mailbox, nil
 }
 

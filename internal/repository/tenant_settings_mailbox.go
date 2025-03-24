@@ -173,7 +173,7 @@ func (r *tenantSettingsMailboxRepository) GetForConfiguration(ctx context.Contex
 }
 
 func (r *tenantSettingsMailboxRepository) Create(ctx context.Context, tx *gorm.DB, input *models.TenantSettingsMailbox) error {
-	span, _ := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.Create")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "TenantSettingsMailboxRepository.Create")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	tracing.LogObjectAsJson(span, "mailbox", input)

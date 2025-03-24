@@ -8,7 +8,6 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
@@ -33,7 +32,7 @@ func NewMailboxService(repos *repository.Repositories, imap interfaces.IMAPServi
 var ErrMailboxExists = errors.New("Mailbox already exists")
 
 func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mailbox) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.CreateMailbox")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.EnrollMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
@@ -61,8 +60,8 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 	}
 
 	// validate mailbox does not exist
-	mboxCheck, err := s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, mailbox.EmailAddress)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	mboxCheck, err := s.repositories.MailboxRepository.GetMailboxByEmailAddressCrossTenant(ctx, mailbox.EmailAddress)
+	if err != nil {
 		tracing.TraceErr(span, err)
 		return nil, err
 	}

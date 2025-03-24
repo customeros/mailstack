@@ -41,11 +41,11 @@ type Server struct {
 
 func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhouseDB *ch.DB) (*Server, error) {
 	// Initialize logger
-	logger := logger.NewAppLogger(cfg.Logger)
-	logger.InitLogger()
+	appLogger := logger.NewAppLogger(cfg.Logger)
+	appLogger.InitLogger()
 
 	// Initialize tracing
-	tracer, closer, err := tracing.NewJaegerTracer(cfg.Tracing, logger)
+	tracer, closer, err := tracing.NewJaegerTracer(cfg.Tracing, appLogger)
 	if err != nil {
 		log.Fatalf("Could not initialize jaeger tracer: %s", err.Error())
 	}
@@ -58,23 +58,23 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, cl
 	}
 
 	// Initialize services
-	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos, cfg)
+	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, appLogger, repos, cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize listeners
-	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(logger, repos, svcs.EmailService))
-	svcs.EventsService.Subscriber.RegisterListener(listeners.NewReceiveEmailListener(logger, repos, svcs.IMAPProcessor))
+	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(appLogger, repos, svcs.EmailService))
+	svcs.EventsService.Subscriber.RegisterListener(listeners.NewReceiveEmailListener(appLogger, repos, svcs.IMAPProcessor))
 
 	// Start Listening on rabbit queues
 	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueSendEmail)
 	if err != nil {
-		logger.Errorf("Failed to start listening on send email queue: %v", err)
+		appLogger.Errorf("Failed to start listening on send email queue: %v", err)
 	}
 	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueReceiveEmail)
 	if err != nil {
-		logger.Errorf("Failed to start listening on receive email queue: %v", err)
+		appLogger.Errorf("Failed to start listening on receive email queue: %v", err)
 	}
 
 	// Initialize Gin
@@ -91,7 +91,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, cl
 			Addr:    ":" + cfg.AppConfig.APIPort,
 			Handler: router,
 		},
-		logger: logger,
+		logger: appLogger,
 	}, nil
 }
 
