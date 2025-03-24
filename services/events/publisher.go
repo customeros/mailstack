@@ -104,7 +104,7 @@ func (r *RabbitMQPublisher) PublishRecieveEmailEvent(ctx context.Context, messag
 	}
 }
 
-func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *models.Email) error {
+func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *models.EmailStore) error {
 	return r.publishEventOnExchange(ctx, email.ID, enum.EMAIL, dto.SendEmail{Email: email}, ExchangeMailstackDirect, RoutingKeySendEmail)
 }
 
