@@ -33,6 +33,14 @@ type OpenlineDatabaseConfig struct {
 	SSLMode         string `env:"OPENLINE_POSTGRES_SSL_MODE" envDefault:"require"`
 }
 
+type ClickhouseConfig struct {
+	Host     string `env:"CLICKHOUSE_HOST,required"`
+	Port     string `env:"CLICKHOUSE_PORT,required"`
+	User     string `env:"CLICKHOUSE_USERNAME,required"`
+	DBName   string `env:"CLICKHOUSE_DB_NAME,required"`
+	Password string `env:"CLICKHOUSE_PASSWORD,required"`
+}
+
 type R2StorageConfig struct {
 	AccountID             string `env:"CLOUDFLARE_R2_ACCOUNT_ID,required"`
 	AccessKeyID           string `env:"CLOUDFLARE_R2_ACCESS_KEY_ID,required"`

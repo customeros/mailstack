@@ -1,8 +1,12 @@
 package repository
 
 import (
+	"context"
+	"fmt"
+	"log"
 	"time"
 
+	"github.com/uptrace/go-clickhouse/ch"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -14,6 +18,7 @@ import (
 type Repositories struct {
 	DomainRepository                DomainRepository
 	EmailRepository                 interfaces.EmailRepository
+	EmailStore                      interfaces.EmailStore
 	EmailAttachmentRepository       interfaces.EmailAttachmentRepository
 	EmailThreadRepository           interfaces.EmailThreadRepository
 	MailboxRepository               interfaces.MailboxRepository
@@ -23,7 +28,7 @@ type Repositories struct {
 	TenantSettingsMailboxRepository TenantSettingsMailboxRepository
 }
 
-func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
+func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhousDB *ch.DB, r2Config *config.R2StorageConfig) (*Repositories, error) {
 	emailAttachmentStorage := storage.NewR2StorageService(
 		r2Config.AccountID,
 		r2Config.AccessKeyID,
@@ -31,6 +36,15 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *confi
 		r2Config.EmailAttachmentBucket,
 		false, // private access
 	)
+
+	emailStore := NewEmailStore(clickhousDB)
+	err := emailStore.InitSchema(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Clickhouse schema: %w", err)
+	}
+	if emailStore == nil {
+		log.Fatalf("email store not initialized")
+	}
 
 	return &Repositories{
 		// Openline
@@ -44,7 +58,9 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, r2Config *confi
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
 		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
 		SenderRepository:          NewSenderRepository(mailstackDB),
-	}
+		// Clickhouse
+		EmailStore: emailStore,
+	}, nil
 }
 
 func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {

@@ -11,7 +11,7 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.Email) error {
+func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.attachMessageToThread")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -59,7 +59,7 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 }
 
 // findExistingThread attempts to find an existing thread for the email
-func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.Email) (string, error) {
+func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.EmailStore) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findExistingThread")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -105,7 +105,7 @@ func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.E
 }
 
 // checkForOrphanedParentMessage attempts to find a thread where this email is the parent of orphaned messages
-func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, email *models.Email) (string, error) {
+func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, email *models.EmailStore) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.checkForOrphanedParentMessage")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -155,7 +155,7 @@ func (p *emailProcessor) findThreadByMessageID(ctx context.Context, messageID st
 }
 
 // findThreadBySubjectMatch attempts to find an existing thread by subject and participants
-func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *models.Email) (string, error) {
+func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *models.EmailStore) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findThreadBySubjectMatch")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -234,7 +234,7 @@ func (p *emailProcessor) findThreadBySubjectAndParticipants(ctx context.Context,
 }
 
 // updateThreadMetadata updates thread metadata with data from the new email
-func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models.Email, threadID string) error {
+func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models.EmailStore, threadID string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.updateThreadMetadata")
 	defer span.Finish()
 
@@ -282,7 +282,7 @@ func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models
 }
 
 // createNewThread creates a new thread for the email
-func (p *emailProcessor) createNewThread(ctx context.Context, email *models.Email) (string, error) {
+func (p *emailProcessor) createNewThread(ctx context.Context, email *models.EmailStore) (string, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.createNewThread")
 	defer span.Finish()
 
@@ -304,7 +304,7 @@ func (p *emailProcessor) createNewThread(ctx context.Context, email *models.Emai
 }
 
 // recordMissingParents records referenced messages that are missing
-func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models.Email) error {
+func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.recordMissingParents")
 	defer span.Finish()
 

@@ -8,12 +8,12 @@ import (
 )
 
 type EmailProcessor interface {
-	NewInboundEmail() *models.Email
+	NewInboundEmail() *models.EmailStore
 	NewAttachment() *models.EmailAttachment
 	NewAttachmentFile(attachmentID string, data []byte) *AttachmentFile
 
-	ProcessEmail(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment, files []*AttachmentFile) error
-	EmailFilter(ctx context.Context, email *models.Email) error
+	ProcessEmail(ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment, files []*AttachmentFile) error
+	EmailFilter(ctx context.Context, email *models.EmailStore) error
 }
 
 type IMAPProcessor interface {
