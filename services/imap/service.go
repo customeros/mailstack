@@ -289,6 +289,13 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.runSingleMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+	tracing.TagEntity(span, mailboxID)
+	tracing.LogObjectAsJson(span, "mailbox", config)
+
+	// set tenant in context from mailbox if missing
+	if utils.GetTenantFromContext(ctx) == "" {
+		ctx = utils.SetTenantInContext(ctx, config.Tenant)
+	}
 
 	s.wg.Add(1)
 	defer s.wg.Done()
@@ -772,7 +779,7 @@ func (s *IMAPService) fetchNewMessages(
 		}
 
 		// Process the message
-		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
+		s.events.Publisher.PublishReceiveEmailEvent(ctx, dto.EmailReceived{
 			Source:      enum.EmailImportIMAP,
 			MailboxID:   mailboxID,
 			Folder:      folderName,
@@ -888,7 +895,7 @@ func (s *IMAPService) syncNewMessagesSince(
 		}
 
 		// Process the message
-		s.events.Publisher.PublishRecieveEmailEvent(ctx, dto.EmailReceived{
+		s.events.Publisher.PublishReceiveEmailEvent(ctx, dto.EmailReceived{
 			Source:      enum.EmailImportIMAP,
 			MailboxID:   mailboxID,
 			Folder:      folderName,
