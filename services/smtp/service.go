@@ -14,7 +14,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/internal/dbmappers"
+	"github.com/customeros/mailstack/internal/dbmapper"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -53,6 +53,13 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachm
 		return err
 	}
 
+	// Create email in db
+	email.ID, err = s.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	// Send the email
 	err = s.sendToServer(ctx, email.FromAddress, allRecipients, messageBuffer)
 	if err != nil {
@@ -60,7 +67,13 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachm
 		email.LastAttemptAt = utils.NowPtr()
 		email.Status = enum.EmailStatusFailed.String()
 		email.StatusDetail = err.Error()
-		err = s.repositories.EmailRepository.Update(ctx, dbmappers.MapEmailStoreToEmail(email))
+		err = s.repositories.EmailRepository.Update(ctx, dbmapper.MapEmailStoreToEmail(email))
+		if err != nil {
+			tracing.TraceErr(span, err)
+		}
+
+		// write to clickhouse
+		err = s.repositories.EmailStore.SaveEmail(ctx, email)
 		if err != nil {
 			tracing.TraceErr(span, err)
 		}
@@ -71,13 +84,17 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachm
 	email.SentAt = utils.NowPtr()
 	email.LastAttemptAt = email.SentAt
 	email.Status = enum.EmailStatusSent.String()
-	err = s.repositories.EmailRepository.Update(ctx, dbmappers.MapEmailStoreToEmail(email))
+	err = s.repositories.EmailRepository.Update(ctx, dbmapper.MapEmailStoreToEmail(email))
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return err
+	}
+	// write to clickhouse
+	err = s.repositories.EmailStore.SaveEmail(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
 	}
 
-	return nil
+	return err
 }
 
 // validateEmail performs basic validation on the email
@@ -142,7 +159,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailStore
 }
 
 // prepareMessage builds the email message in proper MIME format and stores raw metadata
-func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
+func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.prepareMessage")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -153,9 +170,6 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 	// Generate and store headers
 	headers := s.prepareHeaders(ctx, email)
 	tracing.LogObjectAsJson(span, "headers", headers)
-
-	// Prepare and store envelope information
-	s.prepareEnvelope(ctx, email, headers)
 
 	// Prepare message content and body structure
 	var err error
@@ -170,17 +184,11 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.Email, at
 		return nil, nil, err
 	}
 
-	// Store the raw data in the database
-	err = s.repositories.EmailRepository.SetEmailRawData(ctx, email.ID, email.RawHeaders, email.Envelope, email.BodyStructure)
-	if err != nil {
-		tracing.TraceErr(span, err)
-	}
-
 	return email.AllRecipients(), buffer, nil
 }
 
 // prepareHeaders generates email headers and stores them in the Email model
-func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.Email) map[string]string {
+func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.EmailStore) map[string]string {
 	headers := email.BuildHeaders()
 
 	// Store raw headers in Email model
@@ -188,32 +196,12 @@ func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.Email) ma
 	for k, v := range headers {
 		rawHeaders[k] = v
 	}
-	email.RawHeaders = rawHeaders
-
 	return headers
-}
-
-// prepareEnvelope creates the envelope information and stores it in the Email model
-func (s *SMTPClient) prepareEnvelope(ctx context.Context, email *models.Email, headers map[string]string) {
-	envelope := models.JSONMap{
-		"from":       email.FromAddress,
-		"to":         email.AllRecipients(),
-		"messageId":  email.MessageID,
-		"subject":    email.Subject,
-		"date":       headers["Date"],
-		"returnPath": email.FromAddress,
-	}
-
-	if email.ReplyTo != "" {
-		envelope["replyTo"] = email.ReplyTo
-	}
-
-	email.Envelope = envelope
 }
 
 // buildMultipartMessageWithStructure creates a multipart MIME message with text, HTML, and attachments
 // while also capturing body structure metadata
-func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *models.Email,
+func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *models.EmailStore,
 	headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer,
 ) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.buildMultipartMessageWithStructure")
@@ -226,7 +214,7 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 	headers["Content-Type"] = "multipart/mixed; boundary=" + boundary
 
 	// Initialize body structure
-	bodyStructure := s.initializeBodyStructure(email)
+	bodyStructure := initializeBodyStructure(email)
 	bodyStructure["type"] = "multipart/mixed"
 	bodyStructure["boundary"] = boundary
 
@@ -240,19 +228,19 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 
 	// Add text part if available
 	if email.BodyText != "" {
-		if err := s.addTextPart(ctx, writer, email.BodyText); err != nil {
+		if err := addTextPart(ctx, writer, email.BodyText); err != nil {
 			return err
 		}
-		parts = append(parts, s.createPartMetadata("text/plain", len(email.BodyText), ""))
+		parts = append(parts, createPartMetadata("text/plain", len(email.BodyText), ""))
 		hasTextPart = true
 	}
 
 	// Add HTML part if available
 	if email.BodyHTML != "" {
-		if err := s.addHtmlPart(ctx, writer, email.BodyHTML); err != nil {
+		if err := addHtmlPart(ctx, writer, email.BodyHTML); err != nil {
 			return err
 		}
-		parts = append(parts, s.createPartMetadata("text/html", len(email.BodyHTML), ""))
+		parts = append(parts, createPartMetadata("text/html", len(email.BodyHTML), ""))
 		hasHtmlPart = true
 	}
 
@@ -262,7 +250,7 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 			if err := s.addAttachment(ctx, writer, attachment); err != nil {
 				return err
 			}
-			parts = append(parts, s.createAttachmentMetadata(attachment))
+			parts = append(parts, createAttachmentMetadata(attachment))
 		}
 	}
 
@@ -271,29 +259,23 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 	bodyStructure["hasTextPart"] = hasTextPart
 	bodyStructure["hasHtmlPart"] = hasHtmlPart
 
-	// Store body structure in Email model
-	email.BodyStructure = bodyStructure
-
 	// Close the multipart writer
 	return writer.Close()
 }
 
 // buildPlainTextMessageWithStructure creates a simple text-only email and captures body structure
-func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *models.Email,
+func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *models.EmailStore,
 	headers map[string]string, buffer *bytes.Buffer,
 ) error {
 	headers["Content-Type"] = "text/plain; charset=UTF-8"
 
 	// Initialize body structure for plain text
-	bodyStructure := s.initializeBodyStructure(email)
+	bodyStructure := initializeBodyStructure(email)
 	bodyStructure["type"] = "text/plain"
 	bodyStructure["charset"] = "UTF-8"
 	bodyStructure["hasTextPart"] = true
 	bodyStructure["hasHtmlPart"] = false
 	bodyStructure["size"] = len(email.BodyText)
-
-	// Store body structure in Email model
-	email.BodyStructure = bodyStructure
 
 	// Write headers to buffer
 	writeHeaders(headers, buffer)
@@ -304,14 +286,14 @@ func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, ema
 }
 
 // initializeBodyStructure creates the base body structure object
-func (s *SMTPClient) initializeBodyStructure(email *models.Email) models.JSONMap {
+func initializeBodyStructure(email *models.EmailStore) models.JSONMap {
 	return models.JSONMap{
 		"hasAttachments": email.HasAttachment,
 	}
 }
 
 // createPartMetadata creates metadata for a message part
-func (s *SMTPClient) createPartMetadata(contentType string, size int, id string) models.JSONMap {
+func createPartMetadata(contentType string, size int, id string) models.JSONMap {
 	part := models.JSONMap{
 		"type":     contentType,
 		"charset":  "UTF-8",
@@ -327,7 +309,7 @@ func (s *SMTPClient) createPartMetadata(contentType string, size int, id string)
 }
 
 // createAttachmentMetadata creates metadata for an attachment part
-func (s *SMTPClient) createAttachmentMetadata(attachment *models.EmailAttachment) models.JSONMap {
+func createAttachmentMetadata(attachment *models.EmailAttachment) models.JSONMap {
 	return models.JSONMap{
 		"type":        attachment.ContentType,
 		"name":        attachment.Filename,
@@ -347,7 +329,7 @@ func writeHeaders(headers map[string]string, buffer *bytes.Buffer) {
 }
 
 // addTextPart adds a plain text part to a multipart message
-func (s *SMTPClient) addTextPart(ctx context.Context, writer *multipart.Writer, content string) error {
+func addTextPart(ctx context.Context, writer *multipart.Writer, content string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.addTextPart")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -373,7 +355,7 @@ func (s *SMTPClient) addTextPart(ctx context.Context, writer *multipart.Writer, 
 }
 
 // addHtmlPart adds an HTML part to a multipart message
-func (s *SMTPClient) addHtmlPart(ctx context.Context, writer *multipart.Writer, content string) error {
+func addHtmlPart(ctx context.Context, writer *multipart.Writer, content string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.addHtmlPart")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
