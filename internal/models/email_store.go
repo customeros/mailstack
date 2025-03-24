@@ -159,124 +159,6 @@ func (e *EmailStore) AllParticipants() []string {
 	return utils.UniqueEmails(participants)
 }
 
-type EmailHeaders struct {
-	AutoSubmitted      bool
-	ContentDescription string
-	DeliveryStatus     bool
-	ListUnsubscribe    bool
-	Precedence         string
-	ReturnPath         string
-	ReturnPathExists   bool
-	XAutoreply         string
-	XAutoresponse      string
-	XLoop              bool
-	XFailedRecipients  []string
-	ReplyTo            string
-	ReplyToExists      bool
-	Sender             string
-	ForwardedFor       string
-	DKIM               []string
-	SPF                string
-	DMARC              string
-}
-
-func (e *EmailStore) Headers() (*EmailHeaders, error) {
-	headers := &EmailHeaders{}
-
-	if e.RawHeaders == nil {
-		return headers, nil
-	}
-
-	// Helper function to get header value as string
-	getString := func(key string) string {
-		if values, ok := e.RawHeaders[key].([]string); ok && len(values) > 0 {
-			return values[0]
-		}
-		if value, ok := e.RawHeaders[key].(string); ok {
-			return value
-		}
-		return ""
-	}
-
-	// Helper function to check if a header exists
-	headerExists := func(key string) bool {
-		_, exists := e.RawHeaders[key]
-		return exists
-	}
-
-	// Helper to get string array
-	getStringArray := func(key string) []string {
-		if values, ok := e.RawHeaders[key].([]string); ok {
-			return values
-		}
-		if value, ok := e.RawHeaders[key].(string); ok {
-			return []string{value}
-		}
-		return nil
-	}
-
-	// Process boolean headers (presence/absence or specific values)
-	autoSubmitted := getString("Auto-Submitted")
-	headers.AutoSubmitted = autoSubmitted != "" && autoSubmitted != "no"
-
-	// Content-Description
-	headers.ContentDescription = getString("Content-Description")
-
-	// Delivery-Status
-	headers.DeliveryStatus = headerExists("Delivery-Status") ||
-		headerExists("X-Failed-Recipients") ||
-		strings.Contains(e.Subject, "Delivery Status Notification") ||
-		strings.Contains(e.Subject, "Mail Delivery Failure")
-
-	// List-Unsubscribe
-	headers.ListUnsubscribe = headerExists("List-Unsubscribe")
-
-	// Precedence
-	headers.Precedence = getString("Precedence")
-
-	// Return-Path
-	returnPath := getString("Return-Path")
-	headers.ReturnPath = returnPath
-	headers.ReturnPathExists = headerExists("Return-Path")
-
-	// Auto-reply headers
-	headers.XAutoreply = getString("X-Autoreply")
-	headers.XAutoresponse = getString("X-Autoresponse")
-
-	// X-Loop
-	headers.XLoop = headerExists("X-Loop")
-
-	// X-Failed-Recipients
-	failedRecipientsStr := getString("X-Failed-Recipients")
-	if failedRecipientsStr != "" {
-		recipients := strings.Split(failedRecipientsStr, ",")
-		for i, recipient := range recipients {
-			recipients[i] = strings.TrimSpace(recipient)
-		}
-		headers.XFailedRecipients = recipients
-	}
-
-	// Reply-To
-	headers.ReplyTo = getString("Reply-To")
-	headers.ReplyToExists = headerExists("Reply-To")
-
-	// Sender
-	headers.Sender = getString("Sender")
-
-	// Forwarded-For (could be in different formats)
-	headers.ForwardedFor = getString("X-Forwarded-For")
-	if headers.ForwardedFor == "" {
-		headers.ForwardedFor = getString("Forwarded-For")
-	}
-
-	// Security headers
-	headers.DKIM = getStringArray("DKIM-Signature")
-	headers.SPF = getString("Received-SPF")
-	headers.DMARC = getString("DMARC-Result")
-
-	return headers, nil
-}
-
 // BuildHeaders creates a map of headers for an outgoing email
 func (e *EmailStore) BuildHeaders() map[string]string {
 	header := make(map[string]string)
@@ -324,7 +206,7 @@ func (e *EmailStore) BuildHeaders() map[string]string {
 		// RFC 5322 recommends including the original message ID in the references
 		references := e.References
 		if len(references) == 0 {
-			references = pq.StringArray{e.InReplyTo}
+			references = []string{e.InReplyTo}
 		}
 		header["References"] = strings.Join(references, " ")
 	}
@@ -336,24 +218,6 @@ func (e *EmailStore) BuildHeaders() map[string]string {
 
 	// X-Mailer helps identify your system
 	header["X-Mailer"] = "CustomerOS Mailstack"
-
-	// Add custom headers from RawHeaders if any
-	if e.RawHeaders != nil {
-		for k, v := range e.RawHeaders {
-			// Skip headers we've already set
-			if _, exists := header[k]; !exists {
-				// Handle different value types (string or []string)
-				switch value := v.(type) {
-				case string:
-					header[k] = value
-				case []string:
-					if len(value) > 0 {
-						header[k] = strings.Join(value, ", ")
-					}
-				}
-			}
-		}
-	}
 
 	return header
 }

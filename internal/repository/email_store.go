@@ -42,7 +42,7 @@ func (r *emailStore) InitSchema(ctx context.Context) error {
 }
 
 // SaveEmail stores an email in ClickHouse
-func (r *emailStore) SaveEmail(ctx context.Context, email *models.Email) error {
+func (r *emailStore) SaveEmail(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailStore.SaveEmail")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -55,12 +55,9 @@ func (r *emailStore) SaveEmail(ctx context.Context, email *models.Email) error {
 	span.SetTag("email.id", email.ID)
 	span.SetTag("email.message_id", email.MessageID)
 
-	// Convert GORM email to ClickHouse email store model
-	chEmail := models.MapEmailFromGORM(email)
-
 	// Explicitly specify the table name to avoid naming conflicts
 	_, err := r.ch.NewInsert().
-		Model(chEmail).
+		Model(email).
 		ModelTableExpr("emails"). // Explicitly set the table name
 		ExcludeColumn("year_month", "day_of_week", "hour", "body_text_size", "body_html_size", "_shard_key").
 		Exec(ctx)

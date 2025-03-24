@@ -40,7 +40,7 @@ func (r *emailRepository) Create(ctx context.Context, email *models.Email) (stri
 	}
 
 	if email.Subject != "" {
-		email.CleanSubject = utils.NormalizeSubject(email.Subject)
+		email.Subject = utils.NormalizeSubject(email.Subject)
 	}
 
 	// Check if email already exists before creating

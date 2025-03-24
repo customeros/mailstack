@@ -12,7 +12,7 @@ import (
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/dbmappers"
+	"github.com/customeros/mailstack/internal/dbmapper"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -85,7 +85,7 @@ func (p *emailProcessor) ProcessEmail(
 	}
 
 	// Save the email entity to the database
-	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmappers.MapEmailStoreToEmail(email))
+	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
@@ -136,12 +136,12 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 	return nil
 }
 
-func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.EmailStore) error {
+func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.EmailStore, rawHeaders map[string]interface{}) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailFilterService.ScanEmail")
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	defer span.Finish()
 
-	headers, err := email.Headers()
+	headers, err := processHeaders(rawHeaders)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -309,7 +309,7 @@ func isInternalEmail(email *models.EmailStore) bool {
 	return true
 }
 
-func isBulkEmail(headers *models.EmailHeaders, replyTo, from string) (bool, string) {
+func isBulkEmail(headers *EmailHeaders, replyTo, from string) (bool, string) {
 	matchReplyTo := false
 	if replyTo == from {
 		matchReplyTo = true
@@ -365,7 +365,7 @@ func mailsherpaChecks(from string) (failedCheck bool, reason string) {
 	return false, ""
 }
 
-func isAutoresponder(headers *models.EmailHeaders) (bool, string) {
+func isAutoresponder(headers *EmailHeaders) (bool, string) {
 	switch {
 	case headers.XAutoreply != "":
 		return true, "X-AUTOREPLY header present"
@@ -380,7 +380,7 @@ func isAutoresponder(headers *models.EmailHeaders) (bool, string) {
 	}
 }
 
-func isBounceNotification(headers *models.EmailHeaders, subject, from string) (bool, string) {
+func isBounceNotification(headers *EmailHeaders, subject, from string) (bool, string) {
 	switch {
 	case len(headers.XFailedRecipients) > 0:
 		return true, "X-FAILED-RECIPIENTS header present"
@@ -421,4 +421,120 @@ func isBounceSubject(subject string) bool {
 	}
 
 	return false
+}
+
+type EmailHeaders struct {
+	AutoSubmitted      bool
+	ContentDescription string
+	DeliveryStatus     bool
+	ListUnsubscribe    bool
+	Precedence         string
+	ReturnPath         string
+	ReturnPathExists   bool
+	XAutoreply         string
+	XAutoresponse      string
+	XLoop              bool
+	XFailedRecipients  []string
+	ReplyTo            string
+	ReplyToExists      bool
+	Sender             string
+	ForwardedFor       string
+	DKIM               []string
+	SPF                string
+	DMARC              string
+}
+
+func processHeaders(rawHeaders map[string]interface{}) (*EmailHeaders, error) {
+	headers := &EmailHeaders{}
+
+	if rawHeaders == nil {
+		return headers, nil
+	}
+
+	// Helper function to get header value as string
+	getString := func(key string) string {
+		if values, ok := rawHeaders[key].([]string); ok && len(values) > 0 {
+			return values[0]
+		}
+		if value, ok := rawHeaders[key].(string); ok {
+			return value
+		}
+		return ""
+	}
+
+	// Helper function to check if a header exists
+	headerExists := func(key string) bool {
+		_, exists := rawHeaders[key]
+		return exists
+	}
+
+	// Helper to get string array
+	getStringArray := func(key string) []string {
+		if values, ok := rawHeaders[key].([]string); ok {
+			return values
+		}
+		if value, ok := rawHeaders[key].(string); ok {
+			return []string{value}
+		}
+		return nil
+	}
+
+	// Process boolean headers (presence/absence or specific values)
+	autoSubmitted := getString("Auto-Submitted")
+	headers.AutoSubmitted = autoSubmitted != "" && autoSubmitted != "no"
+
+	// Content-Description
+	headers.ContentDescription = getString("Content-Description")
+
+	// Delivery-Status
+	headers.DeliveryStatus = headerExists("Delivery-Status") ||
+		headerExists("X-Failed-Recipients")
+
+	// List-Unsubscribe
+	headers.ListUnsubscribe = headerExists("List-Unsubscribe")
+
+	// Precedence
+	headers.Precedence = getString("Precedence")
+
+	// Return-Path
+	returnPath := getString("Return-Path")
+	headers.ReturnPath = returnPath
+	headers.ReturnPathExists = headerExists("Return-Path")
+
+	// Auto-reply headers
+	headers.XAutoreply = getString("X-Autoreply")
+	headers.XAutoresponse = getString("X-Autoresponse")
+
+	// X-Loop
+	headers.XLoop = headerExists("X-Loop")
+
+	// X-Failed-Recipients
+	failedRecipientsStr := getString("X-Failed-Recipients")
+	if failedRecipientsStr != "" {
+		recipients := strings.Split(failedRecipientsStr, ",")
+		for i, recipient := range recipients {
+			recipients[i] = strings.TrimSpace(recipient)
+		}
+		headers.XFailedRecipients = recipients
+	}
+
+	// Reply-To
+	headers.ReplyTo = getString("Reply-To")
+	headers.ReplyToExists = headerExists("Reply-To")
+
+	// Sender
+	headers.Sender = getString("Sender")
+
+	// Forwarded-For (could be in different formats)
+	headers.ForwardedFor = getString("X-Forwarded-For")
+	if headers.ForwardedFor == "" {
+		headers.ForwardedFor = getString("Forwarded-For")
+	}
+
+	// Security headers
+	headers.DKIM = getStringArray("DKIM-Signature")
+	headers.SPF = getString("Received-SPF")
+	headers.DMARC = getString("DMARC-Result")
+
+	return headers, nil
 }

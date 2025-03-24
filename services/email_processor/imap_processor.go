@@ -67,16 +67,9 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	}
 
 	// Process message content
-	attachments := processMessageContent(email, msg)
+	headers, attachments := processMessageContent(email, msg)
 
-	err = p.EmailProcessor.EmailFilter(ctx, email)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return err
-	}
-
-	// write to clickhouse store
-	err = p.emailStore.SaveEmail(ctx, email)
+	err = p.EmailProcessor.EmailFilter(ctx, email, headers)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -84,6 +77,12 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 
 	// return early if spam
 	if email.Classification != enum.EmailOK.String() {
+		// done processing, write to clickhouse
+		err = p.emailStore.SaveEmail(ctx, email)
+		if err != nil {
+			tracing.TraceErr(span, err)
+			return err
+		}
 		return nil
 	}
 
@@ -294,17 +293,14 @@ func extractAttachmentsFromStructure(bs *go_imap.BodyStructure) []map[string]int
 	return attachments
 }
 
-func processMessageContent(email *models.EmailStore, msg *go_imap.Message) []map[string]interface{} {
+func processMessageContent(email *models.EmailStore, msg *go_imap.Message) (headers map[string]interface{}, attachments []map[string]interface{}) {
 	// Get the full message content
 	fullMessageData := extractFullMessage(msg)
 
 	if len(fullMessageData) > 0 {
-		// Parse with enmime for better email parsing
 		return parseWithEnmime(email, fullMessageData)
-	} else {
-		// Fallback to manual extraction
-		return extractContentManually(email, msg)
 	}
+	return nil, nil
 }
 
 // Extract full message data
@@ -330,14 +326,14 @@ func extractFullMessage(msg *go_imap.Message) []byte {
 }
 
 // Parse message using enmime
-func parseWithEnmime(email *models.EmailStore, messageData []byte) []map[string]interface{} {
+func parseWithEnmime(email *models.EmailStore, messageData []byte) (headers map[string]interface{}, attachments []map[string]interface{}) {
 	emailParser, err := enmime.ReadEnvelope(bytes.NewReader(messageData))
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
 	// Extract headers
-	headers := make(map[string]interface{})
+	headers = make(map[string]interface{})
 	for _, key := range emailParser.GetHeaderKeys() {
 		values := emailParser.GetHeaderValues(key)
 		if len(values) > 0 {
@@ -355,7 +351,7 @@ func parseWithEnmime(email *models.EmailStore, messageData []byte) []map[string]
 	createBodyStructureFromEnmime(emailParser)
 
 	// Process attachments
-	attachments := make([]map[string]interface{}, 0)
+	attachments = make([]map[string]interface{}, 0)
 
 	// Regular attachments
 	for _, attachment := range emailParser.Attachments {
@@ -385,7 +381,7 @@ func parseWithEnmime(email *models.EmailStore, messageData []byte) []map[string]
 	if len(attachments) > 0 {
 		email.HasAttachment = true
 	}
-	return attachments
+	return headers, attachments
 }
 
 // Helper function to create body structure from enmime data
@@ -457,39 +453,6 @@ func createBodyStructureFromEnmime(emailParser *enmime.Envelope) map[string]inte
 	bodyStructure["is_multipart"] = len(parts) > 1
 
 	return bodyStructure
-}
-
-// Manual content extraction as fallback
-func extractContentManually(email *models.EmailStore, msg *go_imap.Message) []map[string]interface{} {
-	// Store body structure if available
-	var attachments []map[string]interface{}
-	if msg.BodyStructure != nil {
-		parseBodyStructure(msg.BodyStructure)
-
-		// Check for attachments in body structure
-		attachments = extractAttachmentsFromStructure(msg.BodyStructure)
-		if len(attachments) > 0 {
-			email.HasAttachment = true
-		}
-	}
-
-	// Try to extract content from individual parts
-	for section, literal := range msg.Body {
-		sectionKey := fmt.Sprintf("%v", section)
-
-		data, err := io.ReadAll(literal)
-		if err != nil {
-			continue
-		}
-
-		// Extract text and HTML content
-		if strings.Contains(strings.ToLower(sectionKey), "text/plain") {
-			email.BodyText = string(data)
-		} else if strings.Contains(strings.ToLower(sectionKey), "text/html") {
-			email.BodyHTML = string(data)
-		}
-	}
-	return attachments
 }
 
 func processReferences(email *models.EmailStore, headers map[string]interface{}) {
