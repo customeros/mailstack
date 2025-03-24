@@ -65,6 +65,11 @@ func main() {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
+	clickhouseDB, err := database.InitClickhouse(cfg.ClickhouseConfig)
+	if err != nil {
+		log.Fatalf("Clickhouse database initialization failed: %v", err)
+	}
+
 	// Try to get Kubernetes config
 	var k8sClient kubernetes.Interface
 	k8sConfig, err := rest.InClusterConfig()
@@ -93,7 +98,7 @@ func main() {
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		srv, err := server.NewServer(cfg, mailstackDB, openlineDB)
+		srv, err := server.NewServer(cfg, mailstackDB, openlineDB, clickhouseDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}

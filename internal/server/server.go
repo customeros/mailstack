@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"github.com/uptrace/go-clickhouse/ch"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/api"
@@ -38,7 +39,7 @@ type Server struct {
 	repositories *repository.Repositories
 }
 
-func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
+func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhouseDB *ch.DB) (*Server, error) {
 	// Initialize logger
 	logger := logger.NewAppLogger(cfg.Logger)
 	logger.InitLogger()
@@ -51,7 +52,10 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 	opentracing.SetGlobalTracer(tracer)
 
 	// Initialize repositories
-	repos := repository.InitRepositories(mailstackDB, openlineDB, cfg.R2StorageConfig)
+	repos, err := repository.InitRepositories(mailstackDB, openlineDB, clickhouseDB, cfg.R2StorageConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	// Initialize services
 	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, logger, repos, cfg)

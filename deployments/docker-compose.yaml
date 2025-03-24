@@ -1,11 +1,10 @@
 networks:
   mailstack:
-
 volumes:
   rabbitmq_data:
   postgres_data_mailstack:
   postgres_data_openline:
-
+  clickhouse_data: # New volume for ClickHouse data
 services:
   rabbitmq:
     image: rabbitmq:management
@@ -22,7 +21,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     ports:
@@ -36,7 +34,6 @@ services:
       - LOG_LEVEL=debug
     networks:
       - mailstack
-
   postgres-mailstack:
     image: postgres:14.5
     container_name: postgres-mailstack
@@ -60,7 +57,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
-
   postgres-openline:
     image: postgres:14.5
     container_name: postgres-openline
@@ -81,3 +77,39 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    container_name: clickhouse
+    networks:
+      - mailstack
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      # Optional: Mount custom configuration if needed
+      # - ./provision/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom-config.xml
+      # - ./provision/clickhouse/users.xml:/etc/clickhouse-server/users.d/custom-users.xml
+    environment:
+      # Set these for explicit authentication
+      CLICKHOUSE_DB: mailstack
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--spider",
+          "http://localhost:8123/ping",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

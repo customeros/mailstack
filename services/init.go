@@ -72,7 +72,7 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		CloudflareService: cloudflareImpl,
 		EmailProcessor:    emailProcessorImpl,
 		EmailService:      email.NewEmailService(events, repos),
-		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl, imapImpl),
+		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl, imapImpl, repos.EmailStore),
 		IMAPService:       imapImpl,
 		MailboxService:    mailbox.NewMailboxService(repos, imapImpl),
 		NamecheapService:  namecheapImpl,

@@ -24,12 +24,16 @@ import (
 type ImapProcessor struct {
 	interfaces.EmailProcessor
 	imapService interfaces.IMAPService
+	emailStore  interfaces.EmailStore
 }
 
-func NewImapProcessor(processor interfaces.EmailProcessor, imapService interfaces.IMAPService) *ImapProcessor {
+func NewImapProcessor(
+	processor interfaces.EmailProcessor, imapService interfaces.IMAPService, emailStore interfaces.EmailStore,
+) *ImapProcessor {
 	return &ImapProcessor{
 		EmailProcessor: processor,
 		imapService:    imapService,
+		emailStore:     emailStore,
 	}
 }
 
@@ -52,6 +56,16 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	// Process envelope data
 	processEnvelope(email, msg.Envelope)
 
+	// check if email has already been processed
+	exists, err := p.emailStore.EmailExists(ctx, email.MessageID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+	if exists {
+		return nil
+	}
+
 	// Process message content
 	attachments := processMessageContent(email, msg)
 
@@ -61,8 +75,15 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 		return err
 	}
 
+	// write to clickhouse store
+	err = p.emailStore.SaveEmail(ctx, email)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
 	// return early if spam
-	if email.Classification != enum.EmailOK {
+	if email.Classification != enum.EmailOK.String() {
 		return nil
 	}
 
@@ -80,7 +101,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	return p.EmailProcessor.ProcessEmail(ctx, email, attachmentRecords, files)
 }
 
-func processEnvelope(email *models.Email, envelope *go_imap.Envelope) {
+func processEnvelope(email *models.EmailStore, envelope *go_imap.Envelope) {
 	if envelope == nil {
 		return
 	}
@@ -125,10 +146,9 @@ func processEnvelope(email *models.Email, envelope *go_imap.Envelope) {
 	envelopeMap["to"] = addressesToMap(envelope.To)
 	envelopeMap["cc"] = addressesToMap(envelope.Cc)
 	envelopeMap["bcc"] = addressesToMap(envelope.Bcc)
-	email.Envelope = models.JSONMap(envelopeMap)
 }
 
-func processInReplyTo(email *models.Email, envelope *go_imap.Envelope) {
+func processInReplyTo(email *models.EmailStore, envelope *go_imap.Envelope) {
 	var allReferences []string
 
 	// Process In-Reply-To (can contain multiple IDs space-separated)
@@ -274,7 +294,7 @@ func extractAttachmentsFromStructure(bs *go_imap.BodyStructure) []map[string]int
 	return attachments
 }
 
-func processMessageContent(email *models.Email, msg *go_imap.Message) []map[string]interface{} {
+func processMessageContent(email *models.EmailStore, msg *go_imap.Message) []map[string]interface{} {
 	// Get the full message content
 	fullMessageData := extractFullMessage(msg)
 
@@ -310,7 +330,7 @@ func extractFullMessage(msg *go_imap.Message) []byte {
 }
 
 // Parse message using enmime
-func parseWithEnmime(email *models.Email, messageData []byte) []map[string]interface{} {
+func parseWithEnmime(email *models.EmailStore, messageData []byte) []map[string]interface{} {
 	emailParser, err := enmime.ReadEnvelope(bytes.NewReader(messageData))
 	if err != nil {
 		return nil
@@ -327,15 +347,12 @@ func parseWithEnmime(email *models.Email, messageData []byte) []map[string]inter
 
 	processReferences(email, headers)
 
-	email.RawHeaders = models.JSONMap(headers)
-
 	// Extract body content
 	email.BodyText = emailParser.Text
 	email.BodyHTML = emailParser.HTML
 
 	// Create body structure from enmime data
-	bodyStructure := createBodyStructureFromEnmime(emailParser)
-	email.BodyStructure = models.JSONMap(bodyStructure)
+	createBodyStructureFromEnmime(emailParser)
 
 	// Process attachments
 	attachments := make([]map[string]interface{}, 0)
@@ -443,12 +460,11 @@ func createBodyStructureFromEnmime(emailParser *enmime.Envelope) map[string]inte
 }
 
 // Manual content extraction as fallback
-func extractContentManually(email *models.Email, msg *go_imap.Message) []map[string]interface{} {
+func extractContentManually(email *models.EmailStore, msg *go_imap.Message) []map[string]interface{} {
 	// Store body structure if available
 	var attachments []map[string]interface{}
 	if msg.BodyStructure != nil {
-		bodyStructure := parseBodyStructure(msg.BodyStructure)
-		email.BodyStructure = models.JSONMap(bodyStructure)
+		parseBodyStructure(msg.BodyStructure)
 
 		// Check for attachments in body structure
 		attachments = extractAttachmentsFromStructure(msg.BodyStructure)
@@ -476,7 +492,7 @@ func extractContentManually(email *models.Email, msg *go_imap.Message) []map[str
 	return attachments
 }
 
-func processReferences(email *models.Email, headers map[string]interface{}) {
+func processReferences(email *models.EmailStore, headers map[string]interface{}) {
 	var allReferences []string
 
 	// Get references from headers

@@ -14,6 +14,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/internal/dbmappers"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -33,7 +34,7 @@ func NewSMTPClient(repos *repository.Repositories, mailbox *models.Mailbox) *SMT
 	}
 }
 
-func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments []*models.EmailAttachment) error {
+func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.Send")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -57,9 +58,9 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	if err != nil {
 		tracing.TraceErr(span, err)
 		email.LastAttemptAt = utils.NowPtr()
-		email.Status = enum.EmailStatusFailed
+		email.Status = enum.EmailStatusFailed.String()
 		email.StatusDetail = err.Error()
-		err = s.repositories.EmailRepository.Update(ctx, email)
+		err = s.repositories.EmailRepository.Update(ctx, dbmappers.MapEmailStoreToEmail(email))
 		if err != nil {
 			tracing.TraceErr(span, err)
 		}
@@ -69,8 +70,8 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 	// update db with success
 	email.SentAt = utils.NowPtr()
 	email.LastAttemptAt = email.SentAt
-	email.Status = enum.EmailStatusSent
-	err = s.repositories.EmailRepository.Update(ctx, email)
+	email.Status = enum.EmailStatusSent.String()
+	err = s.repositories.EmailRepository.Update(ctx, dbmappers.MapEmailStoreToEmail(email))
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -80,12 +81,12 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.Email, attachments 
 }
 
 // validateEmail performs basic validation on the email
-func (s *SMTPClient) validateEmail(ctx context.Context, email *models.Email) error {
+func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SMTPClient.validateEmail")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
-	email.Direction = enum.EmailDirectionOutbound
+	email.Direction = enum.EmailDirectionOutbound.String()
 
 	if email == nil {
 		err := fmt.Errorf("email cannot be nil")

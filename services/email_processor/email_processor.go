@@ -12,6 +12,7 @@ import (
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/dbmappers"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -38,11 +39,11 @@ func NewEmailProcessor(
 	}
 }
 
-func (p *emailProcessor) NewInboundEmail() *models.Email {
-	return &models.Email{
+func (p *emailProcessor) NewInboundEmail() *models.EmailStore {
+	return &models.EmailStore{
 		ID:         utils.GenerateNanoIDWithPrefix("email", 21),
-		Direction:  enum.EmailDirectionInbound,
-		Status:     enum.EmailStatusReceived,
+		Direction:  enum.EmailDirectionInbound.String(),
+		Status:     enum.EmailStatusReceived.String(),
 		ReceivedAt: utils.NowPtr(),
 	}
 }
@@ -63,7 +64,7 @@ func (p *emailProcessor) NewAttachmentFile(attachmentID string, data []byte) *in
 }
 
 func (p *emailProcessor) ProcessEmail(
-	ctx context.Context, email *models.Email, attachments []*models.EmailAttachment, files []*interfaces.AttachmentFile,
+	ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment, files []*interfaces.AttachmentFile,
 ) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.ProcessEmail")
 	defer span.Finish()
@@ -84,7 +85,7 @@ func (p *emailProcessor) ProcessEmail(
 	}
 
 	// Save the email entity to the database
-	emailID, err := p.repositories.EmailRepository.Create(ctx, email)
+	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmappers.MapEmailStoreToEmail(email))
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
@@ -97,7 +98,7 @@ func (p *emailProcessor) ProcessEmail(
 	return nil
 }
 
-func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *models.Email) error {
+func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.getStructuredMessageBody")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -135,7 +136,7 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 	return nil
 }
 
-func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.Email) error {
+func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.EmailStore) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailFilterService.ScanEmail")
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 	defer span.Finish()
@@ -155,7 +156,7 @@ func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.Email) e
 	if isBounceNotification {
 		// todo determine what email bounced
 		// todo send bounced email event
-		email.Classification = enum.EmailBounceNotification
+		email.Classification = enum.EmailBounceNotification.String()
 		email.ClassificationReason = reason
 		return nil
 	}
@@ -163,34 +164,34 @@ func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.Email) e
 	isAutoresponder, reason := isAutoresponder(headers)
 	if isAutoresponder {
 		// todo analyze autoresponder content and do something
-		email.Classification = enum.EmailAutoResponder
+		email.Classification = enum.EmailAutoResponder.String()
 		email.ClassificationReason = reason
 		return nil
 	}
 
 	isBulkEmail, reason := isBulkEmail(headers, email.ReplyTo, email.FromAddress)
 	if isBulkEmail {
-		email.Classification = enum.EmailBulk
+		email.Classification = enum.EmailBulk.String()
 		email.ClassificationReason = reason
 		return nil
 	}
 
 	isInternal := isInternalEmail(email)
 	if isInternal {
-		email.Classification = enum.EmailInternal
+		email.Classification = enum.EmailInternal.String()
 		return nil
 	}
 
 	isSensitive, reason := isSensitiveSubject(email.Subject)
 	if isSensitive {
-		email.Classification = enum.EmailSensitive
+		email.Classification = enum.EmailSensitive.String()
 		email.ClassificationReason = reason
 		return nil
 	}
 
 	// todo add spam check + email warmer check (if required)
 
-	email.Classification = enum.EmailOK
+	email.Classification = enum.EmailOK.String()
 	return nil
 }
 
@@ -276,7 +277,7 @@ func isSensitiveSubject(subject string) (bool, string) {
 	return false, ""
 }
 
-func isInternalEmail(email *models.Email) bool {
+func isInternalEmail(email *models.EmailStore) bool {
 	senderValidation := mailvalidate.ValidateEmailSyntax(email.FromAddress)
 	if !senderValidation.IsValid || senderValidation.IsFreeAccount || senderValidation.Domain == "" {
 		return false
