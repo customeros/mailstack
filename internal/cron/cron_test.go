@@ -29,11 +29,7 @@ func getLogger() logger.Logger {
 func TestNewCronManager(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
-		AppConfig: &config.AppConfig{
-			Logger: &logger.Config{
-				LogLevel: "info",
-			},
-		},
+		AppConfig: &config.AppConfig{},
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
@@ -60,11 +56,7 @@ func TestCronManager_StartCron(t *testing.T) {
 
 	// Arrange
 	cfg := &config.Config{
-		AppConfig: &config.AppConfig{
-			Logger: &logger.Config{
-				LogLevel: "info",
-			},
-		},
+		AppConfig: &config.AppConfig{},
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
@@ -108,11 +100,7 @@ func TestCronManager_Stop(t *testing.T) {
 
 	// Arrange
 	cfg := &config.Config{
-		AppConfig: &config.AppConfig{
-			Logger: &logger.Config{
-				LogLevel: "info",
-			},
-		},
+		AppConfig: &config.AppConfig{},
 	}
 	log := getLogger()
 	k8s := &mockKubernetesInterface{}
