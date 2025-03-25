@@ -76,7 +76,7 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 			return nil, api_errors.NewError("unable to retrieve email", api_errors.CodeInternal, nil)
 		}
 		if email == nil {
-			return nil, api_errors.NewError("no email found", api_errors.CodeNotFound, nil)
+			continue // Skip this thread if no email is found
 		}
 
 		mappedThread.LastSender = email.FromAddress

@@ -28,7 +28,7 @@ func (EmailThread) TableName() string {
 	return "email_threads"
 }
 
-func (e *EmailThread) BeforeCreate(tx *gorm.DB) error {
+func (e *EmailThread) BeforeCreate(*gorm.DB) error {
 	if e.ID == "" {
 		e.ID = utils.GenerateNanoIDWithPrefix("thrd", 16)
 	}
