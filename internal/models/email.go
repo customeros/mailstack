@@ -32,6 +32,8 @@ type Email struct {
 	TrackClicks  bool           `gorm:"column:track_clicks;default:false" json:"trackClicks"`
 	IsViewed     bool           `gorm:"column:isViewed;default:false" json:"isViewed"`
 
+	Folder       string         `gorm:"column:folder;type:varchar(100);not null" json:"folder"`
+
 	// Content
 	Body          string `gorm:"column:body;type:text" json:"body"`
 	HasAttachment bool   `gorm:"column:has_attachment;default:false" json:"hasAttachment"`

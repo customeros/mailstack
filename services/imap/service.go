@@ -407,7 +407,7 @@ func (s *IMAPService) processSingleMailboxIteration(
 	span.LogFields(tracingLog.String("folders", fmt.Sprintf("%v", config.SyncFolders)))
 
 	// Process each folder sequentially
-	_, connectivityError := s.syncFolders(ctx, client, config.ID, config.SyncFolders)
+	_, connectivityError := s.syncFolders(ctx, client, mailboxID, config.SyncFolders)
 
 	// Handle connectivity errors
 	if connectivityError != nil {
