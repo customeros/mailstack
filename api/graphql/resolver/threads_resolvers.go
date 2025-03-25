@@ -70,7 +70,7 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 		mappedThread := mappers.MapGormThreadToGraph(thread)
 		mappedThread.UserID = userID
 
-		email, err := r.repositories.EmailRepository.GetByID(ctx, thread.LastMessageID)
+		email, err := r.repositories.EmailRepository.GetByMessageID(ctx, thread.LastMessageID)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			return nil, api_errors.NewError("unable to retrieve email", api_errors.CodeInternal, nil)
