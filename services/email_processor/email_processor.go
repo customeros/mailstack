@@ -80,6 +80,7 @@ func (p *emailProcessor) ProcessEmail(
 		return err
 	}
 
+	// TODO alexb if ai fails retry async. Method should return error if ai fails
 	// Clean message body
 	err = p.getStructuredMessageBody(ctx, emailStore)
 	if err != nil {
@@ -95,8 +96,17 @@ func (p *emailProcessor) ProcessEmail(
 	}
 	emailStore.ID = emailID
 
+	// save emailStore in clickhouse
+	err = p.repositories.EmailStore.SaveEmail(ctx, emailStore)
+	if err != nil {
+		tracing.TraceErr(span, err)
+	}
+
 	// Throw events
 	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: emailStore.AllParticipants()})
+	if err != nil {
+		tracing.TraceErr(span, err)
+	}
 
 	return nil
 }
