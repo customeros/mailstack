@@ -58,11 +58,11 @@ type CronManager struct {
 	stopCh   chan struct{}
 	jobIDs   map[string]cronv3.EntryID
 	domain   interfaces.DomainService
-	mailbox  interfaces.MailboxServiceOld
+	mailbox  interfaces.MailboxService
 	postgres *repository.Repositories
 }
 
-func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxServiceOld, postgres *repository.Repositories) *CronManager {
+func NewCronManager(cfg *config.Config, log logger.Logger, k8s kubernetes.Interface, domain interfaces.DomainService, mailbox interfaces.MailboxService, postgres *repository.Repositories) *CronManager {
 	return &CronManager{
 		cfg:      cfg,
 		log:      log,
@@ -294,7 +294,7 @@ func (cm *CronManager) configureMailboxes() {
 	tracing.TagComponentCronJob(span)
 
 	// Get mailboxes that need configuration directly from repository
-	mailboxes, err := cm.postgres.TenantSettingsMailboxRepository.GetForConfiguration(ctx, 10)
+	mailboxes, err := cm.postgres.MailboxRepository.GetForConfiguration(ctx, 10)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		cm.log.Errorf("Failed to get mailboxes for configuration: %v", err)

@@ -16,16 +16,15 @@ import (
 )
 
 type Repositories struct {
-	DomainRepository                DomainRepository
-	EmailRepository                 interfaces.EmailRepository
-	EmailStore                      interfaces.EmailStore
-	EmailAttachmentRepository       interfaces.EmailAttachmentRepository
-	EmailThreadRepository           interfaces.EmailThreadRepository
-	MailboxRepository               interfaces.MailboxRepository
-	MailboxSyncRepository           interfaces.MailboxSyncRepository
-	OrphanEmailRepository           interfaces.OrphanEmailRepository
-	SenderRepository                interfaces.SenderRepository
-	TenantSettingsMailboxRepository TenantSettingsMailboxRepository
+	DomainRepository          DomainRepository
+	EmailRepository           interfaces.EmailRepository
+	EmailStore                interfaces.EmailStore
+	EmailAttachmentRepository interfaces.EmailAttachmentRepository
+	EmailThreadRepository     interfaces.EmailThreadRepository
+	MailboxRepository         interfaces.MailboxRepository
+	MailboxSyncRepository     interfaces.MailboxSyncRepository
+	OrphanEmailRepository     interfaces.OrphanEmailRepository
+	SenderRepository          interfaces.SenderRepository
 }
 
 func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhousDB *ch.DB, r2Config *config.R2StorageConfig) (*Repositories, error) {
@@ -48,8 +47,7 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhousDB *ch
 
 	return &Repositories{
 		// Openline
-		DomainRepository:                NewDomainRepository(openlineDB),
-		TenantSettingsMailboxRepository: NewTenantSettingsMailboxRepository(openlineDB),
+		DomainRepository: NewDomainRepository(openlineDB),
 		// Mailstack
 		EmailRepository:           NewEmailRepository(mailstackDB),
 		EmailAttachmentRepository: NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
@@ -99,7 +97,6 @@ func MigrateOpenlineDB(dbConfig *config.OpenlineDatabaseConfig, openlineDB *gorm
 	err = openlineDB.AutoMigrate(
 		&models.DMARCMonitoring{},
 		&models.MailStackDomain{},
-		&models.TenantSettingsMailbox{},
 		&models.MailstackReputation{},
 	)
 

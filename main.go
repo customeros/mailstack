@@ -109,7 +109,7 @@ func main() {
 			srv.Logger(),
 			k8sClient,
 			srv.Services().DomainService,
-			srv.Services().MailboxServiceOld,
+			srv.Services().MailboxService,
 			srv.Repositories(),
 		)
 

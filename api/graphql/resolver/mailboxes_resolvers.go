@@ -14,8 +14,9 @@ import (
 	"github.com/customeros/mailstack/api/graphql/mappers"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
-	mbox "github.com/customeros/mailstack/services/mailbox"
 	opentracing "github.com/opentracing/opentracing-go"
+
+	internalerrors "github.com/customeros/mailstack/internal/errors"
 )
 
 // AddMailbox is the resolver for the addMailbox field.
@@ -40,7 +41,7 @@ func (r *mutationResolver) AddMailbox(ctx context.Context, input graphql_model.M
 		tracing.TraceErr(span, err)
 
 		switch err {
-		case mbox.ErrMailboxExists:
+		case internalerrors.ErrMailboxExists:
 			return nil, api_errors.NewError("unable to add mailbox", api_errors.CodeExists, nil)
 		default:
 			return nil, api_errors.NewError("unable to add mailbox", api_errors.CodeInternal, nil)

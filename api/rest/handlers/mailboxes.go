@@ -13,6 +13,7 @@ import (
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/enum"
 	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -80,7 +81,7 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		// get userId from query params
 		userId, _ := c.GetQuery("userId")
 
-		mailboxRecords, err := h.services.MailboxServiceOld.GetMailboxes(ctx, domain, userId)
+		mailboxes, err := h.services.MailboxService.GetMailboxes(ctx, enum.EmailMailstack, domain, userId)
 		if err != nil {
 			tracing.TraceErr(span, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -88,24 +89,24 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 		}
 
 		response := MailboxesResponse{
-			Mailboxes: make([]MailboxRecord, 0, len(mailboxRecords)),
+			Mailboxes: make([]MailboxRecord, 0, len(mailboxes)),
 		}
-		for _, mailboxRecord := range mailboxRecords {
+		for _, mailbox := range mailboxes {
 			response.Mailboxes = append(response.Mailboxes, MailboxRecord{
-				Email:                   mailboxRecord.MailboxUsername,
-				Domain:                  mailboxRecord.Domain,
-				Username:                mailboxRecord.Username,
-				Password:                mailboxRecord.MailboxPassword,
-				ForwardingEnabled:       mailboxRecord.ForwardingTo != "",
-				ForwardingTo:            strings.Split(mailboxRecord.ForwardingTo, ","),
-				WebmailEnabled:          mailboxRecord.WebmailEnabled,
-				Provisioned:             mailboxRecord.Status == models.MailboxStatusProvisioned,
-				RampUpCurrent:           mailboxRecord.RampUpCurrent,
-				RampUpMax:               mailboxRecord.RampUpMax,
-				RampUpRate:              mailboxRecord.RampUpRate,
-				UserID:                  mailboxRecord.UserId,
-				MinMinutesBetweenEmails: mailboxRecord.MinMinutesBetweenEmails,
-				MaxMinutesBetweenEmails: mailboxRecord.MaxMinutesBetweenEmails,
+				Email:                   mailbox.EmailAddress,
+				Domain:                  mailbox.MailboxDomain,
+				Username:                mailbox.MailboxUser,
+				Password:                mailbox.SmtpPassword,
+				ForwardingEnabled:       mailbox.ForwardingTo != "",
+				ForwardingTo:            strings.Split(mailbox.ForwardingTo, ","),
+				WebmailEnabled:          mailbox.WebmailEnabled,
+				Provisioned:             mailbox.ProvisionStatus == models.MailboxStatusProvisioned,
+				RampUpCurrent:           mailbox.RampUpCurrent,
+				RampUpMax:               mailbox.RampUpMax,
+				RampUpRate:              mailbox.RampUpRate,
+				UserID:                  mailbox.UserID,
+				MinMinutesBetweenEmails: mailbox.MinMinutesBetweenEmails,
+				MaxMinutesBetweenEmails: mailbox.MaxMinutesBetweenEmails,
 			})
 		}
 
@@ -166,7 +167,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		additionalForwardingTo := fmt.Sprintf("bcc@%s.customeros.ai", strings.ToLower(tenant))
 		forwardingTo = append(forwardingTo, additionalForwardingTo)
 
-		err := h.services.MailboxServiceOld.CreateMailbox(ctx, nil, interfaces.CreateMailboxRequest{
+		err := h.services.MailboxService.CreateMailbox(ctx, interfaces.CreateMailboxRequest{
 			Domain:                domain,
 			Username:              username,
 			Password:              password,
@@ -194,7 +195,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 			}
 		}
 
-		mailbox, err := h.services.MailboxServiceOld.GetByMailbox(ctx, username, domain)
+		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, username+"@"+domain)
 		if err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -212,7 +213,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 			WebmailEnabled:    request.WebmailEnabled,
 			ForwardingEnabled: true,
 			ForwardingTo:      forwardingTo,
-			Provisioned:       mailbox.Status == models.MailboxStatusProvisioned,
+			Provisioned:       mailbox.ProvisionStatus == models.MailboxStatusProvisioned,
 		}
 
 		if passwordGenerated {
@@ -245,7 +246,7 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 			return
 		}
 
-		err := h.services.MailboxServiceOld.ConfigureMailbox(ctx, mailboxID)
+		err := h.services.MailboxService.ConfigureMailbox(ctx, mailboxID)
 		if err != nil {
 			if errors.Is(err, er.ErrMailboxNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "mailbox not found"})
@@ -288,7 +289,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 		username := parts[0]
 		domain := parts[1]
 
-		mailbox, err := h.services.MailboxServiceOld.GetByMailbox(ctx, username, domain)
+		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, domain+"@"+username)
 		if err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -307,11 +308,11 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 			ForwardingEnabled:       mailbox.ForwardingTo != "",
 			ForwardingTo:            strings.Split(mailbox.ForwardingTo, ","),
 			WebmailEnabled:          mailbox.WebmailEnabled,
-			Provisioned:             mailbox.Status == models.MailboxStatusProvisioned,
+			Provisioned:             mailbox.ProvisionStatus == models.MailboxStatusProvisioned,
 			RampUpCurrent:           mailbox.RampUpCurrent,
 			RampUpMax:               mailbox.RampUpMax,
 			RampUpRate:              mailbox.RampUpRate,
-			UserID:                  mailbox.UserId,
+			UserID:                  mailbox.UserID,
 			MinMinutesBetweenEmails: mailbox.MinMinutesBetweenEmails,
 			MaxMinutesBetweenEmails: mailbox.MaxMinutesBetweenEmails,
 		}

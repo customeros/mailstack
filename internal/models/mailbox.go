@@ -11,6 +11,20 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
+const (
+	MAILBOX_IMAP_PORT     = 993
+	MAILBOX_IMAP_SERVER   = "mail.hostedemail.com"
+	MAILBOX_IMAP_SECURITY = enum.EmailSecurityTLS
+
+	MAILBOX_SMTP_PORT     = 587
+	MAILBOX_SMTP_SERVER   = "mail.hostedemail.com"
+	MAILBOX_SMTP_SECURITY = enum.EmailSecurityTLS
+
+	MAILBOX_INBOX = "INBOX"
+	MAILBOX_SENT  = "Sent"
+	MAILBOX_SPAM  = "Spam"
+)
+
 // Mailbox represents an email account configuration with provider-specific settings
 type Mailbox struct {
 	ID            string             `gorm:"column:id;type:varchar(50);primaryKey" json:"id"`
@@ -67,6 +81,18 @@ type Mailbox struct {
 	CreatedAt time.Time      `gorm:"column:created_at;type:timestamp;default:current_timestamp" json:"createdAt"`
 	UpdatedAt time.Time      `gorm:"column:updated_at;type:timestamp;default:current_timestamp" json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+
+	// Fields from previous mailbox model
+	ProvisionStatus         MailboxProvisionStatus `gorm:"column:provision_status;type:varchar(255)" json:"provisionStatus"`
+	MinMinutesBetweenEmails int                    `gorm:"type:integer" json:"minMinutesBetweenEmails"`
+	MaxMinutesBetweenEmails int                    `gorm:"type:integer" json:"maxMinutesBetweenEmails"`
+	ConfigureAttemptAt      *time.Time             `gorm:"column:configure_attempt_at;type:timestamp" json:"configureAttemptAt"`
+	LastRampUpAt            time.Time              `gorm:"column:last_ramp_up_at;type:timestamp" json:"lastRampUpAt"`
+	RampUpRate              int                    `gorm:"type:integer" json:"rampUpRate"`
+	RampUpMax               int                    `gorm:"type:integer" json:"rampUpMax"`
+	RampUpCurrent           int                    `gorm:"type:integer" json:"rampUpCurrent"`
+	ForwardingTo            string                 `gorm:"column:forwarding_to;type:text" json:"forwardingTo"`
+	WebmailEnabled          bool                   `gorm:"column:webmail_enabled;type:boolean" json:"webmailEnabled"`
 }
 
 // TableName sets the table name for the Mailbox model
@@ -74,9 +100,16 @@ func (Mailbox) TableName() string {
 	return "mailboxes"
 }
 
-func (m *Mailbox) BeforeCreate(tx *gorm.DB) error {
+func (m *Mailbox) BeforeCreate(*gorm.DB) error {
 	if m.ID == "" {
 		m.ID = utils.GenerateNanoIDWithPrefix("mbox", 16)
 	}
 	return nil
 }
+
+type MailboxProvisionStatus string
+
+const (
+	MailboxStatusPendingProvisioning MailboxProvisionStatus = "PENDING_PROVISIONING"
+	MailboxStatusProvisioned         MailboxProvisionStatus = "PROVISIONED"
+)

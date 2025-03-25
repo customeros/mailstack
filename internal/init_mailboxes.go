@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/services"
 )
@@ -22,6 +23,9 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 
 	// Add each mailbox from configuration
 	for _, mailbox := range mailboxes {
+		if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+			continue
+		}
 		if err := s.IMAPService.AddMailbox(ctx, mailbox); err != nil {
 			return fmt.Errorf("failed to add mailbox %s: %w", mailbox.ID, err)
 		}
