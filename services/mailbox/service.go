@@ -292,7 +292,7 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxId string)
 	}
 
 	// Update mailbox status to provisioned
-	err = s.repositories.MailboxRepository.UpdateStatus(ctx, mailboxId, models.MailboxStatusProvisioned)
+	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxId, models.MailboxStatusProvisioned)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox status"))
 		return errors.Wrap(err, "failed to update mailbox status")
