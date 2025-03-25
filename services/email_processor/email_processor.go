@@ -64,36 +64,39 @@ func (p *emailProcessor) NewAttachmentFile(attachmentID string, data []byte) *in
 }
 
 func (p *emailProcessor) ProcessEmail(
-	ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment, files []*interfaces.AttachmentFile,
+	ctx context.Context,
+	emailStore *models.EmailStore,
+	attachments []*models.EmailAttachment,
+	files []*interfaces.AttachmentFile,
 ) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.ProcessEmail")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
 	// attach message to thread
-	err := p.attachEmailToThread(ctx, email)
+	err := p.attachEmailToThread(ctx, emailStore)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
 	}
 
 	// Clean message body
-	err = p.getStructuredMessageBody(ctx, email)
+	err = p.getStructuredMessageBody(ctx, emailStore)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
 	}
 
 	// Save the email entity to the database
-	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
+	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(emailStore))
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
 	}
-	email.ID = emailID
+	emailStore.ID = emailID
 
 	// Throw events
-	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: email.AllParticipants()})
+	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: emailStore.AllParticipants()})
 
 	return nil
 }
@@ -112,7 +115,7 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 	})
 	if err != nil {
 		tracing.TraceErr(span, err)
-		return err
+		return nil
 	}
 
 	if structuredData == nil {

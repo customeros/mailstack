@@ -20,8 +20,8 @@ type EmailThread struct {
 	IsDone         bool           `gorm:"column:isDone;default:false" json:"isDone"`
 	LastMessageAt  *time.Time     `gorm:"column:last_message_at;type:timestamp" json:"lastMessageAt"`
 	FirstMessageAt *time.Time     `gorm:"column:first_message_at;type:timestamp" json:"firstMessageAt"`
-	CreatedAt      time.Time      `gorm:"column:created_at;type:timestamp;default:current_timestamp" json:"createdAt"`
-	UpdatedAt      time.Time      `gorm:"column:updated_at;type:timestamp;default:current_timestamp" json:"updatedAt"`
+	CreatedAt      time.Time      `gorm:"column:created_at;type:timestamp;DEFAULT:current_timestamp" json:"createdAt"`
+	UpdatedAt      time.Time      `gorm:"column:updated_at;type:timestamp;DEFAULT:current_timestamp" json:"updatedAt"`
 }
 
 func (EmailThread) TableName() string {

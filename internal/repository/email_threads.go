@@ -55,22 +55,8 @@ func (r *emailThreadRepository) Create(ctx context.Context, thread *models.Email
 	thread.CreatedAt = now
 	thread.UpdatedAt = now
 
-	// Use a transaction for creating the thread
-	tx := r.db.WithContext(ctx).Begin()
-	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
-		return "", tx.Error
-	}
-
 	// Create the thread
-	if err := tx.Create(thread).Error; err != nil {
-		tx.Rollback()
-		tracing.TraceErr(span, err)
-		return "", err
-	}
-
-	// Commit the transaction
-	if err := tx.Commit().Error; err != nil {
+	if err := r.db.WithContext(ctx).Create(thread).Error; err != nil {
 		tracing.TraceErr(span, err)
 		return "", err
 	}
