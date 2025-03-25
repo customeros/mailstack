@@ -283,12 +283,12 @@ func (r *mailboxRepository) ConfigureAttempt(ctx context.Context, id string) err
 	return nil
 }
 
-func (r *mailboxRepository) UpdateStatus(ctx context.Context, id string, status models.MailboxProvisionStatus) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateStatus")
+func (r *mailboxRepository) UpdateProvisionStatus(ctx context.Context, id string, provisionStatus models.MailboxProvisionStatus) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateProvisionStatus")
 	defer span.Finish()
 	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
 	tracing.TagEntity(span, id)
-	span.LogKV("status", status)
+	span.LogKV("provisionStatus", provisionStatus)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
@@ -296,8 +296,8 @@ func (r *mailboxRepository) UpdateStatus(ctx context.Context, id string, status 
 		Model(&models.Mailbox{}).
 		Where("tenant = ? AND id = ?", tenant, id).
 		UpdateColumns(map[string]interface{}{
-			"status":     status,
-			"updated_at": utils.Now(),
+			"provision_status": provisionStatus,
+			"updated_at":       utils.Now(),
 		}).Error
 	if err != nil {
 		tracing.TraceErr(span, err)
@@ -318,7 +318,7 @@ func (r *mailboxRepository) GetForConfiguration(ctx context.Context, limit int) 
 	var result []*models.Mailbox
 	err := r.db.WithContext(ctx).
 		Where("provider = ?", enum.EmailMailstack).
-		Where("status = ? AND ("+
+		Where("provision_status = ? AND ("+
 			"(configure_attempt_at IS NULL AND created_at < ?) OR "+
 			"(configure_attempt_at < ?)"+
 			")", models.MailboxStatusPendingProvisioning, twoHoursAgo, twoHoursAgo).

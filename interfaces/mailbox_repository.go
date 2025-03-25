@@ -19,7 +19,7 @@ type MailboxRepository interface {
 	DeleteMailbox(ctx context.Context, id string) error
 	UpdateConnectionStatus(ctx context.Context, mailboxID string, status enum.ConnectionStatus, errorMessage string) error
 
-	UpdateStatus(ctx context.Context, id string, status models.MailboxProvisionStatus) error
+	UpdateProvisionStatus(ctx context.Context, id string, status models.MailboxProvisionStatus) error
 	ConfigureAttempt(ctx context.Context, id string) error
 	GetForRampUp(ctx context.Context) ([]*models.Mailbox, error)
 	UpdateRampUpFields(ctx context.Context, mailbox *models.Mailbox) error
