@@ -94,7 +94,7 @@ func NewRabbitMQPublisher(rabbitmqURL string, logger logger.Logger, config *Publ
 	return publisher, nil
 }
 
-func (r *RabbitMQPublisher) PublishRecieveEmailEvent(ctx context.Context, message dto.EmailReceived) error {
+func (r *RabbitMQPublisher) PublishReceiveEmailEvent(ctx context.Context, message dto.EmailReceived) error {
 	switch message.Source {
 	case enum.EmailImportIMAP:
 		id := fmt.Sprintf("%s-%s-%s", message.MailboxID, message.Folder, message.ImapUID)

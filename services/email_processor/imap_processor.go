@@ -92,10 +92,6 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	}
 
 	attachmentRecords, files := p.processAttachments(attachments)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return err
-	}
 
 	return p.EmailProcessor.ProcessEmail(ctx, email, attachmentRecords, files)
 }

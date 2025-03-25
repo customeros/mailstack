@@ -1,4 +1,3 @@
-
 build:
     go build .
 
@@ -10,6 +9,8 @@ debug:
 
 gen-api:
     go run github.com/99designs/gqlgen generate --config ./api/graphql/gqlgen.yml
+
+generate: gen-api
 
 migrate:
     go run main.go migrate

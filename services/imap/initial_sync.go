@@ -294,7 +294,7 @@ func (s *IMAPService) processMessages(
 					}
 				}()
 
-				s.events.Publisher.PublishRecieveEmailEvent(eventCtx, dto.EmailReceived{
+				s.events.Publisher.PublishReceiveEmailEvent(eventCtx, dto.EmailReceived{
 					Source:      enum.EmailImportIMAP,
 					MailboxID:   mailboxID,
 					Folder:      folderName,
