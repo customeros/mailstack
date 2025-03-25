@@ -13,7 +13,14 @@ type MailboxRepository interface {
 	GetMailbox(ctx context.Context, id string) (*models.Mailbox, error)
 	GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error)
 	GetMailboxByEmailAddressCrossTenant(ctx context.Context, emailAddress string) (*models.Mailbox, error)
+	GetForConfiguration(ctx context.Context, limit int) ([]*models.Mailbox, error)
+	GetAllWithFilters(ctx context.Context, provider enum.EmailProvider, domain, userId string) ([]*models.Mailbox, error)
 	SaveMailbox(ctx context.Context, mailbox models.Mailbox) (string, error)
 	DeleteMailbox(ctx context.Context, id string) error
 	UpdateConnectionStatus(ctx context.Context, mailboxID string, status enum.ConnectionStatus, errorMessage string) error
+
+	UpdateStatus(ctx context.Context, id string, status models.MailboxProvisionStatus) error
+	ConfigureAttempt(ctx context.Context, id string) error
+	GetForRampUp(ctx context.Context) ([]*models.Mailbox, error)
+	UpdateRampUpFields(ctx context.Context, mailbox *models.Mailbox) error
 }

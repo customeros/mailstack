@@ -51,10 +51,7 @@ func (s *openSRSService) SendEmail(ctx context.Context, request *models.EmailMes
 	defer span.Finish()
 
 	// Define the SMTP server details
-	smtpHost := "mail.hostedemail.com"
-	smtpPort := "587"
-
-	mailbox, err := s.postgres.TenantSettingsMailboxRepository.GetByMailbox(ctx, request.From)
+	mailbox, err := s.postgres.MailboxRepository.GetMailboxByEmailAddress(ctx, request.From)
 	if err != nil {
 		tracing.TraceErr(span, err)
 		return err
@@ -136,7 +133,7 @@ Content-Type: text/html; charset=UTF-8
 		BCCEmail:   strings.Join(bccEmail, ", "),
 		Subject:    subject,
 		Date:       time.Now().Format("Mon, 02 Jan 2006 15:04:05 -0700"),
-		MessageId:  generateMessageID(mailbox.MailboxUsername),
+		MessageId:  generateMessageID(mailbox.EmailAddress),
 		InReplyTo:  inReplyTo,
 		References: references,
 		Boundary:   fmt.Sprintf("=_%x", time.Now().UnixNano()),
@@ -170,11 +167,11 @@ Content-Type: text/html; charset=UTF-8
 	recipients = append(recipients, ccEmail...)
 	recipients = append(recipients, bccEmail...)
 
-	auth := smtp.PlainAuth("", mailbox.MailboxUsername, mailbox.MailboxPassword, smtpHost)
+	auth := smtp.PlainAuth("", mailbox.EmailAddress, mailbox.SmtpPassword, mailbox.SmtpServer)
 
 	// Send the email
 	err = smtp.SendMail(
-		fmt.Sprintf("%s:%s", smtpHost, smtpPort),
+		fmt.Sprintf("%s:%s", mailbox.SmtpServer, mailbox.SmtpPort),
 		auth,
 		request.From,
 		recipients,
