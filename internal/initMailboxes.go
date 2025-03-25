@@ -27,6 +27,6 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		}
 	}
 
-	log.Println("Successfully initialized %d mailboxes", len(mailboxes))
+	log.Printf("Successfully initialized %d mailboxes", len(mailboxes))
 	return nil
 }

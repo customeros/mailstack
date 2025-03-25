@@ -21,7 +21,7 @@ type EmailStore struct {
 	// Email metadata
 	Direction    string `ch:"direction"` // Store as string for better compatibility
 	Status       string `ch:"status"`
-	StatusDetail string `ch:"statusDetail"`
+	StatusDetail string `ch:"status_detail"`
 	Folder       string `ch:"folder"`
 	ImapUID      uint32 `ch:"imap_uid"`
 
@@ -85,11 +85,13 @@ CREATE TABLE IF NOT EXISTS emails (
     id String,
     mailbox_id String,
     message_id String,
+    thread_id String,
     in_reply_to String,
     references Array(String),
     
     direction String,
     status String,
+    status_detail String,
     folder String,
     imap_uid UInt32,
     
@@ -106,7 +108,9 @@ CREATE TABLE IF NOT EXISTS emails (
     
     body_text String,
     body_html String,
+    body_markdown String,
     has_attachment Bool,
+    has_signature Bool,
     
     track_clicks Bool,
     
