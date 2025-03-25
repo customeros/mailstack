@@ -80,8 +80,7 @@ func (EmailStore) TableName() string {
 
 // CreateTableSQL returns the SQL statement to create the emails table
 func (EmailStore) CreateTableSQL() string {
-	return `
-CREATE TABLE IF NOT EXISTS emails (
+	return `CREATE TABLE IF NOT EXISTS emails (
     id String,
     mailbox_id String,
     message_id String,
@@ -133,11 +132,11 @@ CREATE TABLE IF NOT EXISTS emails (
     body_html_size UInt32 MATERIALIZED length(body_html),
     
     _shard_key String MATERIALIZED concat(toString(year_month), message_id)
-) ENGINE = MergeTree()
+) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY year_month
 ORDER BY (_shard_key)
-SETTINGS index_granularity = 8192
-`
+PRIMARY KEY (message_id)
+SETTINGS index_granularity = 8192`
 }
 
 func (e *EmailStore) AllRecipients() []string {
