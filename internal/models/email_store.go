@@ -134,7 +134,7 @@ func (EmailStore) CreateTableSQL() string {
     _shard_key String MATERIALIZED concat(toString(year_month), message_id)
 ) ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY year_month
-ORDER BY (_shard_key)
+ORDER BY (message_id, _shard_key)
 PRIMARY KEY (message_id)
 SETTINGS index_granularity = 8192`
 }
