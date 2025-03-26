@@ -34,11 +34,12 @@ type OpenlineDatabaseConfig struct {
 }
 
 type ClickhouseConfig struct {
-	Host     string `env:"CLICKHOUSE_HOST,required"`
-	Port     string `env:"CLICKHOUSE_PORT,required"`
-	User     string `env:"CLICKHOUSE_USERNAME,required"`
-	DBName   string `env:"CLICKHOUSE_DB_NAME,required"`
-	Password string `env:"CLICKHOUSE_PASSWORD,required"`
+	Host       string `env:"CLICKHOUSE_HOST,required"`
+	Port       string `env:"CLICKHOUSE_PORT,required"`
+	User       string `env:"CLICKHOUSE_USERNAME,required"`
+	DBName     string `env:"CLICKHOUSE_DB_NAME,required"`
+	DBNameLogs string `env:"CLICKHOUSE_DB_NAME_LOGS,required"`
+	Password   string `env:"CLICKHOUSE_PASSWORD,required"`
 }
 
 type R2StorageConfig struct {
