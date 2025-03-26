@@ -24,4 +24,5 @@ type CreateMailboxRequest struct {
 	WebmailEnabled        bool
 	ForwardingTo          []string
 	IgnoreDomainOwnership bool
+	SenderID              string
 }
