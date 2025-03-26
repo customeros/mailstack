@@ -59,6 +59,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 		UserId:         utils.GetUserIdFromContext(ctx),
 		ForwardingTo:   strings.Split(mailbox.ForwardingTo, ","),
 		WebmailEnabled: mailbox.WebmailEnabled,
+		SenderID:       mailbox.SenderID,
 	}
 
 	// Prepare mailbox using common method
