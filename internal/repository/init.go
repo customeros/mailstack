@@ -27,7 +27,7 @@ type Repositories struct {
 	SenderRepository          interfaces.SenderRepository
 }
 
-func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhousDB *ch.DB, r2Config *config.R2StorageConfig) (*Repositories, error) {
+func InitRepositories(mailstackDB *gorm.DB, clickhousDB *ch.DB, r2Config *config.R2StorageConfig) (*Repositories, error) {
 	emailAttachmentStorage := storage.NewR2StorageService(
 		r2Config.AccountID,
 		r2Config.AccessKeyID,
@@ -47,7 +47,7 @@ func InitRepositories(mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhousDB *ch
 
 	return &Repositories{
 		// Openline
-		DomainRepository: NewDomainRepository(openlineDB),
+		DomainRepository: NewDomainRepository(mailstackDB),
 		// Mailstack
 		EmailRepository:           NewEmailRepository(mailstackDB),
 		EmailAttachmentRepository: NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
@@ -77,24 +77,6 @@ func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *g
 		&models.MailboxSyncState{},
 		&models.OrphanEmail{},
 		&models.Sender{},
-	)
-
-	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
-	db.SetMaxOpenConns(dbConfig.MaxConn)
-	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
-
-	return err
-}
-
-func MigrateOpenlineDB(dbConfig *config.OpenlineDatabaseConfig, openlineDB *gorm.DB) error {
-	db, err := openlineDB.DB()
-	if err != nil {
-		return err
-	}
-
-	db.SetMaxOpenConns(5)
-
-	err = openlineDB.AutoMigrate(
 		&models.DMARCMonitoring{},
 		&models.MailStackDomain{},
 		&models.MailstackReputation{},

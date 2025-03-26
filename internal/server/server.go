@@ -52,7 +52,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, cl
 	opentracing.SetGlobalTracer(tracer)
 
 	// Initialize repositories
-	repos, err := repository.InitRepositories(mailstackDB, openlineDB, clickhouseDB, cfg.R2StorageConfig)
+	repos, err := repository.InitRepositories(mailstackDB, clickhouseDB, cfg.R2StorageConfig)
 	if err != nil {
 		return nil, err
 	}

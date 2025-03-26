@@ -111,6 +111,13 @@ func ValidateTenant(ctx context.Context) error {
 	return nil
 }
 
+func ValidateUserId(ctx context.Context) error {
+	if GetUserIdFromContext(ctx) == "" {
+		return er.ErrUserIdMissing
+	}
+	return nil
+}
+
 // WithTenantContext creates a new context with the specified tenant
 func WithTenantContext(ctx context.Context, tenant string) context.Context {
 	return WithCustomContext(ctx, &CustomContext{

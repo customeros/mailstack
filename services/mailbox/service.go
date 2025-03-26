@@ -7,7 +7,6 @@ import (
 
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -41,66 +40,169 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
+	err := utils.ValidateTenant(ctx)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	err = utils.ValidateUserId(ctx)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// Create a CreateMailboxRequest from the existing mailbox
+	request := interfaces.CreateMailboxRequest{
+		Domain:         mailbox.MailboxDomain,
+		Username:       mailbox.MailboxUser,
+		Password:       mailbox.ImapPassword,
+		UserId:         utils.GetUserIdFromContext(ctx),
+		ForwardingTo:   strings.Split(mailbox.ForwardingTo, ","),
+		WebmailEnabled: mailbox.WebmailEnabled,
+		SenderID:       mailbox.SenderID,
+	}
+
+	// Prepare mailbox using common method
+	provider := enum.EmailMailstack
+	if provider == "" {
+		provider = enum.EmailGeneric
+	}
+	preparedMailbox, err := s.prepareMailboxForSave(ctx, provider, strings.ToLower(mailbox.EmailAddress), request)
+	if err != nil {
+		return nil, err
+	}
+
+	// validate mailbox does not exist
+	err = s.verifyMailboxNotExists(ctx, span, preparedMailbox.EmailAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// validate input
+	err = s.validateMailboxInput(*preparedMailbox)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// save mailbox
+	mailboxID, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *preparedMailbox)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+	if mailboxID == "" {
+		err = errors.New("unable to create mailbox")
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	// mark as provisioned
+	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxID, models.MailboxStatusProvisioned)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil, err
+	}
+
+	preparedMailbox.ID = mailboxID
+
+	err = s.addToIMAP(ctx, mailboxID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return preparedMailbox, err
+	}
+
+	return preparedMailbox, nil
+}
+
+func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.addToIMAP")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
+	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return err
+	}
+
+	if mailbox == nil {
+		return errors.New("mailbox not found")
+	}
+
+	// determine if we should sync
+	if mailbox.Provider == enum.EmailMailstack && mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned {
+		return s.imapService.AddMailbox(ctx, mailbox)
+	}
+
+	return nil
+}
+
+func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest) (*models.Mailbox, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.prepareMailboxForSave")
+	defer span.Finish()
+	tracing.SetDefaultServiceSpanTags(ctx, span)
+
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
 		err := errors.New("Tenant is nil")
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
-	userId := utils.GetUserIdFromContext(ctx)
-	if userId == "" {
-		err := errors.New("UserId is nil")
-		tracing.TraceErr(span, err)
-		return nil, err
+
+	// Set default values based on provider
+	var syncFolders []string
+	var imapPort, smtpPort int
+	var imapServer, smtpServer string
+	var imapSecurity, smtpSecurity enum.EmailSecurity
+
+	// For now, we only support mailstack provider
+	syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
+	imapPort = models.MAILBOX_IMAP_PORT
+	smtpPort = models.MAILBOX_SMTP_PORT
+	imapServer = models.MAILBOX_IMAP_SERVER
+	smtpServer = models.MAILBOX_SMTP_SERVER
+	imapSecurity = models.MAILBOX_IMAP_SECURITY
+	smtpSecurity = models.MAILBOX_SMTP_SECURITY
+
+	mailbox := models.Mailbox{
+		ID:              utils.GenerateNanoIDWithPrefix("mbox", 16),
+		Tenant:          tenant,
+		MailboxDomain:   strings.ToLower(request.Domain),
+		EmailAddress:    emailAddress,
+		MailboxUser:     request.Username,
+		UserID:          request.UserId,
+		Provider:        provider,
+		SyncFolders:     syncFolders,
+		InboundEnabled:  true,
+		OutboundEnabled: true,
+		SenderID:        request.SenderID,
+
+		ImapServer:   imapServer,
+		ImapPort:     imapPort,
+		ImapUsername: strings.ToLower(emailAddress),
+		ImapPassword: request.Password,
+		ImapSecurity: imapSecurity,
+
+		SmtpServer:   smtpServer,
+		SmtpPort:     smtpPort,
+		SmtpUsername: strings.ToLower(emailAddress),
+		SmtpPassword: request.Password,
+		SmtpSecurity: smtpSecurity,
+
+		ForwardingTo:    strings.Join(request.ForwardingTo, ","),
+		WebmailEnabled:  request.WebmailEnabled,
+		ProvisionStatus: models.MailboxStatusPendingProvisioning,
+		RampUpRate:      3,
+		RampUpMax:       40,
+		RampUpCurrent:   3,
 	}
 
-	mailbox.Tenant = tenant
-	mailbox.UserID = userId
-
-	// Set default status as provisions for backward compatibility of the API
-	mailbox.ProvisionStatus = models.MailboxStatusProvisioned
-
-	// validate input
-	err := validateMailboxInput(mailbox)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return nil, err
-	}
-
-	// validate mailbox does not exist
-	err = s.verifyMailboxNotExists(ctx, span, mailbox.EmailAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	// save mailbox
-	mailboxId, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
-	if err != nil {
-		tracing.TraceErr(span, err)
-		return nil, err
-	}
-	if mailboxId == "" {
-		err = errors.New("unable to create mailbox")
-		tracing.TraceErr(span, err)
-		return nil, err
-	}
-
-	mailbox.ID = mailboxId
-
-	// determine if we should sync
-	if mailbox.Provider == enum.EmailMailstack && mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned {
-		s.imapService.AddMailbox(ctx, mailbox)
-	}
-
-	return mailbox, nil
+	return &mailbox, nil
 }
 
-func validateMailboxInput(input *models.Mailbox) error {
+func (s *mailboxService) validateMailboxInput(input models.Mailbox) error {
 	var validationErrors []string
-
-	if input == nil {
-		return errors.New("mailbox input cannot be nil")
-	}
 
 	// Validate email address
 	validation := mailvalidate.ValidateEmailSyntax(input.EmailAddress)
@@ -116,30 +218,13 @@ func validateMailboxInput(input *models.Mailbox) error {
 	if validation.IsFreeAccount {
 		validationErrors = append(validationErrors, "Free accounts are not supported")
 	}
-	input.EmailAddress = validation.CleanEmail
 
-	// Set default values for providers
+	// Validate provider-specific requirements
 	switch input.Provider {
-	case enum.EmailMailstack:
-		inbox := "INBOX"
-		sent := "Sent"
-		spam := "Spam"
-		imapPort := models.MAILBOX_IMAP_PORT
-		smtpPort := models.MAILBOX_SMTP_PORT
-		input.InboundEnabled = true
-		input.SyncFolders = []string{inbox, sent, spam}
-		input.SmtpServer = models.MAILBOX_SMTP_SERVER
-		input.ImapServer = models.MAILBOX_IMAP_SERVER
-		input.SmtpPort = smtpPort
-		input.ImapPort = imapPort
-		input.SmtpSecurity = models.MAILBOX_SMTP_SECURITY
-		input.ImapSecurity = models.MAILBOX_IMAP_SECURITY
-
 	case enum.EmailGeneric:
-		if input.SyncFolders == nil || len(input.SyncFolders) == 0 {
+		if len(input.SyncFolders) == 0 {
 			validationErrors = append(validationErrors, "syncFolders must be specified for generic provider")
 		}
-		// TODO validate full imap/smtp inputs
 	}
 
 	// Validate IMAP configuration if provided
@@ -172,10 +257,6 @@ func validateMailboxInput(input *models.Mailbox) error {
 		if input.SmtpSecurity == "" {
 			validationErrors = append(validationErrors, "SMTP security is required when SMTP config is provided")
 		}
-	}
-
-	if input.SenderID != "" {
-		input.OutboundEnabled = true
 	}
 
 	// Check if there are any validation errors
@@ -244,16 +325,16 @@ func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.Mail
 	return nil
 }
 
-func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxId string) error {
+func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ConfigureMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.TagEntity(span, mailboxId)
+	tracing.TagEntity(span, mailboxID)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
 	// Get the mailbox from the repository
-	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxId)
+	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "failed to get mailbox"))
 		return errors.Wrap(err, "failed to get mailbox")
@@ -292,56 +373,65 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxId string)
 	}
 
 	// Update mailbox status to provisioned
-	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxId, models.MailboxStatusProvisioned)
+	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxID, models.MailboxStatusProvisioned)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox status"))
 		return errors.Wrap(err, "failed to update mailbox status")
 	}
 
+	err = s.addToIMAP(ctx, mailboxID)
+	if err != nil {
+		tracing.TraceErr(span, err)
+		return nil
+	}
+
 	return nil
 }
 
-// CreateMailbox creates a new mailbox
-// TODO for now we only support mailstack
 func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.CreateMailboxRequest) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.CreateMailbox")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogFields(
-		log.String("userId", request.UserId),
-		log.String("domain", request.Domain),
-		log.String("username", request.Username),
-		log.Bool("webmailEnabled", request.WebmailEnabled),
-		log.Object("forwardingTo", request.ForwardingTo),
-	)
+	tracing.LogObjectAsJson(span, "request", request)
 
 	if !request.IgnoreDomainOwnership {
-		if err := s.validateRequest(ctx, span, request.Domain); err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "cannot vaildate MailboxRequest"))
+		if err := s.validateCreateMailboxRequest(ctx, span, request.Domain); err != nil {
+			tracing.TraceErr(span, errors.Wrap(err, "cannot validate MailboxRequest"))
 			return err
 		}
 	}
 
-	mailboxEmail := request.Username + "@" + request.Domain
+	mailboxEmailAddress := strings.ToLower(request.Username + "@" + request.Domain)
 
 	// Verify mailbox doesn't exist
-	if err := s.verifyMailboxNotExists(ctx, span, mailboxEmail); err != nil {
+	if err := s.verifyMailboxNotExists(ctx, span, mailboxEmailAddress); err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "failed to verify mailbox does not exist"))
 		return err
 	}
 
-	// Save mailbox
-	if err := s.createMailstackMailbox(ctx, request, mailboxEmail, request.UserId); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to save mailbox"))
+	// Prepare mailbox using common method
+	mailbox, err := s.prepareMailboxForSave(ctx, enum.EmailMailstack, mailboxEmailAddress, request)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "Error preparing mailbox"))
 		return err
 	}
 
+	// Save mailbox
+	mailboxID, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
+	if err != nil {
+		tracing.TraceErr(span, errors.Wrap(err, "Error saving mailbox"))
+		return err
+	}
+	if mailboxID == "" {
+		return errors.New("failed to save mailbox")
+	}
+	tracing.TagEntity(span, mailboxID)
 	return nil
 }
 
-func (s *mailboxService) validateRequest(ctx context.Context, span opentracing.Span, domain string) error {
+func (s *mailboxService) validateCreateMailboxRequest(ctx context.Context, span opentracing.Span, domain string) error {
 	if err := utils.ValidateTenant(ctx); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error validating tenant"))
+		tracing.TraceErr(span, err)
 		return err
 	}
 
@@ -370,55 +460,6 @@ func (s *mailboxService) verifyMailboxNotExists(ctx context.Context, span opentr
 		tracing.TraceErr(span, internalerrors.ErrMailboxExists)
 		return internalerrors.ErrMailboxExists
 	}
-	return nil
-}
-
-func (s *mailboxService) createMailstackMailbox(ctx context.Context, request interfaces.CreateMailboxRequest, mailboxEmail, userId string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.createMailstackMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-
-	tenant := utils.GetTenantFromContext(ctx)
-	mailbox := models.Mailbox{
-		ID:              utils.GenerateNanoIDWithPrefix("mbox", 16),
-		Tenant:          tenant,
-		MailboxDomain:   request.Domain,
-		EmailAddress:    mailboxEmail,
-		MailboxUser:     request.Username,
-		UserID:          userId,
-		Provider:        enum.EmailMailstack,
-		SyncFolders:     []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM},
-		InboundEnabled:  true,
-		OutboundEnabled: true,
-
-		ImapServer:   models.MAILBOX_IMAP_SERVER,
-		ImapPort:     models.MAILBOX_IMAP_PORT,
-		ImapUsername: mailboxEmail,
-		ImapPassword: request.Password,
-		ImapSecurity: models.MAILBOX_IMAP_SECURITY,
-
-		SmtpServer:   models.MAILBOX_SMTP_SERVER,
-		SmtpPort:     models.MAILBOX_SMTP_PORT,
-		SmtpUsername: mailboxEmail,
-		SmtpPassword: request.Password,
-		SmtpSecurity: models.MAILBOX_SMTP_SECURITY,
-
-		ForwardingTo:    strings.Join(request.ForwardingTo, ","),
-		WebmailEnabled:  request.WebmailEnabled,
-		ProvisionStatus: models.MailboxStatusPendingProvisioning,
-		RampUpRate:      3,
-		RampUpMax:       40,
-		RampUpCurrent:   3,
-	}
-	mailboxId, err := s.repositories.MailboxRepository.SaveMailbox(ctx, mailbox)
-	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error saving mailbox"))
-		return err
-	}
-	if mailboxId == "" {
-		return errors.New("failed to save mailbox")
-	}
-	tracing.TagEntity(span, mailboxId)
 	return nil
 }
 

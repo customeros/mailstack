@@ -88,10 +88,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("Mailstack database migration failed: %v", err)
 		}
-		err = repository.MigrateOpenlineDB(cfg.OpenlineDatabaseConfig, openlineDB)
-		if err != nil {
-			log.Fatalf("Openline database migration failed: %v", err)
-		}
 		log.Println("Database migration completed successfully")
 
 	case "server":
