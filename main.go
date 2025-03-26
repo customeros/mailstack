@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"strconv"
 
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/server"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 func main() {
@@ -65,7 +65,20 @@ func main() {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
-	clickhouseDB, err := database.InitClickhouse(cfg.ClickhouseConfig)
+	port, err := strconv.ParseUint(cfg.ClickhouseConfig.Port, 10, 16)
+	if err != nil {
+		log.Fatalf("Invalid ClickHouse port: %v", err)
+	}
+
+	// Initialize ClickHouse connections
+	err = database.InitClickhouseDatabases(database.ClickhouseConfig{
+		Host:              cfg.ClickhouseConfig.Host,
+		Port:              uint16(port),
+		User:              cfg.ClickhouseConfig.User,
+		Password:          cfg.ClickhouseConfig.Password,
+		MailstackDatabase: cfg.ClickhouseConfig.DBName,
+		LogsDatabase:      cfg.ClickhouseConfig.DBNameLogs,
+	})
 	if err != nil {
 		log.Fatalf("Clickhouse database initialization failed: %v", err)
 	}
@@ -84,17 +97,25 @@ func main() {
 
 	switch os.Args[1] {
 	case "migrate":
+		// Run Mailstack database migrations
 		err := repository.MigrateMailstackDB(cfg.MailstackDatabaseConfig, mailstackDB)
 		if err != nil {
 			log.Fatalf("Mailstack database migration failed: %v", err)
 		}
-		log.Println("Database migration completed successfully")
+		log.Println("Mailstack database migration completed successfully")
+
+		// Run ClickHouse migrations
+		err = database.MigrateClickhouseDatabases()
+		if err != nil {
+			log.Fatalf("Clickhouse database migration failed: %v", err)
+		}
+		log.Println("Clickhouse database migration completed successfully")
 
 	case "server":
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		srv, err := server.NewServer(cfg, mailstackDB, openlineDB, clickhouseDB)
+		srv, err := server.NewServer(cfg, mailstackDB, openlineDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}

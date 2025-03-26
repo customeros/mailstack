@@ -15,12 +15,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/uptrace/go-clickhouse/ch"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/api"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/listeners"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
@@ -39,7 +39,7 @@ type Server struct {
 	repositories *repository.Repositories
 }
 
-func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, clickhouseDB *ch.DB) (*Server, error) {
+func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*Server, error) {
 	// Initialize logger
 	appLogger := logger.NewAppLogger(cfg.Logger)
 	appLogger.InitLogger()
@@ -52,7 +52,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB, cl
 	opentracing.SetGlobalTracer(tracer)
 
 	// Initialize repositories
-	repos, err := repository.InitRepositories(mailstackDB, clickhouseDB, cfg.R2StorageConfig)
+	repos, err := repository.InitRepositories(mailstackDB, database.GetDB(), cfg.R2StorageConfig)
 	if err != nil {
 		return nil, err
 	}

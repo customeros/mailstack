@@ -57,26 +57,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
-  postgres-openline:
-    image: postgres:14.5
-    container_name: postgres-openline
-    networks:
-      - mailstack
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data_openline:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: openline
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U postgres -d openline -h localhost -p 5432"]
-      interval: 3s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
   clickhouse:
     image: clickhouse/clickhouse-server:25.3-alpine
     container_name: clickhouse
@@ -109,6 +89,25 @@ services:
           "--spider",
           "http://localhost:8123/ping",
         ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    networks:
+      - mailstack
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./provision/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4319:4317"  # OTLP gRPC receiver (mapped to 4319 externally)
+      - "4320:4318"  # OTLP HTTP receiver (mapped to 4320 externally)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:13133"]
       interval: 5s
       timeout: 3s
       retries: 5
