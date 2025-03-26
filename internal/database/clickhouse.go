@@ -42,10 +42,6 @@ func InitClickhouseDatabases(config ClickhouseConfig) error {
 		ch.WithQuerySettings(map[string]interface{}{
 			"max_execution_time":            60,
 			"send_progress_in_http_headers": 0,
-			// S3-specific settings
-			"use_nulls":                     1,
-			"allow_experimental_s3":         1,
-			"allow_experimental_merge_tree": 1,
 		}),
 	)
 
@@ -71,10 +67,6 @@ func InitClickhouseDatabases(config ClickhouseConfig) error {
 		ch.WithQuerySettings(map[string]interface{}{
 			"max_execution_time":            60,
 			"send_progress_in_http_headers": 0,
-			// S3-specific settings
-			"use_nulls":                     1,
-			"allow_experimental_s3":         1,
-			"allow_experimental_merge_tree": 1,
 		}),
 	)
 

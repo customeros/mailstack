@@ -13,7 +13,10 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://host.docker.internal:9000?database=logs&username=default&password=password
+    endpoint: tcp://clickhouse:9000
+    database: logs
+    username: default
+    password: password
     timeout: 5s
     sending_queue:
       queue_size: 100
