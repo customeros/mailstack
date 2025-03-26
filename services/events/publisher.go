@@ -447,9 +447,8 @@ func (r *RabbitMQPublisher) ensureConnectionAndChannel() error {
 }
 
 func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}, exchange, routingKey string) error {
-	spans, ctx := telemetry.StartSpan(ctx, "RabbitMQPublisher.PublishEventOnExchange")
+	spans, ctx := telemetry.StartProducerSpan(ctx, "RabbitMQPublisher.PublishEventOnExchange")
 	defer telemetry.FinishSpans(spans)
-	telemetry.SetSpanKindProducer(spans)
 
 	tracingData := tracing.ExtractTextMapCarrier((spans.Jaeger).Context())
 
@@ -479,9 +478,8 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 }
 
 func (r *RabbitMQPublisher) publishMessageOnExchange(ctx context.Context, message interface{}, exchange, routingKey string) error {
-	spans, ctx := telemetry.StartSpan(ctx, "RabbitMQPublisher.PublishMessageOnExchange")
+	spans, ctx := telemetry.StartProducerSpan(ctx, "RabbitMQPublisher.PublishMessageOnExchange")
 	defer telemetry.FinishSpans(spans)
-	telemetry.SetSpanKindProducer(spans)
 
 	spans.LogObjectAsJson("message", message)
 
