@@ -24,6 +24,7 @@ import (
 	"github.com/customeros/mailstack/internal/listeners"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
 	"github.com/customeros/mailstack/services/events"
@@ -44,12 +45,18 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, openlineDB *gorm.DB) (*
 	appLogger := logger.NewAppLogger(cfg.Logger)
 	appLogger.InitLogger()
 
-	// Initialize tracing
+	// Initialize Jaeger tracing
 	tracer, closer, err := tracing.NewJaegerTracer(cfg.Tracing, appLogger)
 	if err != nil {
 		log.Fatalf("Could not initialize jaeger tracer: %s", err.Error())
 	}
 	opentracing.SetGlobalTracer(tracer)
+
+	// Initialize OpenTelemetry
+	err = telemetry.InitOpenTelemetry(context.Background(), cfg.OpenTelemetry)
+	if err != nil {
+		log.Printf("Warning: Could not initialize OpenTelemetry: %s", err.Error())
+	}
 
 	// Initialize repositories
 	repos, err := repository.InitRepositories(mailstackDB, database.GetDB(), cfg.R2StorageConfig)

@@ -7,6 +7,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 )
 
@@ -14,6 +15,7 @@ type Config struct {
 	AppConfig               *AppConfig
 	Logger                  *logger.Config
 	Tracing                 *tracing.JaegerConfig
+	OpenTelemetry           *telemetry.OpenTelemetryConfig
 	MailstackDatabaseConfig *MailstackDatabaseConfig
 	OpenlineDatabaseConfig  *OpenlineDatabaseConfig
 	ClickhouseConfig        *ClickhouseConfig
@@ -30,6 +32,7 @@ func InitConfig() (*Config, error) {
 		AppConfig:               &AppConfig{},
 		Logger:                  &logger.Config{},
 		Tracing:                 &tracing.JaegerConfig{},
+		OpenTelemetry:           &telemetry.OpenTelemetryConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
 		OpenlineDatabaseConfig:  &OpenlineDatabaseConfig{},
 		ClickhouseConfig:        &ClickhouseConfig{},

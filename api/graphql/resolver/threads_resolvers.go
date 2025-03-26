@@ -10,15 +10,15 @@ import (
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
-	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // GetAllThreads is the resolver for the getAllThreads field.
 func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagination *graphql_model.PaginationInput) (*graphql_model.EmailThreadConnection, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetAllThreads")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+	jaegerSpan, otelSpan, ctx := telemetry.StartSpan(ctx, "queryResolver.GetAllThreads")
+	defer telemetry.FinishSpans(jaegerSpan, otelSpan)
+	telemetry.TagComponentGraphQL(jaegerSpan)
 
 	// Set default pagination if not provided
 	limit := 50
@@ -36,7 +36,7 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 	// Get all mailboxes for userID
 	mailboxes, err := r.repositories.MailboxRepository.GetMailboxesByUserID(ctx, userID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		tracing.TraceErr(jaegerSpan, err)
 		return nil, api_errors.NewError("unable to get mailboxes for user", api_errors.CodeInternal, nil)
 	}
 	if mailboxes == nil {
@@ -51,14 +51,14 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 	// Get total count for pageInfo
 	totalCount, err := r.repositories.EmailThreadRepository.CountByMailboxIDs(ctx, mailboxIds)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		tracing.TraceErr(jaegerSpan, err)
 		return nil, api_errors.NewError("no threads found for user", api_errors.CodeNotFound, nil)
 	}
 
 	// Get paginated threads
 	threads, err := r.repositories.EmailThreadRepository.GetByMailboxIDs(ctx, mailboxIds, limit, offset)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		tracing.TraceErr(jaegerSpan, err)
 		return nil, api_errors.NewError("unable to retreive threads for user", api_errors.CodeNotFound, nil)
 	}
 	if threads == nil {
@@ -72,7 +72,7 @@ func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagina
 
 		email, err := r.repositories.EmailRepository.GetByMessageID(ctx, thread.LastMessageID)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			tracing.TraceErr(jaegerSpan, err)
 			return nil, api_errors.NewError("unable to retrieve email", api_errors.CodeInternal, nil)
 		}
 		if email == nil {
