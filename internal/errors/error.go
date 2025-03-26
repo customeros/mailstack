@@ -5,6 +5,7 @@ import "github.com/pkg/errors"
 var (
 	// common errors
 	ErrTenantMissing     = errors.New("tenant is missing")
+	ErrUserIdMissing     = errors.New("user id is missing")
 	ErrConnectionTimeout = errors.New("connection timeout")
 
 	// domain errors

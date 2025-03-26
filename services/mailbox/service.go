@@ -40,15 +40,13 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
 
-	tenant := utils.GetTenantFromContext(ctx)
-	if tenant == "" {
-		err := errors.New("Tenant is nil")
+	err := utils.ValidateTenant(ctx)
+	if err != nil {
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
-	userID := utils.GetUserIdFromContext(ctx)
-	if userID == "" {
-		err := errors.New("UserID is nil")
+	err = utils.ValidateUserId(ctx)
+	if err != nil {
 		tracing.TraceErr(span, err)
 		return nil, err
 	}
@@ -58,13 +56,17 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 		Domain:         mailbox.MailboxDomain,
 		Username:       mailbox.MailboxUser,
 		Password:       mailbox.ImapPassword,
-		UserId:         userID,
+		UserId:         utils.GetUserIdFromContext(ctx),
 		ForwardingTo:   strings.Split(mailbox.ForwardingTo, ","),
 		WebmailEnabled: mailbox.WebmailEnabled,
 	}
 
 	// Prepare mailbox using common method
-	preparedMailbox, err := s.prepareMailboxForSave(ctx, strings.ToLower(mailbox.EmailAddress), request)
+	provider := enum.EmailMailstack
+	if provider == "" {
+		provider = enum.EmailGeneric
+	}
+	preparedMailbox, err := s.prepareMailboxForSave(ctx, provider, strings.ToLower(mailbox.EmailAddress), request)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +137,7 @@ func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error 
 	return nil
 }
 
-func (s *mailboxService) prepareMailboxForSave(ctx context.Context, emailAddress string, request interfaces.CreateMailboxRequest) (*models.Mailbox, error) {
+func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest) (*models.Mailbox, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.prepareMailboxForSave")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
@@ -154,7 +156,6 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, emailAddress
 	var imapSecurity, smtpSecurity enum.EmailSecurity
 
 	// For now, we only support mailstack provider
-	provider := enum.EmailMailstack
 	syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
 	imapPort = models.MAILBOX_IMAP_PORT
 	smtpPort = models.MAILBOX_SMTP_PORT
@@ -386,7 +387,6 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string)
 	return nil
 }
 
-// CreateMailbox creates a new mailbox
 func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.CreateMailboxRequest) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.CreateMailbox")
 	defer span.Finish()
@@ -394,7 +394,7 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.C
 	tracing.LogObjectAsJson(span, "request", request)
 
 	if !request.IgnoreDomainOwnership {
-		if err := s.validateRequest(ctx, span, request.Domain); err != nil {
+		if err := s.validateCreateMailboxRequest(ctx, span, request.Domain); err != nil {
 			tracing.TraceErr(span, errors.Wrap(err, "cannot validate MailboxRequest"))
 			return err
 		}
@@ -408,14 +408,14 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.C
 		return err
 	}
 
-	// Save mailbox
 	// Prepare mailbox using common method
-	mailbox, err := s.prepareMailboxForSave(ctx, mailboxEmailAddress, request)
+	mailbox, err := s.prepareMailboxForSave(ctx, enum.EmailMailstack, mailboxEmailAddress, request)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error preparing mailbox"))
 		return err
 	}
 
+	// Save mailbox
 	mailboxID, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
 	if err != nil {
 		tracing.TraceErr(span, errors.Wrap(err, "Error saving mailbox"))
@@ -428,9 +428,9 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.C
 	return nil
 }
 
-func (s *mailboxService) validateRequest(ctx context.Context, span opentracing.Span, domain string) error {
+func (s *mailboxService) validateCreateMailboxRequest(ctx context.Context, span opentracing.Span, domain string) error {
 	if err := utils.ValidateTenant(ctx); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error validating tenant"))
+		tracing.TraceErr(span, err)
 		return err
 	}
 
