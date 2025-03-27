@@ -16,7 +16,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/services/events"
 )
@@ -69,14 +69,14 @@ func (p *emailProcessor) ProcessEmail(
 	attachments []*models.EmailAttachment,
 	files []*interfaces.AttachmentFile,
 ) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.ProcessEmail")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.ProcessEmail")
+	defer spans.Finish()
+	spans.LogKV("email_id", emailStore.ID)
 
 	// attach message to thread
 	err := p.attachEmailToThread(ctx, emailStore)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -84,7 +84,7 @@ func (p *emailProcessor) ProcessEmail(
 	// Clean message body
 	err = p.getStructuredMessageBody(ctx, emailStore)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -99,22 +99,22 @@ func (p *emailProcessor) ProcessEmail(
 	// save emailStore in clickhouse
 	err = p.repositories.EmailStore.SaveEmail(ctx, emailStore)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 	}
 
 	// Throw events
 	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: emailStore.AllParticipants()})
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 	}
 
 	return nil
 }
 
 func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.getStructuredMessageBody")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.getStructuredMessageBody")
+	defer spans.Finish()
+	spans.LogKV("email_id", email.ID)
 
 	structuredData, err := p.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
 		FromName:         email.FromName,
@@ -124,7 +124,7 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 		EmailBodyHTML:    email.BodyHTML,
 	})
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil
 	}
 
@@ -142,7 +142,7 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 	structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
 	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL_SIGNATURE, structuredData.EmailData.Signature)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -150,18 +150,18 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 }
 
 func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.EmailStore, rawHeaders map[string]interface{}) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailFilterService.ScanEmail")
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailFilterService.ScanEmail")
+	defer spans.Finish()
+	spans.LogKV("email_id", email.ID)
 
 	headers, err := processHeaders(rawHeaders)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if headers == nil {
 		err := errors.New("email headers are nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 

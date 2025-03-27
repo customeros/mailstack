@@ -11,13 +11,12 @@ import (
 	go_imap "github.com/emersion/go-imap"
 	"github.com/jhillyerd/enmime"
 	"github.com/lib/pq"
-	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -38,13 +37,13 @@ func NewImapProcessor(
 }
 
 func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto.EmailReceived) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ImapProcessor.ProcessIMAPMessage")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "ImapProcessor.ProcessIMAPMessage")
+	defer spans.Finish()
+	spans.LogObjectAsJson("inboundEmail", inboundEmail)
 
 	msg, err := p.imapService.GetMessageByUID(ctx, inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -59,7 +58,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	// check if email has already been processed
 	exists, err := p.emailStore.EmailExists(ctx, email.MessageID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if exists {
@@ -71,7 +70,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 
 	err = p.EmailProcessor.EmailFilter(ctx, email, headers)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -80,7 +79,7 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 		// done processing, write to clickhouse
 		err = p.emailStore.SaveEmail(ctx, email)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 		return nil

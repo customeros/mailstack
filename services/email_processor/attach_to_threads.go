@@ -7,19 +7,18 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.attachMessageToThread")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.attachMessageToThread")
+	defer spans.Finish()
 
 	// Step 1: Try to find existing thread by headers and references
 	threadID, err := p.findExistingThread(ctx, email)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -28,7 +27,7 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 		// Create new thread if none exists
 		threadID, err = p.createNewThread(ctx, email)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 
@@ -38,7 +37,7 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 		// Record missing parents if applicable
 		err = p.recordMissingParents(ctx, email)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 
@@ -51,7 +50,7 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 	// Update thread metadata
 	err = p.updateThreadMetadata(ctx, email, threadID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -60,9 +59,8 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 
 // findExistingThread attempts to find an existing thread for the email
 func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.EmailStore) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findExistingThread")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findExistingThread")
+	defer spans.Finish()
 
 	// Case 1: Check if this is a parent to a missing parent message
 	threadID, err := p.checkForOrphanedParentMessage(ctx, email)
@@ -77,7 +75,7 @@ func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.E
 	if email.ReplyTo != "" {
 		threadID, err := p.findThreadByMessageID(ctx, email.ReplyTo)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return "", err
 		}
 
@@ -90,7 +88,7 @@ func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.E
 	for _, messageID := range email.References {
 		threadID, err := p.findThreadByMessageID(ctx, messageID)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return "", err
 		}
 
@@ -106,9 +104,8 @@ func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.E
 
 // checkForOrphanedParentMessage attempts to find a thread where this email is the parent of orphaned messages
 func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, email *models.EmailStore) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.checkForOrphanedParentMessage")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.checkForOrphanedParentMessage")
+	defer spans.Finish()
 
 	// Skip if this email is a reply or has references
 	if email.ReplyTo != "" || len(email.References) > 0 {
@@ -117,7 +114,7 @@ func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, emai
 
 	orphan, err := p.repositories.OrphanEmailRepository.GetByMessageID(ctx, email.MessageID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -129,7 +126,7 @@ func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, emai
 	// Clean up orphan records for this thread
 	err = p.repositories.OrphanEmailRepository.DeleteByThreadID(ctx, orphan.ThreadID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -138,14 +135,13 @@ func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, emai
 
 // findThreadByMessageID finds a thread containing a specific message ID
 func (p *emailProcessor) findThreadByMessageID(ctx context.Context, messageID string) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findThreadByMessageID")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.SetTag("message_id", messageID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findThreadByMessageID")
+	defer spans.Finish()
+	spans.LogKV("message_id", messageID)
 
 	message, err := p.repositories.EmailRepository.GetByMessageID(ctx, messageID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 	if message == nil {
@@ -156,9 +152,8 @@ func (p *emailProcessor) findThreadByMessageID(ctx context.Context, messageID st
 
 // findThreadBySubjectMatch attempts to find an existing thread by subject and participants
 func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *models.EmailStore) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findThreadBySubjectMatch")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findThreadBySubjectMatch")
+	defer spans.Finish()
 
 	normalizedSubject := utils.NormalizeEmailSubject(email.Subject)
 	if normalizedSubject == "" {
@@ -167,9 +162,9 @@ func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *mo
 
 	threadID, err := p.findThreadBySubjectAndParticipants(ctx, normalizedSubject, email.MailboxID, email.AllParticipants())
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		// Just log this error and continue - subject matching is a best-effort fallback
-		span.LogKV("warning", "subject-based thread matching failed", "error", err.Error())
+		spans.LogKV("warning", "subject-based thread matching failed")
 		return "", nil
 	}
 
@@ -178,10 +173,9 @@ func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *mo
 
 // findThreadBySubjectAndParticipants finds a thread by normalized subject and participants
 func (p *emailProcessor) findThreadBySubjectAndParticipants(ctx context.Context, subject string, mailboxID string, participants []string) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcessor.findThreadBySubjectAndParticipants")
-	defer span.Finish()
-	span.SetTag("subject", subject)
-	span.SetTag("mailbox_id", mailboxID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findThreadBySubjectAndParticipants")
+	defer spans.Finish()
+	spans.LogKV("subject", subject, "mailbox_id", mailboxID)
 
 	// Skip empty subjects
 	if subject == "" {
@@ -191,7 +185,7 @@ func (p *emailProcessor) findThreadBySubjectAndParticipants(ctx context.Context,
 	// Get threads matching the subject and mailbox
 	threads, err := p.repositories.EmailThreadRepository.FindBySubjectAndMailbox(ctx, subject, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -235,18 +229,18 @@ func (p *emailProcessor) findThreadBySubjectAndParticipants(ctx context.Context,
 
 // updateThreadMetadata updates thread metadata with data from the new email
 func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models.EmailStore, threadID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.updateThreadMetadata")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.updateThreadMetadata")
+	defer spans.Finish()
 
 	// Get current thread
 	threadRecord, err := p.repositories.EmailThreadRepository.GetByID(ctx, threadID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if threadRecord == nil {
 		err = errors.New("thread record is unexpectedly nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -283,8 +277,8 @@ func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models
 
 // createNewThread creates a new thread for the email
 func (p *emailProcessor) createNewThread(ctx context.Context, email *models.EmailStore) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.createNewThread")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.createNewThread")
+	defer spans.Finish()
 
 	threadID, err := p.repositories.EmailThreadRepository.Create(ctx, &models.EmailThread{
 		MailboxID:      email.MailboxID,
@@ -296,7 +290,7 @@ func (p *emailProcessor) createNewThread(ctx context.Context, email *models.Emai
 		LastMessageAt:  email.ReceivedAt,
 	})
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -305,8 +299,8 @@ func (p *emailProcessor) createNewThread(ctx context.Context, email *models.Emai
 
 // recordMissingParents records referenced messages that are missing
 func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailProcesssor.recordMissingParents")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.recordMissingParents")
+	defer spans.Finish()
 
 	// Record ReplyTo as missing parent if it exists
 	if email.ReplyTo != "" {
@@ -316,7 +310,7 @@ func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models
 			ThreadID:     email.ThreadID,
 			MailboxID:    email.MailboxID,
 		}); err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}
@@ -329,7 +323,7 @@ func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models
 			ThreadID:     email.ThreadID,
 			MailboxID:    email.MailboxID,
 		}); err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}

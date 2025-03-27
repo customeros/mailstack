@@ -14,8 +14,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -23,7 +21,6 @@ import (
 	"github.com/customeros/mailstack/internal/logger"
 	repository "github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -704,7 +701,7 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		s.log.Error("failed to read response body", err)
 		return err
 	}
@@ -718,7 +715,7 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 	}
 
 	if err = json.Unmarshal(body, &addPageRuleResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body", err)
 		return err
 	}
@@ -729,7 +726,7 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 			errMsg = addPageRuleResponse.Errors[0].Message
 		}
 		err = fmt.Errorf(errMsg)
-		tracing.TraceErr(span, err, tracingLog.String("responseBody", string(body)))
+		spans.TraceError(err)
 		s.log.Error("Cloudflare API error: ", errMsg)
 		return err
 	}
@@ -737,8 +734,8 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 }
 
 func (s *cloudflareService) dnsConfigsForMailStack(ctx context.Context, tenant, domain string) ([]DNSConfig, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.dnsConfigsForMailStack")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.dnsConfigsForMailStack")
+	defer spans.Finish()
 
 	dnses := []DNSConfig{
 		{RecordType: "A", Name: "@", Content: "192.0.2.1", Proxied: true, TTL: 1},
@@ -752,7 +749,7 @@ func (s *cloudflareService) dnsConfigsForMailStack(ctx context.Context, tenant, 
 	// add dkim dns record
 	domainRecord, err := s.postgres.DomainRepository.GetDomain(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get domain record"))
+		spans.TraceError(errors.Wrap(err, "failed to get domain record"))
 		return nil, err
 	}
 	if domainRecord != nil && domainRecord.DkimPublic != "" {
@@ -760,13 +757,13 @@ func (s *cloudflareService) dnsConfigsForMailStack(ctx context.Context, tenant, 
 	} else {
 		dkimPublic, dkimPrivate, err := generateDKIMKeyPair()
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to generate DKIM key pair"))
+			spans.TraceError(errors.Wrap(err, "failed to generate DKIM key pair"))
 			s.log.Error("failed to generate DKIM key pair", err)
 			return nil, err
 		}
 		err = s.postgres.DomainRepository.SetDkimKeys(ctx, tenant, domain, dkimPublic, dkimPrivate)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to set DKIM keys"))
+			spans.TraceError(errors.Wrap(err, "failed to set DKIM keys"))
 			s.log.Error("failed to set DKIM keys", err)
 			return nil, err
 		}

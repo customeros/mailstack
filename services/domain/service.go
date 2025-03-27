@@ -6,14 +6,12 @@ import (
 
 	"github.com/customeros/mailwatcher/blscan"
 	"github.com/customeros/mailwatcher/domainage"
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -36,16 +34,14 @@ func NewDomainService(postgres *repository.Repositories, cloudflare interfaces.C
 }
 
 func (s *domainService) ConfigureDomain(ctx context.Context, domain, redirectWebsite string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.ConfigureDomain")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogKV("request.domain", domain)
-	span.LogKV("request.redirectWebsite", redirectWebsite)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "DomainService.ConfigureDomain")
+	defer spans.Finish()
+	spans.LogKV("request.domain", domain, "request.redirectWebsite", redirectWebsite)
 
 	// validate tenant
 	err := utils.ValidateTenant(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	tenant := utils.GetTenantFromContext(ctx)
@@ -53,44 +49,43 @@ func (s *domainService) ConfigureDomain(ctx context.Context, domain, redirectWeb
 	// setup domain in cloudflare
 	nameservers, err := s.cloudflare.SetupDomainForMailStack(ctx, tenant, domain, redirectWebsite)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error setting up domain in Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "Error setting up domain in Cloudflare"))
 		return err
 	}
 
 	// setup domain in openSRS
 	err = s.opensrs.SetupDomain(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error setting up domain in OpenSRS"))
+		spans.TraceError(errors.Wrap(err, "Error setting up domain in OpenSRS"))
 		return err
 	}
 
 	// replace nameservers in namecheap
 	err = s.namecheap.UpdateNameservers(ctx, tenant, domain, nameservers)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error updating nameservers"))
+		spans.TraceError(errors.Wrap(err, "Error updating nameservers"))
 		return err
 	}
 
 	// mark domain as configured
 	err = s.postgres.DomainRepository.MarkConfigured(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error setting domain as configured"))
+		spans.TraceError(errors.Wrap(err, "Error setting domain as configured"))
 	}
 
 	return nil
 }
 
 func (s *domainService) GetDomain(ctx context.Context, domain string) (*models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.GetDomain")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogKV("request.domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "DomainService.GetDomain")
+	defer spans.Finish()
+	spans.LogKV("request.domain", domain)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
 	domainModel, err := s.postgres.DomainRepository.GetDomain(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error getting domain"))
+		spans.TraceError(errors.Wrap(err, "Error getting domain"))
 		return nil, err
 	}
 
@@ -98,19 +93,18 @@ func (s *domainService) GetDomain(ctx context.Context, domain string) (*models.M
 }
 
 func (s *domainService) CheckMailstackDomainReputations(ctx context.Context) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.CheckMailstackDomainReputations")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "DomainService.CheckMailstackDomainReputations")
+	defer spans.Finish()
 
 	// get all active domains cross tenant
 	mailStackDomains, err := s.postgres.DomainRepository.GetAllActiveDomainsCrossTenant(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	if len(mailStackDomains) == 0 {
-		span.LogKV("result.message", "No active domains found")
+		spans.LogKV("result.message", "No active domains found")
 		return nil
 	}
 
@@ -121,7 +115,7 @@ func (s *domainService) CheckMailstackDomainReputations(ctx context.Context) err
 		// check reputation of domain
 		_, err := s.reputationScore(ctx, domain, tenant)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}
@@ -129,12 +123,11 @@ func (s *domainService) CheckMailstackDomainReputations(ctx context.Context) err
 }
 
 func (s *domainService) reputationScore(ctx context.Context, domain, tenant string) (int, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.ReputationScore")
-	defer span.Finish()
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "DomainService.ReputationScore")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
-	domainAgePenalty := s.domainAgePenalty(span, domain)
+	domainAgePenalty := s.domainAgePenalty(spans, domain)
 	blacklistPenaltyPct := s.blacklistPenaltyPercent(domain)
 
 	score := (100 - domainAgePenalty) * (1 - (blacklistPenaltyPct)/100)
@@ -156,10 +149,10 @@ func (s *domainService) reputationScore(ctx context.Context, domain, tenant stri
 	return score, err
 }
 
-func (s *domainService) domainAgePenalty(span opentracing.Span, domain string) int {
+func (s *domainService) domainAgePenalty(spans *telemetry.Spans, domain string) int {
 	domainDates, err := domainage.GetDomainDates(domain)
 	if err != nil {
-		tracing.TraceErr(span, fmt.Errorf("Cannot determine domain dates: %v", err))
+		spans.TraceError(fmt.Errorf("Cannot determine domain dates: %v", err))
 		return 0
 	}
 
@@ -200,21 +193,20 @@ func (s *domainService) blacklistPenaltyPercent(domain string) int {
 }
 
 func (s *domainService) GetTenantForMailstackDomain(ctx context.Context, domain string) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainService.GetTenantForMailstackDomain")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "DomainService.GetTenantForMailstackDomain")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	mailStackDomainEntity, err := s.postgres.DomainRepository.GetDomainCrossTenant(ctx, domain)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 	if mailStackDomainEntity == nil {
-		span.LogFields(tracingLog.Bool("result.found", false))
+		spans.LogKV("result.found", false)
 		return "", nil
 	}
 
-	span.LogFields(tracingLog.String("result.tenant", mailStackDomainEntity.Tenant))
+	spans.LogKV("result.tenant", mailStackDomainEntity.Tenant)
 	return mailStackDomainEntity.Tenant, nil
 }

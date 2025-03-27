@@ -10,18 +10,17 @@ import (
 	"github.com/customeros/mailstack/internal/dbmapper"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStore, attachmentIDs []string) (string, enum.EmailStatus, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.Send")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.ScheduleSend")
+	defer spans.Finish()
 
 	err := s.validateEmail(ctx, email, attachmentIDs)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", enum.EmailStatusFailed, err
 	}
 
@@ -30,7 +29,7 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 	// create a new email thraed & attach email to it
 	err = s.createNewEmailThreadForEmail(ctx, email)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", enum.EmailStatusFailed, err
 	}
 
@@ -40,7 +39,7 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 	}
 	emailID, err := s.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", enum.EmailStatusFailed, err
 	}
 
@@ -48,7 +47,7 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 	if email.ScheduledFor == nil {
 		err = s.eventsService.Publisher.PublishSendEmailEvent(ctx, email)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return "", enum.EmailStatusFailed, err
 		}
 	}
@@ -57,9 +56,8 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 }
 
 func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.createNewEmailThreadForEmail")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.createNewEmailThreadForEmail")
+	defer spans.Finish()
 
 	thread := &models.EmailThread{
 		MailboxID:      email.MailboxID,
@@ -73,12 +71,12 @@ func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *
 
 	threadID, err := s.repositories.EmailThreadRepository.Create(ctx, thread)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if threadID == "" {
 		err = errors.New("failed to create new email thread")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -93,32 +91,31 @@ func setDefaultSendingValues(email *models.EmailStore) {
 }
 
 func (s *emailService) validateEmail(ctx context.Context, email *models.EmailStore, attachmentIDs []string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.validateEmail")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateEmail")
+	defer spans.Finish()
 
 	err := s.validateSender(ctx, email)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// validate recipients are valid emails
 	err = validateRecipients(email)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// validate body and subject
 	if email.Subject == "" {
 		err = ErrEmptySubject
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if email.BodyHTML == "" && email.BodyText == "" {
 		err = ErrEmptyEmailBody
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -128,7 +125,7 @@ func (s *emailService) validateEmail(ctx context.Context, email *models.EmailSto
 		for _, attachment := range attachmentIDs {
 			err := s.validateAttachment(ctx, attachment)
 			if err != nil {
-				tracing.TraceErr(span, err)
+				spans.TraceError(err)
 				return errors.Wrap(err, attachment)
 			}
 		}
@@ -137,25 +134,24 @@ func (s *emailService) validateEmail(ctx context.Context, email *models.EmailSto
 	// validate scheduledFor
 	if email.ScheduledFor != nil && !utils.IsInFuture(*email.ScheduledFor) {
 		err = ErrScheduledSendNotValid
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	return nil
 }
 
 func (s *emailService) validateAttachment(ctx context.Context, attachmentID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.validateAttachment")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateAttachment")
+	defer spans.Finish()
 
 	attachment, err := s.repositories.EmailAttachmentRepository.GetByID(ctx, attachmentID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if attachment == nil {
 		err = ErrAttachmentDoesNotExist
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	return nil
@@ -191,19 +187,18 @@ func validateRecipients(email *models.EmailStore) error {
 }
 
 func (s *emailService) validateSender(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.validateSender")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateSender")
+	defer spans.Finish()
 
 	// validate mailbox/email exists
 	mailbox, err := s.getMailbox(ctx, email.MailboxID, email.FromAddress)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if mailbox == nil {
 		err = ErrMailboxDoesNotExist
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	email.MailboxID = mailbox.ID
@@ -211,23 +206,23 @@ func (s *emailService) validateSender(ctx context.Context, email *models.EmailSt
 	// validate user/tenant owns mailbox/email
 	tenant := utils.GetTenantFromContext(ctx)
 	if mailbox.Tenant != tenant {
-		tracing.TraceErr(span, ErrUnauthorizedSender)
-		span.LogKV("mailboxTenant", mailbox.Tenant)
-		span.LogKV("ctxTenant", tenant)
+		spans.TraceError(ErrUnauthorizedSender)
+		spans.LogKV("mailboxTenant", mailbox.Tenant)
+		spans.LogKV("ctxTenant", tenant)
 		return ErrUnauthorizedSender
 	}
 	userID := utils.GetUserIdFromContext(ctx)
 	if mailbox.UserID != userID {
-		tracing.TraceErr(span, ErrUnauthorizedSender)
-		span.LogKV("mailboxUserId", mailbox.UserID)
-		span.LogKV("ctxTenant", userID)
+		spans.TraceError(ErrUnauthorizedSender)
+		spans.LogKV("mailboxUserId", mailbox.UserID)
+		spans.LogKV("ctxTenant", userID)
 		return ErrUnauthorizedSender
 	}
 
 	// validate outbound enabled
 	if !mailbox.OutboundEnabled {
 		err = ErrOutboundNotEnabled
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -235,7 +230,7 @@ func (s *emailService) validateSender(ctx context.Context, email *models.EmailSt
 	validateSender := mailvalidate.ValidateEmailSyntax(email.FromAddress)
 	if !validateSender.IsValid || validateSender.IsSystemGenerated || validateSender.IsFreeAccount {
 		err = ErrInvalidSender
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	email.FromUser = validateSender.User
@@ -244,14 +239,14 @@ func (s *emailService) validateSender(ctx context.Context, email *models.EmailSt
 	// validate sender profile exists or sender info provided in request
 	if mailbox.SenderID == "" && email.FromName == "" {
 		err = ErrUnknownSender
-		tracing.TraceErr(span, err)
-		span.LogKV("noSenderProfile", true)
+		spans.TraceError(err)
+		spans.LogKV("noSenderProfile", true)
 		return err
 	}
 
 	err = s.buildEmailSender(ctx, email, mailbox)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -263,9 +258,8 @@ func (s *emailService) validateSender(ctx context.Context, email *models.EmailSt
 }
 
 func (s *emailService) getMailbox(ctx context.Context, mailboxID, fromAddress string) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.getMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.getMailbox")
+	defer spans.Finish()
 
 	if mailboxID != "" {
 		return s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
@@ -273,7 +267,7 @@ func (s *emailService) getMailbox(ctx context.Context, mailboxID, fromAddress st
 
 	if fromAddress == "" {
 		err := ErrUnknownSender
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -283,9 +277,8 @@ func (s *emailService) getMailbox(ctx context.Context, mailboxID, fromAddress st
 // buildEmailSender fills in sender details.  Values provided in the email request override default values
 // attached to senderID.  SenderID only used to fill in gaps in the request.
 func (s *emailService) buildEmailSender(ctx context.Context, email *models.EmailStore, mailbox *models.Mailbox) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.buildEmailService")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.buildEmailSender")
+	defer spans.Finish()
 
 	if mailbox.SenderID == "" {
 		return nil
@@ -298,11 +291,11 @@ func (s *emailService) buildEmailSender(ctx context.Context, email *models.Email
 	// get sender
 	sender, err := s.repositories.SenderRepository.GetByID(ctx, mailbox.SenderID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if sender == nil {
-		tracing.TraceErr(span, ErrUnknownSender)
+		spans.TraceError(ErrUnknownSender)
 		return ErrUnknownSender
 	}
 
