@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 
