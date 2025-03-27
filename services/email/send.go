@@ -3,17 +3,14 @@ package email
 import (
 	"context"
 
-	"github.com/opentracing/opentracing-go"
-
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services/smtp"
 )
 
 func (s *emailService) SendWithSMTP(ctx context.Context, mailbox *models.Mailbox, email *models.EmailStore, attachments []*models.EmailAttachment) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailService.SendWithSMTP")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.SendWithSMTP")
+	defer spans.Finish()
 
 	client := smtp.NewSMTPClient(s.repositories, mailbox)
 

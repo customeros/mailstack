@@ -18,6 +18,8 @@ type EventDetails struct {
 
 type EventMetadata struct {
 	UberTraceId string `json:"uber-trace-id"`
+	OTelTraceId string `json:"otel-trace-id"`
+	OTelSpanId  string `json:"otel-span-id"`
 	AppSource   string `json:"appSource"`
 	UserId      string `json:"userId"`
 	UserEmail   string `json:"userEmail"`

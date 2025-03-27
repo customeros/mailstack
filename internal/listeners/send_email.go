@@ -3,15 +3,13 @@ package listeners
 import (
 	"context"
 
-	"github.com/opentracing/opentracing-go"
-
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services/events"
 )
 
@@ -36,22 +34,21 @@ func NewSendEmailListener(
 }
 
 func (l *SendEmailListener) Handle(ctx context.Context, baseEvent any) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "FlowParticipantScheduleListener.Handle")
-	defer span.Finish()
-	tracing.SetDefaultListenerSpanTags(ctx, span)
-	tracing.LogObjectAsJson(span, "event", baseEvent)
+	spans, ctx := telemetry.StartListenerSpan(ctx, "SendEmailListener.Handle")
+	defer spans.Finish()
+	spans.LogObjectAsJson("event", baseEvent)
 
 	// First validate and extract the base event
 	validatedEvent, err := l.ValidateBaseEvent(ctx, baseEvent)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Option 1: If you're using SendEmail DTO
 	sendEmail, err := events.DecodeEventData[dto.SendEmail](ctx, validatedEvent)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	email := sendEmail.Email
@@ -59,7 +56,7 @@ func (l *SendEmailListener) Handle(ctx context.Context, baseEvent any) error {
 	// get mailbox for email
 	mailbox, err := l.repositories.MailboxRepository.GetMailbox(ctx, email.MailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -68,7 +65,7 @@ func (l *SendEmailListener) Handle(ctx context.Context, baseEvent any) error {
 	if email.HasAttachment {
 		attachments, err = l.repositories.EmailAttachmentRepository.ListByEmail(ctx, email.ID)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}

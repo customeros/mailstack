@@ -6,10 +6,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services/storage/aws_client"
 )
 
@@ -40,9 +39,8 @@ func NewStorageService(client aws_client.S3Client, config StorageConfig) interfa
 
 // Upload stores data in object storage
 func (s *ObjectStorageService) Upload(ctx context.Context, key string, data []byte, contentType string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ObjectStorageService.Upload")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "ObjectStorageService.Upload")
+	defer spans.Finish()
 
 	uploadInput := s3manager.UploadInput{
 		Bucket:      aws.String(s.bucketName),
@@ -61,9 +59,9 @@ func (s *ObjectStorageService) Upload(ctx context.Context, key string, data []by
 
 // Download retrieves data from object storage
 func (s *ObjectStorageService) Download(ctx context.Context, key string) ([]byte, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ObjectStorageService.Download")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "ObjectStorageService.Download")
+	defer spans.Finish()
+	spans.TagString("key", key)
 
 	content, err := s.client.Download(ctx, s.bucketName, key)
 	if err != nil {
@@ -75,9 +73,9 @@ func (s *ObjectStorageService) Download(ctx context.Context, key string) ([]byte
 
 // Delete removes an object from storage
 func (s *ObjectStorageService) Delete(ctx context.Context, key string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ObjectStorageService.Delete")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "ObjectStorageService.Delete")
+	defer spans.Finish()
+	spans.TagString("key", key)
 
 	if client, ok := interface{}(s.client).(interface {
 		Delete(ctx context.Context, bucket, key string) error

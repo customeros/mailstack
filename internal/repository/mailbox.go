@@ -8,14 +8,11 @@ import (
 
 	"github.com/customeros/mailstack/internal/telemetry"
 
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -25,10 +22,9 @@ type mailboxRepository struct {
 
 // GetAllWithFilters implements interfaces.MailboxRepository.
 func (r *mailboxRepository) GetAllWithFilters(ctx context.Context, provider enum.EmailProvider, domain string, userId string) ([]*models.Mailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetAllWithFilters")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("provider", provider, "domain", domain, "userId", userId)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetAllWithFilters")
+	defer spans.Finish()
+	spans.LogKV("provider", provider, "domain", domain, "userId", userId)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
@@ -49,11 +45,11 @@ func (r *mailboxRepository) GetAllWithFilters(ctx context.Context, provider enum
 	var result []*models.Mailbox
 	err := query.Find(&result).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogFields(tracingLog.Int("result.count", len(result)))
+	spans.LogKV("result.count", len(result))
 	return result, nil
 }
 
@@ -62,14 +58,13 @@ func NewMailboxRepository(db *gorm.DB) interfaces.MailboxRepository {
 }
 
 func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxes")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxes")
+	defer spans.Finish()
 
 	var mailboxes []*models.Mailbox
 	result := r.db.Find(&mailboxes)
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return nil, result.Error
 	}
 	return mailboxes, nil
@@ -77,7 +72,7 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 
 func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error) {
 	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxesByUserID")
-	defer telemetry.FinishSpans(spans)
+	defer spans.Finish()
 	spans.LogKV("userId", userID)
 
 	tenant := utils.GetTenantFromContext(ctx)
@@ -95,27 +90,25 @@ func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID str
 }
 
 func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailbox")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	tracing.TagEntity(span, id)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailbox")
+	defer spans.Finish()
+	spans.TagEntity(id)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "id = ?", id).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogKV("result.found", true)
+	spans.LogKV("result.found", true)
 	return &mailbox, nil
 }
 
 func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddress")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("emailAddress", emailAddress)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxByEmailAddress")
+	defer spans.Finish()
+	spans.LogKV("emailAddress", emailAddress)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
@@ -123,48 +116,47 @@ func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailA
 	err := r.db.First(&mailbox, "tenant = ? AND email_address = ?", tenant, emailAddress).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			span.LogKV("result.found", false)
+			spans.LogKV("result.found", false)
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogKV("result.found", true)
-	span.LogKV("result.mailbox.id", mailbox.ID)
+	spans.LogKV("result.found", true)
+	spans.LogKV("result.mailbox.id", mailbox.ID)
 	return &mailbox, nil
 }
 
 func (r *mailboxRepository) GetMailboxByEmailAddressCrossTenant(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxByEmailAddressCrossTenant")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("emailAddress", emailAddress)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxByEmailAddressCrossTenant")
+	defer spans.Finish()
+	spans.LogKV("emailAddress", emailAddress)
 
 	var mailbox models.Mailbox
 	err := r.db.First(&mailbox, "email_address = ?", emailAddress).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			span.LogKV("result.found", false)
+			spans.LogKV("result.found", false)
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogKV("result.found", true)
-	span.LogKV("result.mailbox.id", mailbox.ID)
+	spans.LogKV("result.found", true)
+	spans.LogKV("result.mailbox.id", mailbox.ID)
 	return &mailbox, nil
 }
 
 func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.SaveMailbox")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.SaveMailbox")
+	defer spans.Finish()
 
 	// Perform the save operation
 	result := r.db.Save(&mailbox)
 	if result.Error != nil {
+		spans.TraceError(result.Error)
 		return "", result.Error
 	}
 
@@ -172,20 +164,19 @@ func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mail
 }
 
 func (r *mailboxRepository) DeleteMailbox(ctx context.Context, id string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.DeleteMailbox")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.DeleteMailbox")
+	defer spans.Finish()
+	spans.TagEntity(id)
 
 	return r.db.Delete(&models.Mailbox{}, "id = ?", id).Error
 }
 
 // UpdateConnectionStatus updates the connection status and error message for a mailbox
 func (r *mailboxRepository) UpdateConnectionStatus(ctx context.Context, mailboxID string, status enum.ConnectionStatus, errorMessage string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateConnectionStatus")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("mailbox.id", mailboxID)
-	span.SetTag("status", status)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.UpdateConnectionStatus")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("status", string(status))
 
 	// Create a timeout context
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -202,24 +193,23 @@ func (r *mailboxRepository) UpdateConnectionStatus(ctx context.Context, mailboxI
 		})
 
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return fmt.Errorf("failed to update mailbox connection status: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
 		err := fmt.Errorf("mailbox with ID %s not found", mailboxID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
-	span.LogKV("affectedRows", result.RowsAffected)
+	spans.LogKV("affectedRows", result.RowsAffected)
 	return nil
 }
 
 func (r *mailboxRepository) GetForRampUp(ctx context.Context) ([]*models.Mailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetForRampUp")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetForRampUp")
+	defer spans.Finish()
 
 	var result []*models.Mailbox
 	err := r.db.WithContext(ctx).
@@ -230,22 +220,21 @@ func (r *mailboxRepository) GetForRampUp(ctx context.Context) ([]*models.Mailbox
 		Error
 
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogKV("result.count", len(result))
+	spans.LogKV("result.count", len(result))
 
 	return result, nil
 }
 
 func (r *mailboxRepository) UpdateRampUpFields(ctx context.Context, mailbox *models.Mailbox) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateRampUpFields")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	tracing.TagEntity(span, mailbox.ID)
-	span.LogKV("ramp_up_current", mailbox.RampUpCurrent)
-	span.LogFields(tracingLog.Object("last_ramp_up_at", mailbox.LastRampUpAt))
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.UpdateRampUpFields")
+	defer spans.Finish()
+	spans.TagEntity(mailbox.ID)
+	spans.LogKV("ramp_up_current", mailbox.RampUpCurrent)
+	spans.LogObjectAsJson("last_ramp_up_at", mailbox.LastRampUpAt)
 
 	err := r.db.WithContext(ctx).
 		Model(&models.Mailbox{}).
@@ -256,7 +245,7 @@ func (r *mailboxRepository) UpdateRampUpFields(ctx context.Context, mailbox *mod
 		}).Error
 
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -264,10 +253,9 @@ func (r *mailboxRepository) UpdateRampUpFields(ctx context.Context, mailbox *mod
 }
 
 func (r *mailboxRepository) ConfigureAttempt(ctx context.Context, id string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.ConfigureAttempt")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	tracing.TagEntity(span, id)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.ConfigureAttempt")
+	defer spans.Finish()
+	spans.TagEntity(id)
 
 	err := r.db.WithContext(ctx).
 		Model(&models.Mailbox{}).
@@ -277,7 +265,7 @@ func (r *mailboxRepository) ConfigureAttempt(ctx context.Context, id string) err
 		}).Error
 
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -285,11 +273,10 @@ func (r *mailboxRepository) ConfigureAttempt(ctx context.Context, id string) err
 }
 
 func (r *mailboxRepository) UpdateProvisionStatus(ctx context.Context, id string, provisionStatus models.MailboxProvisionStatus) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.UpdateProvisionStatus")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	tracing.TagEntity(span, id)
-	span.LogKV("provisionStatus", provisionStatus)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.UpdateProvisionStatus")
+	defer spans.Finish()
+	spans.TagEntity(id)
+	spans.LogKV("provisionStatus", provisionStatus)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
@@ -301,7 +288,7 @@ func (r *mailboxRepository) UpdateProvisionStatus(ctx context.Context, id string
 			"updated_at":       utils.Now(),
 		}).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -309,10 +296,9 @@ func (r *mailboxRepository) UpdateProvisionStatus(ctx context.Context, id string
 }
 
 func (r *mailboxRepository) GetForConfiguration(ctx context.Context, limit int) ([]*models.Mailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetForConfiguration")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogFields(tracingLog.Int("limit", limit))
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetForConfiguration")
+	defer spans.Finish()
+	spans.LogKV("limit", limit)
 
 	twoHoursAgo := utils.Now().Add(-2 * time.Hour)
 
@@ -329,10 +315,10 @@ func (r *mailboxRepository) GetForConfiguration(ctx context.Context, limit int) 
 		Error
 
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogFields(tracingLog.Int("result.count", len(result)))
+	spans.LogKV("result.count", len(result))
 	return result, nil
 }

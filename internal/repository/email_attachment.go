@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -31,16 +30,15 @@ func NewEmailAttachmentRepository(db *gorm.DB, storageService interfaces.Storage
 
 // GetByID retrieves an attachment by its ID
 func (r *emailAttachmentRepository) GetByID(ctx context.Context, id string) (*models.EmailAttachment, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.GetByID")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.GetByID")
+	defer spans.Finish()
 
 	var attachment models.EmailAttachment
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&attachment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return &attachment, nil
@@ -48,16 +46,15 @@ func (r *emailAttachmentRepository) GetByID(ctx context.Context, id string) (*mo
 
 // ListByEmail retrieves all attachments for a specific email
 func (r *emailAttachmentRepository) ListByEmail(ctx context.Context, emailID string) ([]*models.EmailAttachment, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.ListByEmail")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.ListByEmail")
+	defer spans.Finish()
 
 	var attachments []*models.EmailAttachment
 	err := r.db.WithContext(ctx).
 		Where("? = ANY(emails)", emailID).
 		Find(&attachments).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return attachments, nil
@@ -65,25 +62,23 @@ func (r *emailAttachmentRepository) ListByEmail(ctx context.Context, emailID str
 
 // ListByThread retrieves all attachments for a specific email thread
 func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID string) ([]*models.EmailAttachment, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.ListByThread")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.ListByThread")
+	defer spans.Finish()
 
 	var attachments []*models.EmailAttachment
 	err := r.db.WithContext(ctx).
 		Where("? = ANY(threads)", threadID).
 		Find(&attachments).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return attachments, nil
 }
 
 func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []byte) (*models.EmailAttachment, string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.CheckFileExists")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.CheckFileExists")
+	defer spans.Finish()
 
 	hash := sha256.New()
 	hash.Write(data)
@@ -92,7 +87,7 @@ func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []
 	err := r.db.WithContext(ctx).Where("content_hash = ?", contentHash).First(&existingAttachment).Error
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return nil, contentHash, err
 		}
 		return nil, contentHash, nil
@@ -102,19 +97,18 @@ func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []
 
 // Store saves attachment data to the configured storage service
 func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, threadID, emailID string, data []byte) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.Store")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.Store")
+	defer spans.Finish()
 
 	if attachment == nil {
 		err := errors.New("nil attachment")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	existingAttachment, fileHash, err := r.CheckFileExists(ctx, data)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -152,8 +146,8 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 
 	// Store the file in the storage service
 	if err := r.storage.Upload(ctx, attachment.StorageKey, data, attachment.ContentType); err != nil {
-		tracing.TraceErr(span, err)
-		tracing.LogObjectAsJson(span, "attachment", attachment)
+		spans.TraceError(err)
+		spans.LogObjectAsJson("attachment", attachment)
 		return fmt.Errorf("failed to upload attachment: %w", err)
 	}
 
@@ -162,25 +156,24 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 
 // GetAttachment retrieves the attachment data from storage
 func (r *emailAttachmentRepository) DownloadAttachment(ctx context.Context, id string) ([]byte, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.GetData")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.GetData")
+	defer spans.Finish()
 
 	// Get the attachment metadata
 	attachment, err := r.GetByID(ctx, id)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	if attachment == nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, errors.New("attachment not found")
 	}
 
 	// Retrieve the file from storage
 	data, err := r.storage.Download(ctx, attachment.StorageKey)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, fmt.Errorf("failed to download attachment: %w", err)
 	}
 
@@ -189,14 +182,13 @@ func (r *emailAttachmentRepository) DownloadAttachment(ctx context.Context, id s
 
 // Delete removes an attachment from both database and storage
 func (r *emailAttachmentRepository) Delete(ctx context.Context, id string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailAttachmentRepository.Delete")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.Delete")
+	defer spans.Finish()
 
 	// Get the attachment first
 	attachment, err := r.GetByID(ctx, id)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if attachment == nil {

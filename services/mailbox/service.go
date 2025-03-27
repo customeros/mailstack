@@ -6,14 +6,13 @@ import (
 	"strings"
 
 	"github.com/customeros/mailsherpa/mailvalidate"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 
 	internalerrors "github.com/customeros/mailstack/internal/errors"
@@ -36,18 +35,17 @@ func NewMailboxService(repos *repository.Repositories, imap interfaces.IMAPServi
 }
 
 func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mailbox) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.EnrollMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.EnrollMailbox")
+	defer spans.Finish()
 
 	err := utils.ValidateTenant(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	err = utils.ValidateUserId(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -73,7 +71,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 	}
 
 	// validate mailbox does not exist
-	err = s.verifyMailboxNotExists(ctx, span, preparedMailbox.EmailAddress)
+	err = s.verifyMailboxNotExists(ctx, spans, preparedMailbox.EmailAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -81,26 +79,26 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 	// validate input
 	err = s.validateMailboxInput(*preparedMailbox)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	// save mailbox
 	mailboxID, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *preparedMailbox)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	if mailboxID == "" {
 		err = errors.New("unable to create mailbox")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	// mark as provisioned
 	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxID, models.MailboxStatusProvisioned)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -108,7 +106,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 
 	err = s.addToIMAP(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return preparedMailbox, err
 	}
 
@@ -116,13 +114,12 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 }
 
 func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.addToIMAP")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.addToIMAP")
+	defer spans.Finish()
 
 	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -139,14 +136,13 @@ func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error 
 }
 
 func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxService.prepareMailboxForSave")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.prepareMailboxForSave")
+	defer spans.Finish()
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
 		err := errors.New("Tenant is nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -268,23 +264,22 @@ func (s *mailboxService) validateMailboxInput(input models.Mailbox) error {
 }
 
 func (s *mailboxService) RampUpMailboxes(ctx context.Context) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.RampUpMailboxes")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.RampUpMailboxes")
+	defer spans.Finish()
 
 	mailboxes, err := s.repositories.MailboxRepository.GetForRampUp(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
-	span.LogKV("mailboxes.count", len(mailboxes))
+	spans.LogKV("mailboxes.count", len(mailboxes))
 
 	for _, mailbox := range mailboxes {
 		innerCtx := utils.WithTenantContext(ctx, mailbox.Tenant)
 		err := s.rampUpMailbox(innerCtx, mailbox)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			// Continue processing other mailboxes even if one fails
 			continue
 		}
@@ -294,9 +289,8 @@ func (s *mailboxService) RampUpMailboxes(ctx context.Context) error {
 }
 
 func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.Mailbox) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.rampUpMailbox")
-	defer span.Finish()
-	tracing.TagComponentCronJob(span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.rampUpMailbox")
+	defer spans.Finish()
 
 	for {
 		if mailbox.RampUpCurrent >= mailbox.RampUpMax {
@@ -317,7 +311,7 @@ func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.Mail
 
 		err := s.repositories.MailboxRepository.UpdateRampUpFields(ctx, mailbox)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}
@@ -326,17 +320,16 @@ func (s *mailboxService) rampUpMailbox(ctx context.Context, mailbox *models.Mail
 }
 
 func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ConfigureMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.TagEntity(span, mailboxID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.ConfigureMailbox")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
 
 	tenant := utils.GetTenantFromContext(ctx)
 
 	// Get the mailbox from the repository
 	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get mailbox"))
+		spans.TraceError(errors.Wrap(err, "failed to get mailbox"))
 		return errors.Wrap(err, "failed to get mailbox")
 	}
 	if mailbox == nil {
@@ -361,11 +354,11 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string)
 	// Configure mailbox with OpenSRS
 	err = s.openSrsService.SetupMailbox(ctx, tenant, mailbox.EmailAddress, mailbox.SmtpPassword, forwardingTo, mailbox.WebmailEnabled)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to configure mailbox with OpenSRS"))
+		spans.TraceError(errors.Wrap(err, "failed to configure mailbox with OpenSRS"))
 
 		dbErr := s.repositories.MailboxRepository.ConfigureAttempt(ctx, mailbox.ID)
 		if dbErr != nil {
-			tracing.TraceErr(span, dbErr)
+			spans.TraceError(dbErr)
 			return dbErr
 		}
 
@@ -375,13 +368,13 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string)
 	// Update mailbox status to provisioned
 	err = s.repositories.MailboxRepository.UpdateProvisionStatus(ctx, mailboxID, models.MailboxStatusProvisioned)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to update mailbox status"))
+		spans.TraceError(errors.Wrap(err, "failed to update mailbox status"))
 		return errors.Wrap(err, "failed to update mailbox status")
 	}
 
 	err = s.addToIMAP(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil
 	}
 
@@ -389,14 +382,13 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string)
 }
 
 func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.CreateMailboxRequest) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.CreateMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.LogObjectAsJson(span, "request", request)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.CreateMailbox")
+	defer spans.Finish()
+	spans.LogObjectAsJson("request", request)
 
 	if !request.IgnoreDomainOwnership {
-		if err := s.validateCreateMailboxRequest(ctx, span, request.Domain); err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "cannot validate MailboxRequest"))
+		if err := s.validateCreateMailboxRequest(ctx, spans, request.Domain); err != nil {
+			spans.TraceError(errors.Wrap(err, "cannot validate MailboxRequest"))
 			return err
 		}
 	}
@@ -404,34 +396,34 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.C
 	mailboxEmailAddress := strings.ToLower(request.Username + "@" + request.Domain)
 
 	// Verify mailbox doesn't exist
-	if err := s.verifyMailboxNotExists(ctx, span, mailboxEmailAddress); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to verify mailbox does not exist"))
+	if err := s.verifyMailboxNotExists(ctx, spans, mailboxEmailAddress); err != nil {
+		spans.TraceError(errors.Wrap(err, "failed to verify mailbox does not exist"))
 		return err
 	}
 
 	// Prepare mailbox using common method
 	mailbox, err := s.prepareMailboxForSave(ctx, enum.EmailMailstack, mailboxEmailAddress, request)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error preparing mailbox"))
+		spans.TraceError(errors.Wrap(err, "Error preparing mailbox"))
 		return err
 	}
 
 	// Save mailbox
 	mailboxID, err := s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error saving mailbox"))
+		spans.TraceError(errors.Wrap(err, "Error saving mailbox"))
 		return err
 	}
 	if mailboxID == "" {
 		return errors.New("failed to save mailbox")
 	}
-	tracing.TagEntity(span, mailboxID)
+	spans.TagEntity(mailboxID)
 	return nil
 }
 
-func (s *mailboxService) validateCreateMailboxRequest(ctx context.Context, span opentracing.Span, domain string) error {
+func (s *mailboxService) validateCreateMailboxRequest(ctx context.Context, spans *telemetry.Spans, domain string) error {
 	if err := utils.ValidateTenant(ctx); err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -439,25 +431,25 @@ func (s *mailboxService) validateCreateMailboxRequest(ctx context.Context, span 
 	if domain != TEST_MAILBOX_DOMAIN {
 		domainBelongsToTenant, err := s.repositories.DomainRepository.CheckDomainOwnership(ctx, tenant, domain)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "Error checking domain"))
+			spans.TraceError(errors.Wrap(err, "Error checking domain"))
 			return errors.Wrap(err, "Error checking domain")
 		}
 		if !domainBelongsToTenant {
-			tracing.TraceErr(span, errors.Wrap(internalerrors.ErrDomainNotFound, "domain does not belong to tenant"))
+			spans.TraceError(errors.Wrap(internalerrors.ErrDomainNotFound, "domain does not belong to tenant"))
 			return internalerrors.ErrDomainNotFound
 		}
 	}
 	return nil
 }
 
-func (s *mailboxService) verifyMailboxNotExists(ctx context.Context, span opentracing.Span, mailboxEmail string) error {
+func (s *mailboxService) verifyMailboxNotExists(ctx context.Context, spans *telemetry.Spans, mailboxEmail string) error {
 	mboxCheck, err := s.repositories.MailboxRepository.GetMailboxByEmailAddressCrossTenant(ctx, mailboxEmail)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if mboxCheck != nil {
-		tracing.TraceErr(span, internalerrors.ErrMailboxExists)
+		spans.TraceError(internalerrors.ErrMailboxExists)
 		return internalerrors.ErrMailboxExists
 	}
 	return nil
@@ -466,30 +458,28 @@ func (s *mailboxService) verifyMailboxNotExists(ctx context.Context, span opentr
 // GetMailboxes returns all mailboxes for a given domain
 // If domain is empty, it returns all mailboxes for the tenant
 func (s *mailboxService) GetMailboxes(ctx context.Context, provider enum.EmailProvider, domain, userId string) ([]*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.GetMailboxes")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogKV("domain", domain, "userId", userId, "provider", provider)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.GetMailboxes")
+	defer spans.Finish()
+	spans.LogKV("domain", domain, "userId", userId, "provider", provider)
 
 	// Get mailboxes with filters
 	mailboxRecords, err := s.repositories.MailboxRepository.GetAllWithFilters(ctx, provider, domain, userId)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailboxes"))
+		spans.TraceError(errors.Wrap(err, "Error retrieving mailboxes"))
 		return nil, err
 	}
-	span.LogKV("result.count", len(mailboxRecords))
+	spans.LogKV("result.count", len(mailboxRecords))
 	return mailboxRecords, nil
 }
 
 func (s *mailboxService) GetMailboxByEmailAddress(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.GetMailboxByEmailAddress")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogKV("emailAddress", emailAddress)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.GetMailboxByEmailAddress")
+	defer spans.Finish()
+	spans.LogKV("emailAddress", emailAddress)
 
 	mailboxRecord, err := s.repositories.MailboxRepository.GetMailboxByEmailAddress(ctx, emailAddress)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
+		spans.TraceError(errors.Wrap(err, "Error retrieving mailbox"))
 		return nil, err
 	}
 	return mailboxRecord, nil

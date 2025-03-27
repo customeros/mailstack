@@ -6,11 +6,10 @@ import (
 	"strings"
 
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/services"
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
 
@@ -43,9 +42,8 @@ type DNSRecordResponse struct {
 
 func (h *DNSHandler) AddDNSRecord() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.AddDNSRecord")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "DNSHandler.AddDNSRecord")
+		defer spans.Finish()
 
 		tenant := utils.GetTenantFromContext(ctx)
 
@@ -53,7 +51,7 @@ func (h *DNSHandler) AddDNSRecord() gin.HandlerFunc {
 		domain := c.Param("domain")
 		domainModel, err := h.domainService.GetDomain(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -68,13 +66,13 @@ func (h *DNSHandler) AddDNSRecord() gin.HandlerFunc {
 
 		domainExists, zoneId, err := h.cloudflareService.CheckDomainExists(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		if !domainExists {
 			message := "domain not found"
-			tracing.TraceErr(span, errors.New(message))
+			spans.TraceError(errors.New(message))
 			c.JSON(http.StatusNotFound, gin.H{"error": message})
 			return
 		}
@@ -82,13 +80,13 @@ func (h *DNSHandler) AddDNSRecord() gin.HandlerFunc {
 		// get dns record payload
 		record, err := h.getDNSRequestPayload(c)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		err = h.cloudflareService.AddDNSRecord(ctx, zoneId, record.Type, record.Name, record.Content, 1, false, nil)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -100,14 +98,13 @@ func (h *DNSHandler) AddDNSRecord() gin.HandlerFunc {
 }
 
 func (h *DNSHandler) getDNSRequestPayload(c *gin.Context) (DNSRecord, error) {
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.getDNSRequestPayload")
-	defer span.Finish()
-	tracing.SetDefaultRestSpanTags(ctx, span)
+	spans, _ := telemetry.StartRestSpan(c.Request.Context(), "DNSHandler.getDNSRequestPayload")
+	defer spans.Finish()
 
 	var req DNSRecord
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return req, err
 	}
 
@@ -116,16 +113,15 @@ func (h *DNSHandler) getDNSRequestPayload(c *gin.Context) (DNSRecord, error) {
 
 func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.DeleteDNSRecord")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "DNSHandler.DeleteDNSRecord")
+		defer spans.Finish()
 
 		tenant := utils.GetTenantFromContext(ctx)
 
 		domain := c.Param("domain")
 		domainModel, err := h.domainService.GetDomain(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -140,13 +136,13 @@ func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
 
 		domainExists, zoneId, err := h.cloudflareService.CheckDomainExists(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		if !domainExists {
 			message := "domain not found"
-			tracing.TraceErr(span, errors.New(message))
+			spans.TraceError(errors.New(message))
 			c.JSON(http.StatusNotFound, gin.H{"error": message})
 			return
 		}
@@ -156,7 +152,7 @@ func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
 		dnsRecordId = strings.TrimPrefix(dnsRecordId, "dns_")
 		err = h.cloudflareService.DeleteDNSRecord(ctx, zoneId, dnsRecordId)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -167,16 +163,15 @@ func (h *DNSHandler) DeleteDNSRecord() gin.HandlerFunc {
 
 func (h *DNSHandler) GetDNSRecords() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "DNSHandler.GetDNSRecords")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "DNSHandler.GetDNSRecords")
+		defer spans.Finish()
 
 		tenant := utils.GetTenantFromContext(ctx)
 
 		domain := c.Param("domain")
 		domainModel, err := h.domainService.GetDomain(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -192,7 +187,7 @@ func (h *DNSHandler) GetDNSRecords() gin.HandlerFunc {
 		// get dns records
 		dnsRecords, err := h.cloudflareService.GetDNSRecords(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

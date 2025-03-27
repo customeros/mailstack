@@ -7,9 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/opentracing/opentracing-go"
 
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 type S3Client interface {
@@ -38,18 +37,19 @@ func NewS3Client(config *aws.Config) S3Client {
 }
 
 func (s *s3Client) Upload(ctx context.Context, uploadContainer s3manager.UploadInput) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "s3Client.Upload")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "s3Client.Upload")
+	defer spans.Finish()
+	spans.TagString("bucket", *uploadContainer.Bucket)
 
 	_, err := s.Uploader.Upload(&uploadContainer)
 	return err
 }
 
 func (s *s3Client) Download(ctx context.Context, bucket, key string) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "s3Client.Download")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "s3Client.Download")
+	defer spans.Finish()
+	spans.TagString("bucket", bucket)
+	spans.TagString("key", key)
 
 	buffer := &aws.WriteAtBuffer{}
 	_, err := s.Downloader.Download(buffer,
@@ -65,9 +65,9 @@ func (s *s3Client) Download(ctx context.Context, bucket, key string) (string, er
 }
 
 func (s *s3Client) ListFiles(ctx context.Context, bucket string) ([]string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "s3Client.ListFiles")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "s3Client.ListFiles")
+	defer spans.Finish()
+	spans.TagString("bucket", bucket)
 
 	session := s3.New(s.Session)
 
@@ -94,17 +94,18 @@ func (s *s3Client) ListFiles(ctx context.Context, bucket string) ([]string, erro
 }
 
 func (s *s3Client) ChangeRegion(ctx context.Context, region string) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "s3Client.ChangeRegion")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "s3Client.ChangeRegion")
+	defer spans.Finish()
+	spans.TagString("region", region)
 
 	s.Config.Region = aws.String(region)
 }
 
 func (s *s3Client) Delete(ctx context.Context, bucket, key string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "s3Client.Delete")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "s3Client.Delete")
+	defer spans.Finish()
+	spans.TagString("bucket", bucket)
+	spans.TagString("key", key)
 
 	svc := s3.New(s.Session)
 	_, err := svc.DeleteObject(&s3.DeleteObjectInput{

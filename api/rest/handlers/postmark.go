@@ -15,11 +15,10 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services"
 	dmarcstats "github.com/customeros/mailwatcher/dmarkstats"
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
 
@@ -37,15 +36,14 @@ func NewPostmarkHandler(repos *repository.Repositories, svc *services.Services) 
 
 func (h *PostmarkHandler) PostmarkDMARCMonitor() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "PostmarkHandler.PostmarkDMARCMonitor")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, _ := telemetry.StartRestSpan(c.Request.Context(), "PostmarkHandler.PostmarkDMARCMonitor")
+		defer spans.Finish()
 
 		// Parse email data
 		emailData, err := h.parseInboundEmail(c)
 		if err != nil {
-			tracing.LogObjectAsJson(span, "body", c.Request.Body)
-			tracing.TraceErr(span, err)
+			spans.LogKV("body", c.Request.Body)
+			spans.TraceError(err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -59,7 +57,7 @@ func (h *PostmarkHandler) PostmarkDMARCMonitor() gin.HandlerFunc {
 				if r := recover(); r != nil {
 					stack := debug.Stack()
 					err := fmt.Errorf("panic recovered in email processing: %v\n%s", r, stack)
-					tracing.TraceErr(span, err)
+					spans.TraceError(err)
 				}
 			}()
 
@@ -67,7 +65,7 @@ func (h *PostmarkHandler) PostmarkDMARCMonitor() gin.HandlerFunc {
 			if emailData.IsMonitorEmail() {
 				err = h.processDmarcMonitoringReport(c, &emailData)
 				if err != nil {
-					tracing.TraceErr(span, errors.Wrap(err, "failed to process DMARC report"))
+					spans.TraceError(errors.Wrap(err, "failed to process DMARC report"))
 				}
 			}
 		}()
@@ -85,9 +83,8 @@ func (h *PostmarkHandler) parseInboundEmail(c *gin.Context) (postmarkInboundEmai
 }
 
 func (h *PostmarkHandler) processDmarcMonitoringReport(ctx context.Context, emailData *postmarkInboundEmailData) error {
-	span, ctx := tracing.StartTracerSpan(ctx, "PostmarkHandler.processDmarcMonitoringReport")
-	defer span.Finish()
-	tracing.SetDefaultRestSpanTags(ctx, span)
+	spans, ctx := telemetry.StartRestSpan(ctx, "PostmarkHandler.processDmarcMonitoringReport")
+	defer spans.Finish()
 
 	// Get attachment, unzip, feed file to dmark analyzer service
 	attachment := emailData.Attachments[0]
@@ -111,13 +108,12 @@ func (h *PostmarkHandler) processDmarcMonitoringReport(ctx context.Context, emai
 }
 
 func (h *PostmarkHandler) buildDMARCReport(ctx context.Context, report dmarcstats.Report, provider string) models.DMARCMonitoring {
-	span, ctx := tracing.StartTracerSpan(ctx, "PostmarkHandler.buildDMARCReport")
-	defer span.Finish()
-	tracing.SetDefaultRestSpanTags(ctx, span)
+	spans, ctx := telemetry.StartRestSpan(ctx, "PostmarkHandler.buildDMARCReport")
+	defer spans.Finish()
 
 	tenant, err := h.svc.DomainService.GetTenantForMailstackDomain(ctx, report.Domain)
 	if err != nil {
-		tracing.TraceErr(span, fmt.Errorf("unable to get tenant for domain %s: %v", report.Domain, err))
+		spans.TraceError(fmt.Errorf("unable to get tenant for domain %s: %v", report.Domain, err))
 	}
 
 	jsonReport, _ := json.Marshal(report)

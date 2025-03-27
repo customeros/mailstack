@@ -3,10 +3,8 @@ package repository
 import (
 	"context"
 
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"gorm.io/gorm"
@@ -38,40 +36,35 @@ func NewDomainRepository(db *gorm.DB) DomainRepository {
 }
 
 func (r *domainRepository) CreateMailstackReputationScore(ctx context.Context, tenant string, score *models.MailstackReputation) error {
-	span, _ := opentracing.StartSpanFromContext(ctx, "DomainRepository.CreateMailstackReputationScore")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	tracing.TagTenant(span, tenant)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "DomainRepository.CreateMailstackReputationScore")
+	defer spans.Finish()
 
 	err := r.db.Create(&score).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return err
 	}
 	return nil
 }
 
 func (r *domainRepository) CreateDMARCReport(ctx context.Context, tenant string, report *models.DMARCMonitoring) error {
-	span, _ := opentracing.StartSpanFromContext(ctx, "DomainRepository.CreateDMARCReport")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	tracing.TagTenant(span, tenant)
+	spans, _ := telemetry.StartPostgresSpan(ctx, "DomainRepository.CreateDMARCReport")
+	defer spans.Finish()
 
 	now := utils.Now()
 	report.CreatedAt = now
 
 	err := r.db.Create(&report).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return err
 	}
 	return nil
 }
 
 func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.RegisterDomain")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.RegisterDomain")
+	defer spans.Finish()
 
 	var exists bool
 	err := r.db.WithContext(ctx).
@@ -80,7 +73,7 @@ func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain st
 		Where("tenant = ? AND domain = ?", tenant, domain).
 		Find(&exists).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error checking existing domain"))
+		spans.TraceError(errors.Wrap(err, "db error checking existing domain"))
 		return nil, err
 	}
 	if exists {
@@ -98,7 +91,7 @@ func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain st
 
 	err = r.db.WithContext(ctx).Create(&mailStackDomain).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
@@ -106,10 +99,9 @@ func (r *domainRepository) RegisterDomain(ctx context.Context, tenant, domain st
 }
 
 func (r *domainRepository) CheckDomainOwnership(ctx context.Context, tenant, domain string) (bool, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.CheckDomainOwnership")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.CheckDomainOwnership")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
@@ -118,23 +110,22 @@ func (r *domainRepository) CheckDomainOwnership(ctx context.Context, tenant, dom
 	if err != nil {
 		// If the record is not found, return false without an error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			span.LogFields(tracingLog.Bool("response.exists", false))
+			spans.LogKV("response.exists", false)
 			return false, nil
 		}
 		// If any other error occurs, log and trace it
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return false, err
 	}
 
 	// If the record is found, return true
-	span.LogFields(tracingLog.Bool("response.exists", true))
+	spans.LogKV("response.exists", true)
 	return true, nil
 }
 
 func (r *domainRepository) GetActiveDomains(ctx context.Context, tenant string) ([]models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetActiveDomains")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.GetActiveDomains")
+	defer spans.Finish()
 
 	var mailStackDomains []models.MailStackDomain
 	err := r.db.WithContext(ctx).
@@ -142,19 +133,18 @@ func (r *domainRepository) GetActiveDomains(ctx context.Context, tenant string) 
 		Order("created_at DESC").
 		Find(&mailStackDomains).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
-	span.LogFields(tracingLog.Int("response.count", len(mailStackDomains)))
+	spans.LogKV("response.count", len(mailStackDomains))
 	return mailStackDomains, nil
 }
 
 func (r *domainRepository) MarkConfigured(ctx context.Context, tenant, domain string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.MarkConfigured")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.MarkConfigured")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	err := r.db.WithContext(ctx).
 		Model(&models.MailStackDomain{}).
@@ -163,7 +153,7 @@ func (r *domainRepository) MarkConfigured(ctx context.Context, tenant, domain st
 		UpdateColumn("updated_at", utils.Now()).
 		Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return err
 	}
 
@@ -171,10 +161,9 @@ func (r *domainRepository) MarkConfigured(ctx context.Context, tenant, domain st
 }
 
 func (r *domainRepository) SetDkimKeys(ctx context.Context, tenant, domain, dkimPublic, dkimPrivate string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.SetDkimKeys")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.SetDkimKeys")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	err := r.db.WithContext(ctx).
 		Model(&models.MailStackDomain{}).
@@ -184,7 +173,7 @@ func (r *domainRepository) SetDkimKeys(ctx context.Context, tenant, domain, dkim
 		UpdateColumn("updated_at", utils.Now()).
 		Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return err
 	}
 
@@ -192,10 +181,9 @@ func (r *domainRepository) SetDkimKeys(ctx context.Context, tenant, domain, dkim
 }
 
 func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string) (*models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetDomain")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.GetDomain")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
@@ -203,22 +191,21 @@ func (r *domainRepository) GetDomain(ctx context.Context, tenant, domain string)
 		First(&mailStackDomain).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			span.LogFields(tracingLog.Bool("response.found", false))
+			spans.LogKV("response.found", false)
 			return nil, nil
 		}
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
-	span.LogFields(tracingLog.Bool("response.found", true))
+	spans.LogKV("response.found", true)
 	return &mailStackDomain, nil
 }
 
 func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain string) (*models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetDomainCrossTenant")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.GetDomainCrossTenant")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	var mailStackDomain models.MailStackDomain
 	err := r.db.WithContext(ctx).
@@ -228,7 +215,7 @@ func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain stri
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
@@ -236,9 +223,8 @@ func (r *domainRepository) GetDomainCrossTenant(ctx context.Context, domain stri
 }
 
 func (r *domainRepository) GetAllActiveDomainsCrossTenant(ctx context.Context) ([]models.MailStackDomain, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "DomainRepository.GetAllActiveDomainsCrossTenant")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "DomainRepository.GetAllActiveDomainsCrossTenant")
+	defer spans.Finish()
 
 	var mailStackDomains []models.MailStackDomain
 	err := r.db.WithContext(ctx).
@@ -246,10 +232,10 @@ func (r *domainRepository) GetAllActiveDomainsCrossTenant(ctx context.Context) (
 		Where("configured = ?", true).
 		Find(&mailStackDomains).Error
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "db error"))
+		spans.TraceError(errors.Wrap(err, "db error"))
 		return nil, err
 	}
 
-	span.LogFields(tracingLog.Int("result.count", len(mailStackDomains)))
+	spans.LogKV("result.count", len(mailStackDomains))
 	return mailStackDomains, nil
 }

@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 type mailboxSyncRepository struct {
@@ -23,9 +22,10 @@ func NewMailboxSyncRepository(db *gorm.DB) interfaces.MailboxSyncRepository {
 
 // GetSyncState retrieves the sync state for a specific mailbox and folder
 func (r *mailboxSyncRepository) GetSyncState(ctx context.Context, mailboxID, folderName string) (*models.MailboxSyncState, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.GetSyncState")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.GetSyncState")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("folder_name", folderName)
 
 	var state models.MailboxSyncState
 	result := r.db.WithContext(ctx).
@@ -36,7 +36,7 @@ func (r *mailboxSyncRepository) GetSyncState(ctx context.Context, mailboxID, fol
 		if result.Error == gorm.ErrRecordNotFound {
 			return nil, nil // No sync state yet
 		}
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return nil, fmt.Errorf("failed to get sync state: %w", result.Error)
 	}
 
@@ -45,9 +45,10 @@ func (r *mailboxSyncRepository) GetSyncState(ctx context.Context, mailboxID, fol
 
 // SaveSyncState saves the sync state for a mailbox folder
 func (r *mailboxSyncRepository) SaveSyncState(ctx context.Context, state *models.MailboxSyncState) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.SaveSyncState")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.SaveSyncState")
+	defer spans.Finish()
+	spans.TagEntity(state.MailboxID)
+	spans.TagString("folder_name", state.FolderName)
 
 	// Set the last sync time
 	state.LastSync = time.Now()
@@ -68,7 +69,7 @@ func (r *mailboxSyncRepository) SaveSyncState(ctx context.Context, state *models
 	}
 
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return fmt.Errorf("failed to save sync state: %w", result.Error)
 	}
 
@@ -77,16 +78,17 @@ func (r *mailboxSyncRepository) SaveSyncState(ctx context.Context, state *models
 
 // DeleteSyncState deletes the sync state for a mailbox folder
 func (r *mailboxSyncRepository) DeleteSyncState(ctx context.Context, mailboxID, folderName string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.DeleteSyncState")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.DeleteSyncState")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("folder_name", folderName)
 
 	result := r.db.WithContext(ctx).
 		Where("mailbox_id = ? AND folder_name = ?", mailboxID, folderName).
 		Delete(&models.MailboxSyncState{})
 
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return fmt.Errorf("failed to delete sync state: %w", result.Error)
 	}
 
@@ -95,16 +97,16 @@ func (r *mailboxSyncRepository) DeleteSyncState(ctx context.Context, mailboxID, 
 
 // DeleteMailboxSyncStates deletes all sync states for a mailbox
 func (r *mailboxSyncRepository) DeleteMailboxSyncStates(ctx context.Context, mailboxID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.DeleteMailboxSyncStates")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.DeleteMailboxSyncStates")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
 
 	result := r.db.WithContext(ctx).
 		Where("mailbox_id = ?", mailboxID).
 		Delete(&models.MailboxSyncState{})
 
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return fmt.Errorf("failed to delete mailbox sync states: %w", result.Error)
 	}
 
@@ -113,13 +115,12 @@ func (r *mailboxSyncRepository) DeleteMailboxSyncStates(ctx context.Context, mai
 
 // GetAllSyncStates gets all sync states
 func (r *mailboxSyncRepository) GetAllSyncStates(ctx context.Context) (map[string]map[string]uint32, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.GetAllSyncStates")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.GetAllSyncStates")
+	defer spans.Finish()
 
 	var states []models.MailboxSyncState
 	if err := r.db.WithContext(ctx).Find(&states).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, fmt.Errorf("failed to get all sync states: %w", err)
 	}
 
@@ -136,13 +137,13 @@ func (r *mailboxSyncRepository) GetAllSyncStates(ctx context.Context) (map[strin
 
 // GetMailboxSyncStates gets all sync states for a mailbox
 func (r *mailboxSyncRepository) GetMailboxSyncStates(ctx context.Context, mailboxID string) (map[string]uint32, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxSyncRepository.GetMailboxSyncStates")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxSyncRepository.GetMailboxSyncStates")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
 
 	var states []models.MailboxSyncState
 	if err := r.db.WithContext(ctx).Where("mailbox_id = ?", mailboxID).Find(&states).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, fmt.Errorf("failed to get mailbox sync states: %w", err)
 	}
 

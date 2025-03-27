@@ -7,12 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -27,9 +26,8 @@ func NewEmailRepository(db *gorm.DB) interfaces.EmailRepository {
 }
 
 func (r *emailRepository) Create(ctx context.Context, email *models.Email) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.Create")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.Create")
+	defer spans.Finish()
 
 	if email == nil {
 		return "", nil
@@ -51,20 +49,20 @@ func (r *emailRepository) Create(ctx context.Context, email *models.Email) (stri
 
 	if err == nil {
 		// Email already exists
-		span.SetTag("duplicate", true)
+		spans.LogKV("duplicate", true)
 		return existingEmail.ID, nil // Return the ID of the existing email
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		// Some other error occurred
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
 	// Create the email if it doesn't exist
 	result := r.db.WithContext(ctx).Create(email)
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return "", result.Error
 	}
 
@@ -73,16 +71,16 @@ func (r *emailRepository) Create(ctx context.Context, email *models.Email) (stri
 
 // GetByID retrieves an email by its ID
 func (r *emailRepository) GetByID(ctx context.Context, id string) (*models.Email, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.GetByID")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.GetByID")
+	defer spans.Finish()
+	spans.TagEntity(id)
 
 	var email models.Email
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&email).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return &email, nil
@@ -90,9 +88,11 @@ func (r *emailRepository) GetByID(ctx context.Context, id string) (*models.Email
 
 // GetByUID retrieves an email by its UID within a specific mailbox and folder
 func (r *emailRepository) GetByUID(ctx context.Context, mailboxID, folder string, uid uint32) (*models.Email, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.GetByUID")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.GetByUID")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("folder", folder)
+	spans.LogKV("uid", int(uid))
 
 	var email models.Email
 	if err := r.db.WithContext(ctx).
@@ -101,7 +101,7 @@ func (r *emailRepository) GetByUID(ctx context.Context, mailboxID, folder string
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return &email, nil
@@ -109,9 +109,9 @@ func (r *emailRepository) GetByUID(ctx context.Context, mailboxID, folder string
 
 // GetByMessageID retrieves an email by its Message-ID header
 func (r *emailRepository) GetByMessageID(ctx context.Context, messageID string) (*models.Email, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.GetByMessageID")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.GetByMessageID")
+	defer spans.Finish()
+	spans.TagEntity(messageID)
 
 	messageID = strings.Trim(messageID, "<>")
 
@@ -120,7 +120,7 @@ func (r *emailRepository) GetByMessageID(ctx context.Context, messageID string) 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 	return &email, nil
@@ -128,9 +128,9 @@ func (r *emailRepository) GetByMessageID(ctx context.Context, messageID string) 
 
 // ListByMailbox retrieves emails for a specific mailbox with pagination
 func (r *emailRepository) ListByMailbox(ctx context.Context, mailboxID string, limit, offset int) ([]*models.Email, int64, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.ListByMailbox")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.ListByMailbox")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
 
 	var emails []*models.Email
 	var count int64
@@ -139,7 +139,7 @@ func (r *emailRepository) ListByMailbox(ctx context.Context, mailboxID string, l
 	if err := r.db.WithContext(ctx).Model(&models.Email{}).
 		Where("mailbox_id = ?", mailboxID).
 		Count(&count).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -150,7 +150,7 @@ func (r *emailRepository) ListByMailbox(ctx context.Context, mailboxID string, l
 		Limit(limit).
 		Offset(offset).
 		Find(&emails).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -159,9 +159,10 @@ func (r *emailRepository) ListByMailbox(ctx context.Context, mailboxID string, l
 
 // ListByFolder retrieves emails for a specific mailbox and folder with pagination
 func (r *emailRepository) ListByFolder(ctx context.Context, mailboxID, folder string, limit, offset int) ([]*models.Email, int64, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.ListByFolder")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.ListByFolder")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("folder", folder)
 
 	var emails []*models.Email
 	var count int64
@@ -170,7 +171,7 @@ func (r *emailRepository) ListByFolder(ctx context.Context, mailboxID, folder st
 	if err := r.db.WithContext(ctx).Model(&models.Email{}).
 		Where("mailbox_id = ? AND folder = ?", mailboxID, folder).
 		Count(&count).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -181,7 +182,7 @@ func (r *emailRepository) ListByFolder(ctx context.Context, mailboxID, folder st
 		Limit(limit).
 		Offset(offset).
 		Find(&emails).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -190,9 +191,9 @@ func (r *emailRepository) ListByFolder(ctx context.Context, mailboxID, folder st
 
 // ListByThread retrieves all emails in a conversation thread
 func (r *emailRepository) ListByThread(ctx context.Context, threadID string) ([]*models.Email, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.ListByThread")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.ListByThread")
+	defer spans.Finish()
+	spans.TagEntity(threadID)
 
 	var emails []*models.Email
 
@@ -200,7 +201,7 @@ func (r *emailRepository) ListByThread(ctx context.Context, threadID string) ([]
 		Where("thread_id = ?", threadID).
 		Order("received_at ASC").
 		Find(&emails).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -209,9 +210,11 @@ func (r *emailRepository) ListByThread(ctx context.Context, threadID string) ([]
 
 // Search searches emails by query string
 func (r *emailRepository) Search(ctx context.Context, query string, limit, offset int) ([]*models.Email, int64, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.Search")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.Search")
+	defer spans.Finish()
+	spans.LogKV("query", query)
+	spans.LogKV("limit", limit)
+	spans.LogKV("offset", offset)
 
 	var emails []*models.Email
 	var count int64
@@ -224,7 +227,7 @@ func (r *emailRepository) Search(ctx context.Context, query string, limit, offse
 	if err := r.db.WithContext(ctx).Model(&models.Email{}).
 		Where(searchCondition, searchParam, searchParam, searchParam, searchParam).
 		Count(&count).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -235,7 +238,7 @@ func (r *emailRepository) Search(ctx context.Context, query string, limit, offse
 		Limit(limit).
 		Offset(offset).
 		Find(&emails).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, 0, err
 	}
 
@@ -244,21 +247,21 @@ func (r *emailRepository) Search(ctx context.Context, query string, limit, offse
 
 // Update updates an email record
 func (r *emailRepository) Update(ctx context.Context, email *models.Email) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailRepository.Update")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailRepository.Update")
+	defer spans.Finish()
 
 	if email == nil {
 		err := errors.New("email cannot be nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	if email.ID == "" {
 		err := errors.New("email ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
+	spans.TagEntity(email.ID)
 
 	// Update timestamp
 	email.UpdatedAt = time.Now()
@@ -266,7 +269,7 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 	// Start a transaction
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
+		spans.TraceError(tx.Error)
 		return tx.Error
 	}
 
@@ -279,14 +282,14 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 		Find(&exists).Error
 	if err != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	if !exists {
 		tx.Rollback()
 		err := fmt.Errorf("email with ID %s not found", email.ID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -306,7 +309,7 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 
 	if result.Error != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return result.Error
 	}
 
@@ -314,13 +317,13 @@ func (r *emailRepository) Update(ctx context.Context, email *models.Email) error
 	if result.RowsAffected != 1 {
 		tx.Rollback()
 		err := fmt.Errorf("expected to update 1 row, but updated %d", result.RowsAffected)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 

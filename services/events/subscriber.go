@@ -9,10 +9,14 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -87,39 +91,46 @@ func (r *RabbitMQSubscriber) listenQueueWithExclusive(queueName string, exclusiv
 				time.Sleep(5 * time.Second)
 				continue
 			}
-			defer channel.Close()
 
-			msgs, err := channel.Consume(
-				queueName, // queue
-				"",        // consumer tag
-				false,     // auto-ack
-				exclusive, // exclusive
-				false,     // no-local
-				false,     // no-wait
-				nil,       // args
-			)
-			if err != nil {
-				if exclusive && strings.Contains(err.Error(), "ACCESS_REFUSED") && strings.Contains(err.Error(), "exclusive") {
-					r.logger.Warnf("Exclusive consumer conflict for queue %s. Only one instance can consume exclusively.", queueName)
-					time.Sleep(10 * time.Second)
-					continue
-				}
-				r.logger.Errorf("Failed to register consumer on queue %s: %v. Retrying...", queueName, err)
+			if err := r.consumeMessages(channel, queueName, exclusive); err != nil {
+				channel.Close()
 				time.Sleep(5 * time.Second)
 				continue
 			}
-
-			r.logger.Infof("Listening for messages on queue %s", queueName)
-
-			for d := range msgs {
-				r.handleMessage(d, queueName)
-			}
-
-			r.logger.Warnf("Connection lost for queue %s. Reconnecting...", queueName)
-			time.Sleep(5 * time.Second)
 		}
 	}()
 
+	return nil
+}
+
+func (r *RabbitMQSubscriber) consumeMessages(channel *amqp091.Channel, queueName string, exclusive bool) error {
+	defer channel.Close()
+
+	msgs, err := channel.Consume(
+		queueName, // queue
+		"",        // consumer tag
+		false,     // auto-ack
+		exclusive, // exclusive
+		false,     // no-local
+		false,     // no-wait
+		nil,       // args
+	)
+	if err != nil {
+		if exclusive && strings.Contains(err.Error(), "ACCESS_REFUSED") && strings.Contains(err.Error(), "exclusive") {
+			r.logger.Warnf("Exclusive consumer conflict for queue %s. Only one instance can consume exclusively.", queueName)
+			return err
+		}
+		r.logger.Errorf("Failed to register consumer on queue %s: %v. Retrying...", queueName, err)
+		return err
+	}
+
+	r.logger.Infof("Listening for messages on queue %s", queueName)
+
+	for d := range msgs {
+		r.handleMessage(d, queueName)
+	}
+
+	r.logger.Warnf("Connection lost for queue %s. Reconnecting...", queueName)
 	return nil
 }
 
@@ -150,10 +161,39 @@ func (r *RabbitMQSubscriber) processMessage(d amqp091.Delivery, queueName string
 		UserEmail: event.Metadata.UserEmail,
 	})
 
-	ctx, span := tracing.StartRabbitMQMessageTracerSpanWithHeader(ctx, "RabbitMQSubscriber.ProcessMessage", event.Metadata.UberTraceId)
-	defer span.Finish()
-	span.LogKV("event_type", event.Event.EventType)
-	span.LogKV("queue_name", queueName)
+	// Extract Jaeger trace context
+	jaegerCtx, jaegerSpan := tracing.StartRabbitMQMessageTracerSpanWithHeader(ctx, "RabbitMQSubscriber.ProcessMessage", event.Metadata.UberTraceId)
+	defer jaegerSpan.Finish()
+
+	// Extract OpenTelemetry trace context
+	otelCtx := otel.GetTextMapPropagator().Extract(jaegerCtx, propagation.HeaderCarrier(map[string][]string{
+		"traceparent": {event.Metadata.OTelTraceId},
+		"tracestate":  {event.Metadata.OTelSpanId},
+	}))
+
+	// Start OpenTelemetry span
+	tracer := otel.Tracer("github.com/customeros/mailstack")
+	_, otelSpan := tracer.Start(otelCtx, "RabbitMQSubscriber.ProcessMessage",
+		trace.WithAttributes(
+			telemetry.GetDefaultServiceSpanAttributes(otelCtx)...,
+		),
+	)
+	defer otelSpan.End()
+
+	// Create Spans struct for telemetry operations
+	spans := &telemetry.Spans{
+		Jaeger: jaegerSpan,
+		OTel:   otelSpan,
+	}
+
+	// Log event details
+	spans.LogKV(
+		"event_type", event.Event.EventType,
+		"queue_name", queueName,
+		"uber_trace_id", event.Metadata.UberTraceId,
+		"otel_trace_id", event.Metadata.OTelTraceId,
+		"otel_span_id", event.Metadata.OTelSpanId,
+	)
 
 	// Find the appropriate listener
 	r.listenerMutex.RLock()
@@ -172,7 +212,7 @@ func (r *RabbitMQSubscriber) processMessage(d amqp091.Delivery, queueName string
 		return nil // Wrong queue, acknowledge the message
 	}
 
-	return listener.Handle(ctx, event)
+	return listener.Handle(otelCtx, event)
 }
 
 func (r *RabbitMQSubscriber) connect() error {

@@ -12,33 +12,31 @@ import (
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
-	opentracing "github.com/opentracing/opentracing-go"
 
 	internalerrors "github.com/customeros/mailstack/internal/errors"
 )
 
 // AddMailbox is the resolver for the addMailbox field.
 func (r *mutationResolver) AddMailbox(ctx context.Context, input graphql_model.MailboxInput) (*graphql_model.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mutationResolver.AddMailbox")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+	spans, ctx := telemetry.StartGraphQLSpan(ctx, "mutationResolver.AddMailbox")
+	defer spans.Finish()
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
-		tracing.TraceErr(span, errors.New("tenant not set"))
+		spans.TraceError(errors.New("tenant not set"))
 		return nil, api_errors.NewError("tenant not set", api_errors.CodeBadInput, nil)
 	}
 	userId := utils.GetUserIdFromContext(ctx)
 	if userId == "" {
-		tracing.TraceErr(span, errors.New("userId not set"))
+		spans.TraceError(errors.New("userId not set"))
 		return nil, api_errors.NewError("usedId not set", api_errors.CodeBadInput, nil)
 	}
 
 	mailbox, err := r.services.MailboxService.EnrollMailbox(ctx, mappers.MapGraphMailboxInputToGorm(&input))
 	if err != nil || mailbox == nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 
 		switch err {
 		case internalerrors.ErrMailboxExists:
