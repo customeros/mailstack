@@ -696,3 +696,30 @@ func RecoverAndLog(ctx context.Context, spans *Spans, logger logger.Logger) {
 		// Do not re-panic - allow the application to continue running
 	}
 }
+
+// GetDefaultServiceSpanAttributes returns default attributes for service spans
+func GetDefaultServiceSpanAttributes(ctx context.Context) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String("service.name", "mailstack"),
+	}
+
+	if tenant := utils.GetTenantFromContext(ctx); tenant != "" {
+		attrs = append(attrs, attribute.String("tenant", tenant))
+	}
+	if userID := utils.GetUserIdFromContext(ctx); userID != "" {
+		attrs = append(attrs, attribute.String("user_id", userID))
+	}
+	if userEmail := utils.GetUserEmailFromContext(ctx); userEmail != "" {
+		attrs = append(attrs, attribute.String("user_email", userEmail))
+	}
+
+	return attrs
+}
+
+// SetDefaultServiceSpanAttributes sets default attributes on a span
+func SetDefaultServiceSpanAttributes(ctx context.Context, span trace.Span) {
+	if span == nil {
+		return
+	}
+	span.SetAttributes(GetDefaultServiceSpanAttributes(ctx)...)
+}

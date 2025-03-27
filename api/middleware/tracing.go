@@ -4,8 +4,11 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 )
 
@@ -15,34 +18,52 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 		// Get existing custom context if any
 		existingCtx := c.Request.Context()
 
-		// Start span using existing utility with parent context
-		ctx, span := tracing.StartHttpServerTracerSpanWithHeader(
-			existingCtx, // Use existing context instead of parentCtx to preserve values
+		// Start Jaeger span using existing utility with parent context
+		jaegerCtx, jaegerSpan := tracing.StartHttpServerTracerSpanWithHeader(
+			existingCtx,
 			c.Request.Method+" "+c.FullPath(),
 			c.Request.Header,
 		)
-		defer span.Finish()
+		defer jaegerSpan.Finish()
 
-		// Tag as REST component
-		tracing.TagComponentRest(span)
+		// Start OpenTelemetry span
+		tracer := otel.Tracer("github.com/customeros/mailstack")
+		otelCtx, otelSpan := tracer.Start(jaegerCtx, c.Request.Method+" "+c.FullPath(),
+			trace.WithAttributes(
+				telemetry.GetDefaultServiceSpanAttributes(jaegerCtx)...,
+			),
+		)
+
+		// Extract OpenTelemetry trace context from headers
+		otelCtx = otel.GetTextMapPropagator().Extract(otelCtx, propagation.HeaderCarrier(c.Request.Header))
+		defer otelSpan.End()
+
+		// Create Spans struct for telemetry operations
+		spans := &telemetry.Spans{
+			Jaeger: jaegerSpan,
+			OTel:   otelSpan,
+		}
+		// Tag as REST component for both spans
+		telemetry.TagComponentREST(spans)
 
 		// Set default span tags (tenant, user-id, user-email)
-		tracing.SetDefaultServiceSpanTags(ctx, span)
+		tracing.SetDefaultServiceSpanTags(jaegerCtx, jaegerSpan)
+		telemetry.SetDefaultServiceSpanAttributes(jaegerCtx, otelSpan)
 
 		// Add entity ID if present in URL params
 		if id := c.Param("id"); id != "" {
-			tracing.TagEntity(span, id)
+			spans.TagEntity(id)
 		}
 
-		// Store span in context while preserving existing context values
-		c.Request = c.Request.WithContext(ctx)
+		// Store both spans in context while preserving existing context values
+		c.Request = c.Request.WithContext(otelCtx)
 
 		// Process request
 		c.Next()
 
 		// Add response status
 		if c.Writer.Status() >= 400 {
-			tracing.TraceErr(span, nil, log.String("event", "error"))
+			spans.TraceError(nil)
 		}
 	}
 }
