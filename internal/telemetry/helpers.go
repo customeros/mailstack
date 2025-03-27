@@ -65,7 +65,7 @@ func startSpan(ctx context.Context, operationName string) (*Spans, context.Conte
 	}
 
 	// Start OpenTelemetry span
-	tracer := otel.Tracer("") // Empty string for no scope name
+	tracer := otel.Tracer("github.com/customeros/mailstack")
 	otelCtx, otelSpan := tracer.Start(ctx, operationName)
 	otelSpan.SetAttributes(
 		attribute.String("service.name", "mailstack"),
