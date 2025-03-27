@@ -12,8 +12,6 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/dto"
@@ -21,7 +19,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/services/events"
 )
@@ -58,12 +56,11 @@ const (
 
 // Start initializes the service and connects to mailboxes
 func (s *IMAPService) Start(ctx context.Context) error {
-	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.Start")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.Start", telemetry.WithNewRoot())
+	defer spans.Finish()
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	span.LogFields(tracingLog.Int("mailbox_count", len(s.mailboxConfigs)))
+	spans.LogKV("mailbox_count", len(s.mailboxConfigs))
 
 	// Start each mailbox sequentially for easier debugging
 	for id, config := range s.mailboxConfigs {
@@ -132,13 +129,12 @@ func (s *IMAPService) Status() map[string]interfaces.MailboxStatus {
 
 // AddMailbox adds a new mailbox configuration
 func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.AddMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.AddMailbox")
+	defer spans.Finish()
 
 	if config == nil {
 		err := errors.New("config is nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -148,13 +144,13 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	// Check for duplicate
 	if _, exists := s.mailboxConfigs[config.ID]; exists {
 		err := fmt.Errorf("mailbox with ID %s already exists", config.ID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	if len(config.SyncFolders) == 0 {
 		err := errors.New("sync folders is empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -166,7 +162,7 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 			LastUID:    0,
 		})
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}
@@ -184,9 +180,8 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 
 // RemoveMailbox removes a mailbox configuration
 func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.RemoveMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.RemoveMailbox")
+	defer spans.Finish()
 
 	s.clientsMutex.Lock()
 	defer s.clientsMutex.Unlock()
@@ -201,7 +196,7 @@ func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error
 	delete(s.mailboxConfigs, mailboxID)
 	err := s.repositories.MailboxSyncRepository.DeleteMailboxSyncStates(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -216,10 +211,9 @@ func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error
 // getConnectedClient returns an established IMAP client for the given mailbox
 // It will reuse an existing connection if available, or create a new one if needed
 func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) (*client.Client, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.getConnectedClient")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.SetTag("mailbox_id", mailboxID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.getConnectedClient")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
 
 	// First check if we already have a connected client
 	s.clientsMutex.RLock()
@@ -229,7 +223,7 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 
 	if !configExists {
 		err := fmt.Errorf("no configuration found for mailbox %s", mailboxID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -250,7 +244,7 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 
 		// Connection is broken, log it
 		log.Printf("[%s] Existing connection is broken, will establish a new one: %v", mailboxID, err)
-		span.LogFields(tracingLog.String("connection_status", "broken"), tracingLog.Error(err))
+		spans.LogKV("connection_status", "broken", "error", err)
 
 		// Clean up the broken connection
 		s.clientsMutex.Lock()
@@ -264,7 +258,7 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 
 	client, err := s.connectToIMAPServer(connectCtx, config)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -277,8 +271,8 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 	err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionActive, "")
 	if err != nil {
 		// Log but continue since we have a working connection
-		tracing.TraceErr(span, err)
-		span.LogFields(tracingLog.String("warning", "Failed to update connection status in repository"))
+		spans.TraceError(err)
+		spans.LogKV("warning", "Failed to update connection status in repository")
 	}
 
 	return client, nil
@@ -286,11 +280,10 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 
 // runSingleMailbox handles a single mailbox with reconnection
 func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, config *models.Mailbox) {
-	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.runSingleMailbox")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.TagEntity(span, mailboxID)
-	tracing.LogObjectAsJson(span, "mailbox", config)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.runSingleMailbox", telemetry.WithNewRoot())
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.LogObjectAsJson("mailbox", config)
 
 	// set tenant in context from mailbox if missing
 	if utils.GetTenantFromContext(ctx) == "" {
@@ -336,11 +329,10 @@ func (s *IMAPService) processSingleMailboxIteration(
 	maxBackoff time.Duration,
 ) error {
 	// Create a new span for each iteration of the connection loop
-	span, ctx := tracing.StartTracerSpan(ctx, "IMAPService.processSingleMailboxIteration")
-	defer span.Finish()
-	span.SetTag("mailbox.id", mailboxID)
-	span.LogFields(tracingLog.Int("attempt", *attempts))
-	span.LogFields(tracingLog.String("mailbox.username", config.ImapUsername))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.processSingleMailboxIteration", telemetry.WithNewRoot())
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.LogKV("attempt", *attempts, "mailbox_username", config.ImapUsername)
 
 	*attempts++
 	log.Printf("[%s] Connection attempt #%d", mailboxID, *attempts)
@@ -348,7 +340,7 @@ func (s *IMAPService) processSingleMailboxIteration(
 	// Check if we should stop
 	select {
 	case <-ctx.Done():
-		tracing.TraceErr(span, ctx.Err())
+		spans.TraceError(ctx.Err())
 		log.Printf("[%s] Stopping mailbox monitoring due to context cancellation", mailboxID)
 		return ctx.Err()
 	default:
@@ -363,10 +355,10 @@ func (s *IMAPService) processSingleMailboxIteration(
 	client, err := s.connectToIMAPServer(connectCtx, config)
 	if err != nil {
 		log.Printf("[%s] Connection error: %v", mailboxID, err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionNotActive, err.Error())
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 		}
 
 		// Sleep with backoff before reconnecting
@@ -397,14 +389,14 @@ func (s *IMAPService) processSingleMailboxIteration(
 	// Update status
 	err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionActive, "")
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 	}
 
 	// Reset backoff on successful connection
 	*backoff = time.Second
 
 	// Log the folders being processed
-	span.LogFields(tracingLog.String("folders", fmt.Sprintf("%v", config.SyncFolders)))
+	spans.LogKV("folders", fmt.Sprintf("%v", config.SyncFolders))
 
 	// Process each folder sequentially
 	_, connectivityError := s.syncFolders(ctx, client, mailboxID, config.SyncFolders)
@@ -417,23 +409,23 @@ func (s *IMAPService) processSingleMailboxIteration(
 
 		err = s.repositories.MailboxRepository.UpdateConnectionStatus(ctx, mailboxID, enum.ConnectionNotActive, connectivityError.Error())
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 		}
 
-		tracing.TraceErr(span, connectivityError)
+		spans.TraceError(connectivityError)
 		*backoff = 5 * time.Second
 		return connectivityError
 	}
 
-	span.LogFields(tracingLog.String("status", "cycle_complete"))
+	spans.LogKV("status", "cycle_complete")
 	return nil
 }
 
 // connectToIMAPServer establishes a connection to an IMAP server
 func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Mailbox) (*client.Client, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.connectToIMAPServer")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.connectToIMAPServer")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", config.ID)
 
 	// Format server address
 	serverAddr := fmt.Sprintf("%s:%d", config.ImapServer, config.ImapPort)
@@ -459,7 +451,7 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 
 	if err != nil {
 		err := fmt.Errorf("connection error: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -469,7 +461,7 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	if err != nil {
 		c.Logout()
 		err := fmt.Errorf("capability error: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -480,7 +472,7 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	if err != nil {
 		c.Logout()
 		err := fmt.Errorf("login error: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -530,40 +522,39 @@ func (s *IMAPService) processSingleFolder(
 	mailboxID string,
 	folder string,
 ) error {
-	folderSpan, folderCtx := opentracing.StartSpanFromContext(ctx, "IMAPService.processSingleFolder")
-	defer folderSpan.Finish()
-	folderSpan.LogFields(tracingLog.String("folder", folder))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.processSingleFolder")
+	defer spans.Finish()
+	spans.TagString("folder", folder)
 
 	log.Printf("[%s] Processing folder: %s", mailboxID, folder)
 
 	// Use a timeout for folder processing
-	folderCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel() // Ensure cancel is always called
 
-	err := s.processFolder(folderCtx, client, mailboxID, folder)
+	err := s.processFolder(ctx, client, mailboxID, folder)
 	if err != nil {
 		log.Printf("[%s][%s] Error processing folder: %v", mailboxID, folder, err)
-		tracing.TraceErr(folderSpan, err)
+		spans.TraceError(err)
 		return err
 	}
 
-	folderSpan.LogFields(tracingLog.String("result.status", "success"))
+	spans.LogKV("result.status", "success")
 	log.Printf("[%s][%s] Successfully processed folder", mailboxID, folder)
 	return nil
 }
 
 // processFolder handles a single IMAP folder
 func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailboxID, folderName string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.processFolder")
-	defer span.Finish()
-	tracing.TagEntity(span, mailboxID)
-	span.LogFields(tracingLog.String("folder", folderName))
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.processFolder")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.TagString("folder", folderName)
 
 	// Check for nil client
 	if c == nil {
 		err := fmt.Errorf("IMAP client is nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -573,7 +564,7 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 	c.Timeout = 0
 	if err != nil {
 		err = fmt.Errorf("error selecting folder: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -583,7 +574,7 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 	// Get the last synchronized UID
 	syncState, err := s.repositories.MailboxSyncRepository.GetSyncState(ctx, mailboxID, folderName)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -593,7 +584,7 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 		err = s.performInitialSync(ctx, c, mailboxID, folderName)
 		if err != nil {
 			err = fmt.Errorf("error performing initial sync: %w", err)
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	} else {
@@ -602,7 +593,7 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 		err = s.syncNewMessagesSince(ctx, c, mailboxID, folderName, syncState.LastUID)
 		if err != nil {
 			err = fmt.Errorf("error syncing new messages: %w", err)
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return err
 		}
 	}
@@ -614,9 +605,10 @@ func (s *IMAPService) processFolder(ctx context.Context, c *client.Client, mailb
 
 // simplePolling periodically checks for new messages
 func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailboxID, folderName string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.simplePolling")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.simplePolling")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.TagString("folder", folderName)
 
 	log.Printf("[%s][%s] Starting simple polling", mailboxID, folderName)
 
@@ -651,7 +643,7 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 					log.Printf("[%s][%s] NOOP failed, connection likely broken: %v",
 						mailboxID, folderName, err)
 					err = fmt.Errorf("connection health check failed: %w", err)
-					tracing.TraceErr(span, err)
+					spans.TraceError(err)
 					return err
 				}
 
@@ -680,7 +672,7 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 					strings.Contains(err.Error(), "i/o timeout") ||
 					strings.Contains(err.Error(), "connection reset") {
 					err = fmt.Errorf("connection lost: %w", err)
-					span.LogKV("error", err)
+					spans.TraceError(err)
 					return err
 				}
 
@@ -710,7 +702,7 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 						strings.Contains(err.Error(), "i/o timeout") ||
 						strings.Contains(err.Error(), "connection reset") {
 						err = fmt.Errorf("connection lost during fetch: %w", err)
-						span.LogKV("error", err)
+						spans.TraceError(err)
 						return err
 					}
 				}
@@ -732,9 +724,10 @@ func (s *IMAPService) fetchNewMessages(
 	mailboxID, folderName string,
 	from, to uint32,
 ) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.fetchNewMesssages")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.fetchNewMesssages")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.TagString("folder", folderName)
 
 	if from > to {
 		return nil
@@ -796,7 +789,7 @@ func (s *IMAPService) fetchNewMessages(
 	err := <-done
 	if err != nil {
 		err = fmt.Errorf("error fetching messages: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -814,7 +807,7 @@ func (s *IMAPService) fetchNewMessages(
 		LastSync:   utils.Now(),
 	})
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -828,9 +821,10 @@ func (s *IMAPService) syncNewMessagesSince(
 	mailboxID, folderName string,
 	lastUID uint32,
 ) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.syncNewMessagesSince")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.syncNewMessagesSince")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.TagString("folder", folderName)
 
 	// Create search criteria for UIDs greater than lastUID
 	criteria := imap.NewSearchCriteria()
@@ -845,7 +839,7 @@ func (s *IMAPService) syncNewMessagesSince(
 
 	if err != nil {
 		err = fmt.Errorf("error searching for new messages: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -912,7 +906,7 @@ func (s *IMAPService) syncNewMessagesSince(
 	err = <-done
 	if err != nil {
 		err = fmt.Errorf("error fetching messages: %w", err)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -930,7 +924,7 @@ func (s *IMAPService) syncNewMessagesSince(
 		LastSync:   utils.Now(),
 	})
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
