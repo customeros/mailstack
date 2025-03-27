@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/rabbitmq/amqp091-go"
 
@@ -122,13 +121,12 @@ func (r *RabbitMQPublisher) PublishNotification(ctx context.Context, tenant stri
 }
 
 func (r *RabbitMQPublisher) PublishNotificationBulk(ctx context.Context, tenant string, entityIds []string, entityType enum.EntityType, details *utils.EventCompletedDetails) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishEventCompletedBulk")
-	defer span.Finish()
-	tracing.TagTenant(span, tenant)
+	spans, ctx := telemetry.StartProducerSpan(ctx, "RabbitMQPublisher.PublishEventCompletedBulk")
+	defer spans.Finish()
 	if len(entityIds) == 1 {
-		tracing.TagEntity(span, entityIds[0])
+		spans.TagEntity(entityIds[0])
 	}
-	span.LogKV("entityType", entityType, "entityIds", entityIds)
+	spans.LogKV("entityType", entityType, "entityIds", entityIds)
 
 	event := dto.EventCompleted{
 		Tenant:     tenant,
@@ -147,10 +145,10 @@ func (r *RabbitMQPublisher) PublishNotificationBulk(ctx context.Context, tenant 
 
 	err := r.publishMessageOnExchange(ctx, event, ExchangeNotifications, "")
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		r.logger.Errorf("Failed to publish event completed notification: %v", err)
 	}
-	span.LogKV("result.published", true)
+	spans.LogKV("result.published", true)
 }
 
 func (r *RabbitMQPublisher) setupPublishChannel() error {
@@ -468,6 +466,8 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 		},
 		Metadata: dto.EventMetadata{
 			UberTraceId: tracingData["uber-trace-id"],
+			OTelTraceId: telemetry.ExtractOTelTraceID(spans.OTel),
+			OTelSpanId:  telemetry.ExtractOTelSpanID(spans.OTel),
 			UserId:      utils.GetUserIdFromContext(ctx),
 			UserEmail:   utils.GetUserEmailFromContext(ctx),
 			Timestamp:   utils.Now().Format(time.RFC3339),

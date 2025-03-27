@@ -54,13 +54,13 @@ const (
 
 // SpanOptions defines options for span creation
 type SpanOptions struct {
-	ForceNewTrace bool
+	NewRoot bool
 }
 
 // WithForceNewTrace returns a SpanOptions that forces creation of a new trace
-func WithForceNewTrace() SpanOptions {
+func WithNewRoot() SpanOptions {
 	return SpanOptions{
-		ForceNewTrace: true,
+		NewRoot: true,
 	}
 }
 
@@ -68,7 +68,7 @@ func WithForceNewTrace() SpanOptions {
 func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
 	// Start Jaeger span
 	var jaegerSpan opentracing.Span
-	if len(opts) > 0 && opts[0].ForceNewTrace {
+	if len(opts) > 0 && opts[0].NewRoot {
 		// Force new trace by creating a new root span
 		jaegerSpan = opentracing.StartSpan(operationName)
 		ctx = opentracing.ContextWithSpan(ctx, jaegerSpan)
@@ -88,9 +88,9 @@ func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (
 	tracer := otel.Tracer("github.com/customeros/mailstack")
 	var otelCtx context.Context
 	var otelSpan trace.Span
-	if len(opts) > 0 && opts[0].ForceNewTrace {
-		// Force new trace by creating a new root span
-		otelCtx, otelSpan = tracer.Start(context.Background(), operationName)
+	if len(opts) > 0 && opts[0].NewRoot {
+		// Force new trace by using WithNewRoot() option while keeping the context
+		otelCtx, otelSpan = tracer.Start(ctx, operationName, trace.WithNewRoot())
 	} else {
 		otelCtx, otelSpan = tracer.Start(ctx, operationName)
 	}

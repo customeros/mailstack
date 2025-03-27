@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"reflect"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/dto"

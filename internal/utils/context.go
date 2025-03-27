@@ -9,6 +9,13 @@ import (
 	er "github.com/customeros/mailstack/internal/errors"
 )
 
+type contextKey string
+
+const (
+	tenantKey contextKey = "tenant"
+	userIDKey contextKey = "user_id"
+)
+
 // TenantHeaders is a list of possible header names for tenant identification
 var TenantHeaders = []string{
 	"X-TENANT",
@@ -123,4 +130,14 @@ func WithTenantContext(ctx context.Context, tenant string) context.Context {
 	return WithCustomContext(ctx, &CustomContext{
 		Tenant: tenant,
 	})
+}
+
+// WithTenant adds tenant to context
+func WithTenant(ctx context.Context, tenant string) context.Context {
+	return context.WithValue(ctx, tenantKey, tenant)
+}
+
+// WithUserId adds user ID to context
+func WithUserId(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
 }
