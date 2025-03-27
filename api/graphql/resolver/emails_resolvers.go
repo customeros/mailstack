@@ -12,32 +12,30 @@ import (
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
 	"github.com/customeros/mailstack/internal/enum"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
-	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // SendEmail is the resolver for the sendEmail field.
 func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.EmailInput) (*graphql_model.EmailResult, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.SendEmail")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+	spans, ctx := telemetry.StartGraphQLSpan(ctx, "queryResolver.SendEmail")
+	defer spans.Finish()
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
-		tracing.TraceErr(span, errors.New("tenant not set"))
+		spans.TraceError(errors.New("tenant not set"))
 		return nil, api_errors.NewError("tenant not set", api_errors.CodeBadInput, nil)
 	}
 	userId := utils.GetUserIdFromContext(ctx)
 	if userId == "" {
-		tracing.TraceErr(span, errors.New("userId not set"))
+		spans.TraceError(errors.New("userId not set"))
 		return nil, api_errors.NewError("usedId not set", api_errors.CodeBadInput, nil)
 	}
 
 	var result graphql_model.EmailResult
 	emailID, emailStatus, err := r.services.EmailService.ScheduleSend(ctx, mappers.MapGraphEmailInputToGorm(&input), input.AttachmentIds)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		errStr := err.Error()
 		result.Status = enum.EmailStatusFailed
 		result.Error = &errStr
@@ -52,13 +50,12 @@ func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.Em
 
 // GetAllEmailsInThread is the resolver for the getAllEmailsInThread field.
 func (r *queryResolver) GetAllEmailsInThread(ctx context.Context, threadID string) ([]*graphql_model.EmailMessage, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetEmailsByThread")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+	spans, ctx := telemetry.StartGraphQLSpan(ctx, "queryResolver.GetEmailsByThread")
+	defer spans.Finish()
 
 	emails, err := r.repositories.EmailRepository.ListByThread(ctx, threadID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
 	}
 	if emails == nil {
@@ -70,7 +67,7 @@ func (r *queryResolver) GetAllEmailsInThread(ctx context.Context, threadID strin
 		message := mappers.MapGormEmailToGraph(email)
 		attachments, err := r.repositories.EmailAttachmentRepository.ListByEmail(ctx, email.ID)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return nil, api_errors.NewError("error getting attachment count", api_errors.CodeInternal, nil)
 		}
 		message.AttachmentCount = len(attachments)
@@ -82,13 +79,12 @@ func (r *queryResolver) GetAllEmailsInThread(ctx context.Context, threadID strin
 
 // GetThreadMetadata is the resolver for the getThreadMetadata field.
 func (r *queryResolver) GetThreadMetadata(ctx context.Context, threadID string) (*graphql_model.ThreadMetadata, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "queryResolver.GetThreadMetadata")
-	defer span.Finish()
-	tracing.SetDefaultGraphqlSpanTags(ctx, span)
+	spans, ctx := telemetry.StartGraphQLSpan(ctx, "queryResolver.GetThreadMetadata")
+	defer spans.Finish()
 
 	threadRecord, err := r.repositories.EmailThreadRepository.GetByID(ctx, threadID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, api_errors.NewError("error getting email thread", api_errors.CodeInternal, nil)
 	}
 	if threadRecord == nil {
@@ -97,7 +93,7 @@ func (r *queryResolver) GetThreadMetadata(ctx context.Context, threadID string) 
 
 	attachments, err := r.repositories.EmailAttachmentRepository.ListByThread(ctx, threadRecord.ID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, api_errors.NewError("error getting email attachments", api_errors.CodeInternal, nil)
 	}
 

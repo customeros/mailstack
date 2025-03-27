@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
-	tracingLog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -17,7 +15,7 @@ import (
 	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/services"
 )
@@ -72,9 +70,8 @@ type MailboxRecord struct {
 
 func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "MailboxHandler.GetMailboxes")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "MailboxHandler.GetMailboxes")
+		defer spans.Finish()
 
 		// get domain from query params
 		domain, _ := c.GetQuery("domain")
@@ -83,7 +80,7 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 
 		mailboxes, err := h.services.MailboxService.GetMailboxes(ctx, enum.EmailMailstack, domain, userId)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -116,23 +113,22 @@ func (h *MailboxHandler) GetMailboxes() gin.HandlerFunc {
 
 func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "MailboxHandler.RegisterNewMailbox")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "MailboxHandler.RegisterNewMailbox")
+		defer spans.Finish()
 
 		tenant := utils.GetTenantFromContext(ctx)
 
 		// Parse and validate request body
 		var request NewMailboxRequest
 		if err := c.ShouldBindJSON(&request); err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "Invalid request body"))
+			spans.TraceError(errors.Wrap(err, "Invalid request body"))
 			// log body
 			body, _ := c.GetRawData()
-			span.LogFields(tracingLog.String("request.body", string(body)))
+			spans.LogKV("request.body", string(body))
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		tracing.LogObjectAsJson(span, "request", request)
+		spans.LogObjectAsJson("request", request)
 
 		// validate domain
 		if request.Domain == "" {
@@ -157,7 +153,7 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		// validate username format
 		if err := validateMailboxUsername(username); err != nil {
 			message := "username has wrong format"
-			tracing.TraceErr(span, errors.Wrap(err, message))
+			spans.TraceError(errors.Wrap(err, message))
 			c.JSON(http.StatusBadRequest, gin.H{"error": message})
 			return
 		}
@@ -179,17 +175,17 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, er.ErrDomainNotFound) {
 				message := "domain not found"
-				tracing.TraceErr(span, errors.Wrap(err, message))
+				spans.TraceError(errors.Wrap(err, message))
 				c.JSON(http.StatusNotFound, gin.H{"error": message})
 				return
 			} else if errors.Is(err, er.ErrMailboxExists) {
 				message := "username already exists"
-				tracing.TraceErr(span, errors.Wrap(err, message))
+				spans.TraceError(errors.Wrap(err, message))
 				c.JSON(http.StatusConflict, gin.H{"error": message})
 				return
 			} else {
 				message := "Mailbox setup failed"
-				tracing.TraceErr(span, errors.Wrap(err, message))
+				spans.TraceError(errors.Wrap(err, message))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": message})
 				return
 			}
@@ -197,12 +193,12 @@ func (h *MailboxHandler) RegisterNewMailbox() gin.HandlerFunc {
 
 		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, username+"@"+domain)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
+			spans.TraceError(errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		if mailbox == nil {
-			tracing.TraceErr(span, errors.New("mailbox not created"))
+			spans.TraceError(errors.New("mailbox not created"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "mailbox not created"})
 			return
 		}
@@ -235,13 +231,12 @@ func validateMailboxUsername(username string) error {
 
 func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "MailboxHandler.ConfigureMailbox")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "MailboxHandler.ConfigureMailbox")
+		defer spans.Finish()
 
 		mailboxID := c.Param("id")
 		if mailboxID == "" {
-			tracing.TraceErr(span, errors.New("mailbox ID is required"))
+			spans.TraceError(errors.New("mailbox ID is required"))
 			c.JSON(http.StatusBadRequest, gin.H{"error": "mailbox ID is required"})
 			return
 		}
@@ -256,7 +251,7 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 				c.JSON(http.StatusForbidden, gin.H{"error": "mailbox does not belong to tenant"})
 				return
 			}
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to configure mailbox"})
 			return
 		}
@@ -267,13 +262,12 @@ func (h *MailboxHandler) ConfigureMailbox() gin.HandlerFunc {
 
 func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "MailboxHandler.GetMailboxByEmail")
-		defer span.Finish()
-		tracing.SetDefaultRestSpanTags(ctx, span)
+		spans, ctx := telemetry.StartRestSpan(c.Request.Context(), "MailboxHandler.GetMailboxByEmail")
+		defer spans.Finish()
 
 		email := c.Param("email")
 		if email == "" {
-			tracing.TraceErr(span, errors.New("email is required"))
+			spans.TraceError(errors.New("email is required"))
 			c.JSON(http.StatusBadRequest, gin.H{"error": "email is required"})
 			return
 		}
@@ -281,7 +275,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 		// Split email into username and domain
 		parts := strings.Split(email, "@")
 		if len(parts) != 2 {
-			tracing.TraceErr(span, errors.New("invalid email format"))
+			spans.TraceError(errors.New("invalid email format"))
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email format"})
 			return
 		}
@@ -291,7 +285,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 
 		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, domain+"@"+username)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "Error retrieving mailbox"))
+			spans.TraceError(errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

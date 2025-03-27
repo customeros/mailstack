@@ -52,10 +52,30 @@ const (
 	SpanKindConsumer = "consumer"
 )
 
+// SpanOptions defines options for span creation
+type SpanOptions struct {
+	ForceNewTrace bool
+}
+
+// WithForceNewTrace returns a SpanOptions that forces creation of a new trace
+func WithForceNewTrace() SpanOptions {
+	return SpanOptions{
+		ForceNewTrace: true,
+	}
+}
+
 // Core Span Operations
-func startSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
+func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
 	// Start Jaeger span
-	jaegerSpan, ctx := opentracing.StartSpanFromContext(ctx, operationName)
+	var jaegerSpan opentracing.Span
+	if len(opts) > 0 && opts[0].ForceNewTrace {
+		// Force new trace by creating a new root span
+		jaegerSpan = opentracing.StartSpan(operationName)
+		ctx = opentracing.ContextWithSpan(ctx, jaegerSpan)
+	} else {
+		jaegerSpan, ctx = opentracing.StartSpanFromContext(ctx, operationName)
+	}
+
 	jaegerSpan.SetTag("service.name", "mailstack")
 	if tenant := utils.GetTenantFromContext(ctx); tenant != "" {
 		jaegerSpan.SetTag("tenant", tenant)
@@ -66,7 +86,15 @@ func startSpan(ctx context.Context, operationName string) (*Spans, context.Conte
 
 	// Start OpenTelemetry span
 	tracer := otel.Tracer("github.com/customeros/mailstack")
-	otelCtx, otelSpan := tracer.Start(ctx, operationName)
+	var otelCtx context.Context
+	var otelSpan trace.Span
+	if len(opts) > 0 && opts[0].ForceNewTrace {
+		// Force new trace by creating a new root span
+		otelCtx, otelSpan = tracer.Start(context.Background(), operationName)
+	} else {
+		otelCtx, otelSpan = tracer.Start(ctx, operationName)
+	}
+
 	otelSpan.SetAttributes(
 		attribute.String("service.name", "mailstack"),
 	)
@@ -87,6 +115,15 @@ func startSpan(ctx context.Context, operationName string) (*Spans, context.Conte
 	}, ctx
 }
 
+// Finish ends both Jaeger and OpenTelemetry spans
+func (s *Spans) Finish() {
+	if s == nil {
+		return
+	}
+	FinishSpans(s)
+}
+
+// FinishSpans ends both Jaeger and OpenTelemetry spans
 func FinishSpans(spans *Spans) {
 	if spans == nil {
 		return
@@ -100,57 +137,57 @@ func FinishSpans(spans *Spans) {
 }
 
 // Component-specific Span Starters
-func StartCronSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartCronSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentCronJob(spans)
 	SetSpanKindInternal(spans)
 	return spans, ctx
 }
 
-func StartGraphQLSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartGraphQLSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentGraphQL(spans)
 	SetSpanKindServer(spans)
 	return spans, ctx
 }
 
-func StartPostgresSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartPostgresSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentPostgres(spans)
 	SetSpanKindDatabase(spans)
 	return spans, ctx
 }
 
-func StartClickhouseSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartClickhouseSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentClickhouse(spans)
 	SetSpanKindDatabase(spans)
 	return spans, ctx
 }
 
-func StartServiceSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartServiceSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentService(spans)
 	SetSpanKindInternal(spans)
 	return spans, ctx
 }
 
-func StartRestSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartRestSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentREST(spans)
 	SetSpanKindServer(spans)
 	return spans, ctx
 }
 
-func StartProducerSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartProducerSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentService(spans)
 	SetSpanKindProducer(spans)
 	return spans, ctx
 }
 
-func StartListenerSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName)
+func StartListenerSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+	spans, ctx := startSpan(ctx, operationName, opts...)
 	TagComponentListener(spans)
 	SetSpanKindConsumer(spans)
 	return spans, ctx
