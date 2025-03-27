@@ -6,14 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -30,14 +29,13 @@ func NewEmailThreadRepository(db *gorm.DB) interfaces.EmailThreadRepository {
 
 // Create inserts a new email thread into the database
 func (r *emailThreadRepository) Create(ctx context.Context, thread *models.EmailThread) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.Create")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.Create")
+	defer spans.Finish()
 
 	// Validate input
 	if thread == nil {
 		err := errors.New("thread cannot be nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -57,7 +55,7 @@ func (r *emailThreadRepository) Create(ctx context.Context, thread *models.Email
 
 	// Create the thread
 	if err := r.db.WithContext(ctx).Create(thread).Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return "", err
 	}
 
@@ -66,14 +64,13 @@ func (r *emailThreadRepository) Create(ctx context.Context, thread *models.Email
 
 // GetByID retrieves an email thread by its ID
 func (r *emailThreadRepository) GetByID(ctx context.Context, id string) (*models.EmailThread, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.GetByID")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("thread_id", id)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.GetByID")
+	defer spans.Finish()
+	spans.TagEntity(id)
 
 	if id == "" {
 		err := errors.New("thread ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -82,10 +79,10 @@ func (r *emailThreadRepository) GetByID(ctx context.Context, id string) (*models
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			notFoundErr := fmt.Errorf("thread with ID %s not found", id)
-			tracing.TraceErr(span, notFoundErr)
+			spans.TraceError(notFoundErr)
 			return nil, notFoundErr
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -94,17 +91,16 @@ func (r *emailThreadRepository) GetByID(ctx context.Context, id string) (*models
 
 // GetByMailboxIDsPaginated retrieves threads for an array of mailboxes with pagination
 func (r *emailThreadRepository) GetByMailboxIDs(ctx context.Context, mailboxIDs []string, limit int, offset int) ([]*models.EmailThread, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.GetByMailboxIDsPaginated")
-	defer span.Finish()
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.GetByMailboxIDsPaginated")
+	defer spans.Finish()
 
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("mailbox_ids", strings.Join(mailboxIDs, ","))
-	span.SetTag("limit", limit)
-	span.SetTag("offset", offset)
+	spans.LogKV("mailbox_ids", strings.Join(mailboxIDs, ","))
+	spans.LogKV("limit", limit)
+	spans.LogKV("offset", offset)
 
 	if len(mailboxIDs) == 0 {
 		err := errors.New("mailbox IDs list cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -117,7 +113,7 @@ func (r *emailThreadRepository) GetByMailboxIDs(ctx context.Context, mailboxIDs 
 		Offset(offset).
 		Find(&threads).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -126,15 +122,14 @@ func (r *emailThreadRepository) GetByMailboxIDs(ctx context.Context, mailboxIDs 
 
 // CountByMailboxIDs counts total number of threads across all specified mailboxes
 func (r *emailThreadRepository) CountByMailboxIDs(ctx context.Context, mailboxIDs []string) (int64, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.CountByMailboxIDs")
-	defer span.Finish()
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.CountByMailboxIDs")
+	defer spans.Finish()
 
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("mailbox_ids", strings.Join(mailboxIDs, ","))
+	spans.LogKV("mailbox_ids", strings.Join(mailboxIDs, ","))
 
 	if len(mailboxIDs) == 0 {
 		err := errors.New("mailbox IDs list cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return 0, err
 	}
 
@@ -145,7 +140,7 @@ func (r *emailThreadRepository) CountByMailboxIDs(ctx context.Context, mailboxID
 		Where("mailbox_id IN ?", mailboxIDs).
 		Count(&count).Error
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return 0, err
 	}
 
@@ -154,22 +149,21 @@ func (r *emailThreadRepository) CountByMailboxIDs(ctx context.Context, mailboxID
 
 // Update updates an existing email thread
 func (r *emailThreadRepository) Update(ctx context.Context, thread *models.EmailThread) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.Update")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.Update")
+	defer spans.Finish()
 
 	// Validate input
 	if thread == nil {
 		err := errors.New("thread cannot be nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if thread.ID == "" {
 		err := errors.New("thread ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
-	span.SetTag("thread_id", thread.ID)
+	spans.TagEntity(thread.ID)
 
 	// Update timestamp
 	thread.UpdatedAt = utils.Now()
@@ -177,7 +171,7 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 	// Start a transaction
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
+		spans.TraceError(tx.Error)
 		return tx.Error
 	}
 
@@ -189,13 +183,13 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 		Find(&exists).Error
 	if err != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if !exists {
 		tx.Rollback()
 		err := fmt.Errorf("thread with ID %s not found", thread.ID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -238,14 +232,14 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 
 		if result.Error != nil {
 			tx.Rollback()
-			tracing.TraceErr(span, result.Error)
+			spans.TraceError(result.Error)
 			return result.Error
 		}
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -254,22 +248,21 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 
 // IncrementMessageCount atomically updates a thread with a new message
 func (r *emailThreadRepository) IncrementMessageCount(ctx context.Context, threadID string, messageID string, messageTime time.Time) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.IncrementMessageCount")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("thread_id", threadID)
-	span.SetTag("message_id", messageID)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.IncrementMessageCount")
+	defer spans.Finish()
+	spans.TagEntity(threadID)
+	spans.TagString("message_id", messageID)
 
 	if threadID == "" || messageID == "" {
 		err := errors.New("thread ID and message ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Start a transaction
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
+		spans.TraceError(tx.Error)
 		return tx.Error
 	}
 
@@ -282,10 +275,10 @@ func (r *emailThreadRepository) IncrementMessageCount(ctx context.Context, threa
 		tx.Rollback()
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			notFoundErr := fmt.Errorf("thread with ID %s not found", threadID)
-			tracing.TraceErr(span, notFoundErr)
+			spans.TraceError(notFoundErr)
 			return notFoundErr
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -312,13 +305,13 @@ func (r *emailThreadRepository) IncrementMessageCount(ctx context.Context, threa
 
 	if result.Error != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return result.Error
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -327,14 +320,13 @@ func (r *emailThreadRepository) IncrementMessageCount(ctx context.Context, threa
 
 // GetParticipantsForThread retrieves the list of participants for a thread
 func (r *emailThreadRepository) GetParticipantsForThread(ctx context.Context, threadID string) ([]string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.GetParticipantsForThread")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("thread_id", threadID)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.GetParticipantsForThread")
+	defer spans.Finish()
+	spans.TagEntity(threadID)
 
 	if threadID == "" {
 		err := errors.New("thread ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -346,10 +338,10 @@ func (r *emailThreadRepository) GetParticipantsForThread(ctx context.Context, th
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			notFoundErr := fmt.Errorf("thread with ID %s not found", threadID)
-			tracing.TraceErr(span, notFoundErr)
+			spans.TraceError(notFoundErr)
 			return nil, notFoundErr
 		}
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -358,8 +350,8 @@ func (r *emailThreadRepository) GetParticipantsForThread(ctx context.Context, th
 
 // FindBySubjectAndMailbox finds threads with a matching subject and mailbox
 func (r *emailThreadRepository) FindBySubjectAndMailbox(ctx context.Context, subject string, mailboxID string) ([]*models.EmailThread, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailThreadRepository.FindBySubjectAndMailbox")
-	defer span.Finish()
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "EmailThreadRepository.FindBySubjectAndMailbox")
+	defer spans.Finish()
 
 	var threads []*models.EmailThread
 
@@ -369,7 +361,7 @@ func (r *emailThreadRepository) FindBySubjectAndMailbox(ctx context.Context, sub
 		Find(&threads)
 
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return nil, errors.Wrap(result.Error, "error querying threads by subject")
 	}
 
@@ -378,21 +370,20 @@ func (r *emailThreadRepository) FindBySubjectAndMailbox(ctx context.Context, sub
 
 // MarkThreadAsViewed marks a thread as viewed
 func (r *emailThreadRepository) MarkThreadAsViewed(ctx context.Context, threadID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.MarkThreadAsViewed")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("thread_id", threadID)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.MarkThreadAsViewed")
+	defer spans.Finish()
+	spans.TagEntity(threadID)
 
 	if threadID == "" {
 		err := errors.New("thread ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Start a transaction
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
+		spans.TraceError(tx.Error)
 		return tx.Error
 	}
 
@@ -404,13 +395,13 @@ func (r *emailThreadRepository) MarkThreadAsViewed(ctx context.Context, threadID
 		Find(&exists).Error
 	if err != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if !exists {
 		tx.Rollback()
 		err := fmt.Errorf("thread with ID %s not found", threadID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -426,13 +417,13 @@ func (r *emailThreadRepository) MarkThreadAsViewed(ctx context.Context, threadID
 
 	if result.Error != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return result.Error
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -441,22 +432,21 @@ func (r *emailThreadRepository) MarkThreadAsViewed(ctx context.Context, threadID
 
 // MarkThreadAsDone marks a thread as done
 func (r *emailThreadRepository) MarkThreadAsDone(ctx context.Context, threadID string, isDone bool) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "emailThreadRepository.MarkThreadAsDone")
-	defer span.Finish()
-	tracing.TagComponentPostgresRepository(span)
-	span.SetTag("thread_id", threadID)
-	span.SetTag("is_done", isDone)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailThreadRepository.MarkThreadAsDone")
+	defer spans.Finish()
+	spans.TagEntity(threadID)
+	spans.LogKV("is_done", isDone)
 
 	if threadID == "" {
 		err := errors.New("thread ID cannot be empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Start a transaction
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		tracing.TraceErr(span, tx.Error)
+		spans.TraceError(tx.Error)
 		return tx.Error
 	}
 
@@ -468,13 +458,13 @@ func (r *emailThreadRepository) MarkThreadAsDone(ctx context.Context, threadID s
 		Find(&exists).Error
 	if err != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if !exists {
 		tx.Rollback()
 		err := fmt.Errorf("thread with ID %s not found", threadID)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -490,13 +480,13 @@ func (r *emailThreadRepository) MarkThreadAsDone(ctx context.Context, threadID s
 
 	if result.Error != nil {
 		tx.Rollback()
-		tracing.TraceErr(span, result.Error)
+		spans.TraceError(result.Error)
 		return result.Error
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 

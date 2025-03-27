@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uptrace/go-clickhouse/ch"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 type emailStore struct {
@@ -24,9 +23,8 @@ func NewEmailStore(ch *ch.DB) interfaces.EmailStore {
 
 // InitSchema ensures the emails table exists in ClickHouse
 func (r *emailStore) InitSchema(ctx context.Context) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailStore.InitSchema")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, _ := telemetry.StartClickhouseSpan(ctx, "EmailStore.InitSchema")
+	defer spans.Finish()
 
 	// Use the raw SQL from the model
 	sql := models.EmailStore{}.CreateTableSQL()
@@ -34,7 +32,7 @@ func (r *emailStore) InitSchema(ctx context.Context) error {
 	// Execute the raw SQL
 	_, err := r.ch.Exec(sql)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -43,17 +41,16 @@ func (r *emailStore) InitSchema(ctx context.Context) error {
 
 // SaveEmail stores an email in ClickHouse
 func (r *emailStore) SaveEmail(ctx context.Context, email *models.EmailStore) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "EmailStore.SaveEmail")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartClickhouseSpan(ctx, "EmailStore.SaveEmail")
+	defer spans.Finish()
 
 	// Validate input
 	if email == nil {
 		return fmt.Errorf("cannot save nil email")
 	}
 
-	span.SetTag("email.id", email.ID)
-	span.SetTag("email.message_id", email.MessageID)
+	spans.TagString("email.id", email.ID)
+	spans.TagString("email.message_id", email.MessageID)
 
 	// Explicitly specify the table name to avoid naming conflicts
 	_, err := r.ch.NewInsert().
@@ -62,7 +59,7 @@ func (r *emailStore) SaveEmail(ctx context.Context, email *models.EmailStore) er
 		ExcludeColumn("year_month", "day_of_week", "hour", "body_text_size", "body_html_size", "_shard_key").
 		Exec(ctx)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return fmt.Errorf("failed to save email to ClickHouse: %w", err)
 	}
 
@@ -70,14 +67,19 @@ func (r *emailStore) SaveEmail(ctx context.Context, email *models.EmailStore) er
 }
 
 func (r *emailStore) EmailExists(ctx context.Context, messageId string) (bool, error) {
+	spans, _ := telemetry.StartClickhouseSpan(ctx, "EmailStore.EmailExists")
+	defer spans.Finish()
+
 	var count uint64
 	err := r.ch.QueryRow(
 		"SELECT count() FROM emails WHERE message_id = ?",
 		messageId,
 	).Scan(&count)
 	if err != nil {
+		spans.TraceError(err)
 		return false, fmt.Errorf("failed to check email existence: %w", err)
 	}
 
+	spans.LogKV("email.exists", count > 0)
 	return count > 0, nil
 }

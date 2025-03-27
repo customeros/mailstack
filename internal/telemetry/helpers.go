@@ -326,6 +326,9 @@ func (s *Spans) TagString(key, value string) {
 	if s == nil {
 		return
 	}
+	if key == "" {
+		return
+	}
 	if s.Jaeger != nil {
 		s.Jaeger.SetTag(key, value)
 	}
@@ -336,6 +339,9 @@ func (s *Spans) TagString(key, value string) {
 
 func (s *Spans) TagInt(key string, value int) {
 	if s == nil {
+		return
+	}
+	if key == "" {
 		return
 	}
 	if s.Jaeger != nil {
@@ -350,6 +356,9 @@ func (s *Spans) TagBool(key string, value bool) {
 	if s == nil {
 		return
 	}
+	if key == "" {
+		return
+	}
 	if s.Jaeger != nil {
 		s.Jaeger.SetTag(key, value)
 	}
@@ -360,6 +369,9 @@ func (s *Spans) TagBool(key string, value bool) {
 
 func (s *Spans) TagStringSlice(key string, value []string) {
 	if s == nil {
+		return
+	}
+	if key == "" {
 		return
 	}
 	if s.Jaeger != nil {
