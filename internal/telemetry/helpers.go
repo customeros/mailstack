@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"time"
 
+	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go"
@@ -519,5 +521,46 @@ func (s *Spans) LogObjectAsJson(key string, obj interface{}) {
 		s.OTel.AddEvent("log", trace.WithAttributes(
 			attribute.String(key, string(jsonBytes)),
 		))
+	}
+}
+
+// RecoverAndLog recovers from panics and logs them to both OpenTelemetry and the logger
+func RecoverAndLog(ctx context.Context, spans *Spans, logger logger.Logger) {
+	if r := recover(); r != nil {
+		stack := string(debug.Stack())
+
+		// Log to OpenTelemetry
+		if spans != nil && spans.OTel != nil {
+			spans.OTel.RecordError(fmt.Errorf("panic: %v", r))
+			spans.OTel.SetStatus(codes.Error, fmt.Sprintf("panic: %v", r))
+			spans.OTel.SetAttributes(
+				attribute.String("event", "panic"),
+				attribute.String("error", fmt.Sprintf("%v", r)),
+				attribute.String("time", time.Now().Format(time.RFC3339)),
+			)
+			// Log stack trace as an event
+			spans.OTel.AddEvent("panic.stack", trace.WithAttributes(
+				attribute.String("stack", stack),
+			))
+		}
+
+		// Log to Jaeger
+		if spans != nil && spans.Jaeger != nil {
+			spans.Jaeger.SetTag("error", true)
+			spans.Jaeger.SetTag("event", "panic")
+			spans.Jaeger.LogFields(
+				log.Error(fmt.Errorf("panic: %v", r)),
+				log.String("event", "panic"),
+				log.String("time", time.Now().Format(time.RFC3339)),
+				log.String("stack", stack),
+			)
+		}
+
+		// Log to logger
+		if logger != nil {
+			logger.Errorf("Recovered from panic: %v\nStack trace:\n%s", r, stack)
+		}
+
+		// Do not re-panic - allow the application to continue running
 	}
 }
