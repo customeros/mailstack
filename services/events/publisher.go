@@ -97,7 +97,7 @@ func NewRabbitMQPublisher(rabbitmqURL string, logger logger.Logger, config *Publ
 func (r *RabbitMQPublisher) PublishReceiveEmailEvent(ctx context.Context, message dto.EmailReceived) error {
 	switch message.Source {
 	case enum.EmailImportIMAP:
-		id := fmt.Sprintf("%s-%s-%s", message.MailboxID, message.Folder, message.ImapUID)
+		id := fmt.Sprintf("%s-%s-%d", message.MailboxID, message.Folder, message.ImapUID)
 		return r.publishEventOnExchange(ctx, id, enum.EMAIL, message, ExchangeMailstackDirect, RoutingKeyReceiveEmail)
 	default:
 		return errors.New("not implemented yet")

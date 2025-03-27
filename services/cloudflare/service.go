@@ -22,6 +22,7 @@ import (
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
 	repository "github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -56,16 +57,14 @@ func NewCloudflareService(log logger.Logger, cfg *config.CloudflareConfig, postg
 }
 
 func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant, domain, destinationUrl string) ([]string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.SetupDomainForMailStack")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain, "destinationUrl", destinationUrl)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.SetupDomainForMailStack")
+	defer spans.Finish()
+	spans.LogKV("domain", domain, "destinationUrl", destinationUrl)
 
 	// step 1: Check if the domain exists in Cloudflare
 	domainExists, zoneID, err := s.CheckDomainExists(ctx, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to check domain existence"))
+		spans.TraceError(errors.Wrap(err, "failed to check domain existence"))
 		s.log.Error("failed to check domain existence")
 		return nil, err
 	}
@@ -74,7 +73,7 @@ func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant,
 	if domainExists {
 		err = s.deleteAllDNSRecords(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to delete DNS records"))
+			spans.TraceError(errors.Wrap(err, "failed to delete DNS records"))
 			s.log.Error("failed to delete DNS records")
 			return nil, err
 		}
@@ -84,7 +83,7 @@ func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant,
 	if !domainExists {
 		zoneID, err = s.addDomain(ctx, domain)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to add domain"))
+			spans.TraceError(errors.Wrap(err, "failed to add domain"))
 			s.log.Errorf("failed to add domain %s", domain)
 			return nil, err
 		}
@@ -94,14 +93,14 @@ func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant,
 	// step 4: Configure DNS records
 	dnsConfigs, err := s.dnsConfigsForMailStack(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get DNS configs"))
+		spans.TraceError(errors.Wrap(err, "failed to get DNS configs"))
 		s.log.Error("failed to get DNS config data")
 		return nil, err
 	}
 	for _, dnsConfig := range dnsConfigs {
 		err = s.AddDNSRecord(ctx, zoneID, dnsConfig.RecordType, dnsConfig.Name, dnsConfig.Content, dnsConfig.TTL, dnsConfig.Proxied, dnsConfig.Priority)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to add DNS record"))
+			spans.TraceError(errors.Wrap(err, "failed to add DNS record"))
 			s.log.Errorf("failed to add DNS record %s %s -> %s", dnsConfig.RecordType, dnsConfig.Name, dnsConfig.Content)
 			return nil, err
 		}
@@ -110,14 +109,14 @@ func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant,
 	// step 5: Add redirect page rules
 	err = s.addMailStackRedirectPageRules(ctx, zoneID, domain, destinationUrl)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to add redirect page rules"))
+		spans.TraceError(errors.Wrap(err, "failed to add redirect page rules"))
 		s.log.Error("failed to add redirect page rules")
 		return nil, err
 	}
 
 	nameservers, err := s.getNameservers(ctx, zoneID)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get nameservers"))
+		spans.TraceError(errors.Wrap(err, "failed to get nameservers"))
 		s.log.Error("failed to get nameservers")
 		return nil, err
 	}
@@ -126,15 +125,14 @@ func (s *cloudflareService) SetupDomainForMailStack(ctx context.Context, tenant,
 }
 
 func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType, name, content string, ttl int, proxied bool, priority *int) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.addDNSRecord")
-	defer span.Finish()
-	span.LogKV("zoneID", zoneID, "recordType", recordType, "name", name)
-	span.LogFields(tracingLog.String("content", content), tracingLog.Int("ttl", ttl), tracingLog.Bool("proxied", proxied))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.addDNSRecord")
+	defer spans.Finish()
+	spans.LogKV("zoneID", zoneID, "recordType", recordType, "name", name, "content", content, "ttl", ttl, "proxied", proxied)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return err
 	}
@@ -156,14 +154,14 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to marshal payload"))
+		spans.TraceError(errors.Wrap(err, "failed to marshal payload"))
 		s.log.Error("failed to marshal payload", err)
 		return err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", cloudflareUrl, bytes.NewBuffer(payloadData))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create HTTP request"))
+		spans.TraceError(errors.Wrap(err, "failed to create HTTP request"))
 		s.log.Error("failed to create HTTP request", err)
 		return err
 	}
@@ -174,7 +172,7 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to add DNS record to Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "failed to add DNS record to Cloudflare"))
 		s.log.Error("failed to add DNS record to Cloudflare", err)
 		return err
 	}
@@ -182,7 +180,7 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		s.log.Error("failed to read response body", err)
 		return err
 	}
@@ -196,7 +194,7 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 	}
 
 	if err = json.Unmarshal(body, &addDNSResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body", err)
 		return err
 	}
@@ -207,7 +205,7 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 			errMsg = addDNSResponse.Errors[0].Message
 		}
 		err := fmt.Errorf(errMsg)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error("Cloudflare API error: ", errMsg)
 		return err
 	}
@@ -219,14 +217,14 @@ func (s *cloudflareService) AddDNSRecord(ctx context.Context, zoneID, recordType
 }
 
 func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*[]interfaces.DNSRecord, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.GetDNSRecords")
-	defer span.Finish()
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.GetDNSRecords")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return nil, err
 	}
@@ -236,13 +234,13 @@ func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*
 
 	domainExists, zoneID, err := s.CheckDomainExists(ctx, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to check domain existence"))
+		spans.TraceError(errors.Wrap(err, "failed to check domain existence"))
 		s.log.Error("failed to check domain existence")
 		return nil, err
 	}
 
 	if !domainExists {
-		span.LogFields(tracingLog.String("result", "Domain does not exist"))
+		spans.LogKV("result", "Domain does not exist")
 		err = errors.New("Domain does not exist")
 		return nil, err
 	}
@@ -250,7 +248,7 @@ func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*
 	cloudflareUrl := fmt.Sprintf("%s/zones/%s/dns_records", s.cloudflareConfig.Url, zoneID)
 	req, err := http.NewRequestWithContext(ctx, "GET", cloudflareUrl, nil)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create request"))
+		spans.TraceError(errors.Wrap(err, "failed to create request"))
 		s.log.Error("failed to create request")
 		return nil, err
 	}
@@ -261,7 +259,7 @@ func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get DNS records"))
+		spans.TraceError(errors.Wrap(err, "failed to get DNS records"))
 		s.log.Error("failed to get DNS records")
 		return nil, err
 	}
@@ -269,20 +267,20 @@ func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		s.log.Error("failed to read response body")
 		return nil, err
 	}
 
 	if err = json.Unmarshal(body, &recordsResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body")
 		return nil, err
 	}
 
 	if !recordsResponse.Success {
 		err := fmt.Errorf("failed to fetch DNS records from Cloudflare")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -299,14 +297,14 @@ func (s *cloudflareService) GetDNSRecords(ctx context.Context, domain string) (*
 }
 
 func (s *cloudflareService) DeleteDNSRecord(ctx context.Context, zoneID string, recordID string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.DeleteDNSRecord")
-	defer span.Finish()
-	span.LogKV("zoneID", zoneID, "recordID", recordID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.DeleteDNSRecord")
+	defer spans.Finish()
+	spans.LogKV("zoneID", zoneID, "recordID", recordID)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return err
 	}
@@ -314,7 +312,7 @@ func (s *cloudflareService) DeleteDNSRecord(ctx context.Context, zoneID string, 
 	delURL := fmt.Sprintf("%s/zones/%s/dns_records/%s", s.cloudflareConfig.Url, zoneID, recordID)
 	deleteReq, err := http.NewRequestWithContext(ctx, "DELETE", delURL, nil)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create delete request"))
+		spans.TraceError(errors.Wrap(err, "failed to create delete request"))
 		return err
 	}
 
@@ -324,7 +322,7 @@ func (s *cloudflareService) DeleteDNSRecord(ctx context.Context, zoneID string, 
 
 	delResp, err := http.DefaultClient.Do(deleteReq)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to delete DNS record"))
+		spans.TraceError(errors.Wrap(err, "failed to delete DNS record"))
 		return err
 	}
 	defer delResp.Body.Close()
@@ -332,7 +330,7 @@ func (s *cloudflareService) DeleteDNSRecord(ctx context.Context, zoneID string, 
 	if delResp.StatusCode != http.StatusOK {
 		delBody, _ := io.ReadAll(delResp.Body)
 		err := fmt.Errorf("failed to delete DNS record: %s", string(delBody))
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -340,17 +338,19 @@ func (s *cloudflareService) DeleteDNSRecord(ctx context.Context, zoneID string, 
 }
 
 func (s *cloudflareService) deleteAllDNSRecords(ctx context.Context, domain string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.deleteAllDNSRecords")
-	defer span.Finish()
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.deleteAllDNSRecords")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	dnsRecords, err := s.GetDNSRecords(ctx, domain)
 	if err != nil {
+		spans.TraceError(errors.Wrap(err, "failed to get DNS records"))
 		return err
 	}
 
 	for _, record := range *dnsRecords {
 		if err := s.DeleteDNSRecord(ctx, record.ZoneID, record.ID); err != nil {
+			spans.TraceError(errors.Wrap(err, "failed to delete DNS record"))
 			return err
 		}
 	}
@@ -360,13 +360,14 @@ func (s *cloudflareService) deleteAllDNSRecords(ctx context.Context, domain stri
 
 // getZoneID fetches the zone ID for the given domain using the Cloudflare API
 func (s *cloudflareService) CheckDomainExists(ctx context.Context, domain string) (bool, string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.checkDomain")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.checkDomain")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return false, "", err
 	}
@@ -374,7 +375,7 @@ func (s *cloudflareService) CheckDomainExists(ctx context.Context, domain string
 	cloudflareUrl := fmt.Sprintf("%s/zones?name=%s", s.cloudflareConfig.Url, domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", cloudflareUrl, nil)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create request"))
+		spans.TraceError(errors.Wrap(err, "failed to create request"))
 		s.log.Error("failed to create request")
 		return false, "", err
 	}
@@ -385,7 +386,7 @@ func (s *cloudflareService) CheckDomainExists(ctx context.Context, domain string
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to check domain existence in Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "failed to check domain existence in Cloudflare"))
 		s.log.Error("failed to check domain existence in Cloudflare")
 		return false, "", err
 	}
@@ -393,7 +394,7 @@ func (s *cloudflareService) CheckDomainExists(ctx context.Context, domain string
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		return false, "", err
 	}
 
@@ -405,31 +406,31 @@ func (s *cloudflareService) CheckDomainExists(ctx context.Context, domain string
 	}
 
 	if err = json.Unmarshal(body, &zonesResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body")
 		return false, "", err
 	}
 
 	// Check if the domain exists
 	if zonesResponse.Success && len(zonesResponse.Result) > 0 {
-		span.LogFields(tracingLog.Bool("result.exists", true))
+		spans.LogKV("result.exists", true)
 		return true, zonesResponse.Result[0].ID, nil
 	}
 
-	span.LogFields(tracingLog.Bool("result.exists", false))
+	spans.LogKV("result.exists", false)
 
 	return false, "", nil
 }
 
 func (s *cloudflareService) addDomain(ctx context.Context, domain string) (string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.addDomain")
-	defer span.Finish()
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.addDomain")
+	defer spans.Finish()
+	spans.LogKV("domain", domain)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return "", err
 	}
@@ -444,14 +445,14 @@ func (s *cloudflareService) addDomain(ctx context.Context, domain string) (strin
 	}
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to marshal payload"))
+		spans.TraceError(errors.Wrap(err, "failed to marshal payload"))
 		s.log.Error("failed to marshal payload", err)
 		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", cloudflareUrl, bytes.NewBuffer(payloadData))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create HTTP request"))
+		spans.TraceError(errors.Wrap(err, "failed to create HTTP request"))
 		s.log.Error("failed to create HTTP request", err)
 		return "", err
 	}
@@ -462,7 +463,7 @@ func (s *cloudflareService) addDomain(ctx context.Context, domain string) (strin
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to add domain to Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "failed to add domain to Cloudflare"))
 		s.log.Error("failed to add domain to Cloudflare", err)
 		return "", err
 	}
@@ -470,11 +471,11 @@ func (s *cloudflareService) addDomain(ctx context.Context, domain string) (strin
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		s.log.Error("failed to read response body", err)
 		return "", err
 	}
-	span.LogKV("responseBody", string(body))
+	spans.LogKV("responseBody", string(body))
 
 	// Define the response structure
 	var addDomainResponse struct {
@@ -488,7 +489,7 @@ func (s *cloudflareService) addDomain(ctx context.Context, domain string) (strin
 	}
 
 	if err = json.Unmarshal(body, &addDomainResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body", err)
 		return "", err
 	}
@@ -499,28 +500,28 @@ func (s *cloudflareService) addDomain(ctx context.Context, domain string) (strin
 			errMsg = addDomainResponse.Errors[0].Message
 		}
 		err := fmt.Errorf(errMsg)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error("Cloudflare API error: ", errMsg)
 		return "", err
 	}
 
 	// Log success and return the Zone ID
 	zoneID := addDomainResponse.Result.ID
-	span.LogKV("zoneID", zoneID)
+	spans.LogKV("zoneID", zoneID)
 	s.log.Infof("Successfully added domain to Cloudflare. Zone ID: %s", zoneID)
 
 	return zoneID, nil
 }
 
 func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) ([]string, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.getNameservers")
-	defer span.Finish()
-	span.LogKV("zoneID", zoneID)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.getNameservers")
+	defer spans.Finish()
+	spans.LogKV("zoneID", zoneID)
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return nil, err
 	}
@@ -529,7 +530,7 @@ func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) (
 
 	req, err := http.NewRequestWithContext(ctx, "GET", cloudflareUrl, nil)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create HTTP request"))
+		spans.TraceError(errors.Wrap(err, "failed to create HTTP request"))
 		s.log.Error("failed to create HTTP request", err)
 		return nil, err
 	}
@@ -540,7 +541,7 @@ func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) (
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to get domain info from Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "failed to get domain info from Cloudflare"))
 		s.log.Error("failed to get domain info from Cloudflare", err)
 		return nil, err
 	}
@@ -548,7 +549,7 @@ func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) (
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read response body"))
+		spans.TraceError(errors.Wrap(err, "failed to read response body"))
 		s.log.Error("failed to read response body", err)
 		return nil, err
 	}
@@ -565,7 +566,7 @@ func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) (
 	}
 
 	if err = json.Unmarshal(body, &domainInfoResponse); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to unmarshal response body"))
+		spans.TraceError(errors.Wrap(err, "failed to unmarshal response body"))
 		s.log.Error("failed to unmarshal response body", err)
 		return nil, err
 	}
@@ -576,23 +577,23 @@ func (s *cloudflareService) getNameservers(ctx context.Context, zoneID string) (
 			errMsg = domainInfoResponse.Errors[0].Message
 		}
 		err = fmt.Errorf(errMsg)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error("Cloudflare API error: ", errMsg)
 		return nil, err
 	}
 
 	// Log and return the nameservers
 	nameservers := domainInfoResponse.Result.NameServers
-	span.LogKV("result.nameservers", nameservers)
+	spans.LogKV("result.nameservers", nameservers)
 	s.log.Infof("Retrieved nameservers: %v", nameservers)
 
 	return nameservers, nil
 }
 
 func (s *cloudflareService) addMailStackRedirectPageRules(ctx context.Context, zoneID, domain, destinationURL string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.addMailStackRedirectPageRules")
-	defer span.Finish()
-	span.LogKV("zoneID", zoneID, "domain", domain, "destinationURL", destinationURL)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.addMailStackRedirectPageRules")
+	defer spans.Finish()
+	spans.LogKV("zoneID", zoneID, "domain", domain, "destinationURL", destinationURL)
 
 	// if destinationURL not starting with http or https, add https
 	destinationURL = strings.TrimSpace(destinationURL)
@@ -652,7 +653,7 @@ func (s *cloudflareService) addMailStackRedirectPageRules(ctx context.Context, z
 	for _, pageRule := range pageRules {
 		err := s.addRedirectPageRule(ctx, zoneID, pageRule)
 		if err != nil {
-			tracing.TraceErr(span, errors.Wrap(err, "failed to add page rule"))
+			spans.TraceError(errors.Wrap(err, "failed to add page rule"))
 			s.log.Error("failed to add page rule", err)
 		}
 	}
@@ -663,13 +664,13 @@ func (s *cloudflareService) addMailStackRedirectPageRules(ctx context.Context, z
 }
 
 func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID string, pageRule map[string]interface{}) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "CloudflareService.addRedirectPageRule")
-	defer span.Finish()
+	spans, ctx := telemetry.StartServiceSpan(ctx, "CloudflareService.addRedirectPageRule")
+	defer spans.Finish()
 
 	// validate cloudflare configured
 	if s.cloudflareConfig.ApiKey == "" || s.cloudflareConfig.Url == "" {
 		err := errors.New("Cloudflare API key or URL not set")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		s.log.Error(err)
 		return err
 	}
@@ -677,14 +678,14 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 	url := fmt.Sprintf("%s/zones/%s/pagerules", s.cloudflareConfig.Url, zoneID)
 	payloadData, err := json.Marshal(pageRule)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to marshal page rule payload"))
+		spans.TraceError(errors.Wrap(err, "failed to marshal page rule payload"))
 		s.log.Error("failed to marshal page rule payload", err)
 		return err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payloadData))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to create HTTP request for adding page rule"))
+		spans.TraceError(errors.Wrap(err, "failed to create HTTP request for adding page rule"))
 		s.log.Error("failed to create HTTP request for adding page rule", err)
 		return err
 	}
@@ -695,7 +696,7 @@ func (s *cloudflareService) addRedirectPageRule(ctx context.Context, zoneID stri
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to add page rule to Cloudflare"))
+		spans.TraceError(errors.Wrap(err, "failed to add page rule to Cloudflare"))
 		s.log.Error("failed to add page rule to Cloudflare", err)
 		return err
 	}

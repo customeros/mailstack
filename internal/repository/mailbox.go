@@ -8,13 +8,11 @@ import (
 
 	"github.com/customeros/mailstack/internal/telemetry"
 
-	"github.com/opentracing/opentracing-go"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -60,7 +58,7 @@ func NewMailboxRepository(db *gorm.DB) interfaces.MailboxRepository {
 }
 
 func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox, error) {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxes")
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxes")
 	defer spans.Finish()
 
 	var mailboxes []*models.Mailbox
@@ -92,7 +90,7 @@ func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID str
 }
 
 func (r *mailboxRepository) GetMailbox(ctx context.Context, id string) (*models.Mailbox, error) {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailbox")
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailbox")
 	defer spans.Finish()
 	spans.TagEntity(id)
 
@@ -131,7 +129,7 @@ func (r *mailboxRepository) GetMailboxByEmailAddress(ctx context.Context, emailA
 }
 
 func (r *mailboxRepository) GetMailboxByEmailAddressCrossTenant(ctx context.Context, emailAddress string) (*models.Mailbox, error) {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxByEmailAddressCrossTenant")
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxByEmailAddressCrossTenant")
 	defer spans.Finish()
 	spans.LogKV("emailAddress", emailAddress)
 
@@ -152,7 +150,7 @@ func (r *mailboxRepository) GetMailboxByEmailAddressCrossTenant(ctx context.Cont
 }
 
 func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mailbox) (string, error) {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.SaveMailbox")
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.SaveMailbox")
 	defer spans.Finish()
 
 	// Perform the save operation
@@ -166,7 +164,7 @@ func (r *mailboxRepository) SaveMailbox(ctx context.Context, mailbox models.Mail
 }
 
 func (r *mailboxRepository) DeleteMailbox(ctx context.Context, id string) error {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.DeleteMailbox")
+	spans, _ := telemetry.StartPostgresSpan(ctx, "mailboxRepository.DeleteMailbox")
 	defer spans.Finish()
 	spans.TagEntity(id)
 
@@ -210,9 +208,8 @@ func (r *mailboxRepository) UpdateConnectionStatus(ctx context.Context, mailboxI
 }
 
 func (r *mailboxRepository) GetForRampUp(ctx context.Context) ([]*models.Mailbox, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetForRampUp")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetForRampUp")
+	defer spans.Finish()
 
 	var result []*models.Mailbox
 	err := r.db.WithContext(ctx).
@@ -223,11 +220,11 @@ func (r *mailboxRepository) GetForRampUp(ctx context.Context) ([]*models.Mailbox
 		Error
 
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
-	span.LogKV("result.count", len(result))
+	spans.LogKV("result.count", len(result))
 
 	return result, nil
 }
