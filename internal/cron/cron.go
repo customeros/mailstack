@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v6"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/opentracing/opentracing-go/log"
 	cronv3 "github.com/robfig/cron/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +20,6 @@ import (
 	cron_config "github.com/customeros/mailstack/internal/cron/config"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -170,7 +170,10 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 			podName = "local"
 		}
 		id, err := c.AddFunc(cronConfig.CronScheduleHeartbeat, func() {
-			defer tracing.RecoverAndLogToJaeger(cm.log)
+			spans, ctx := telemetry.StartSpan(context.Background(), "CronManager.heartbeat")
+			defer telemetry.FinishSpans(spans)
+			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			telemetry.TagComponentCronJob(spans)
 			cm.log.Infof("Cron heartbeat from pod: %s", podName)
 		})
 		if err != nil {
@@ -183,10 +186,13 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add mailstack reputation monitoring job
 	if cronConfig.CronScheduleMailstackReputation != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {
-			defer tracing.RecoverAndLogToJaeger(cm.log)
+			spans, ctx := telemetry.StartSpan(context.Background(), "CronManager.checkMailstackDomainReputation")
+			defer telemetry.FinishSpans(spans)
+			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			telemetry.TagComponentCronJob(spans)
 			jobLocks.locks[GroupMailstackDomain].Lock()
 			defer jobLocks.locks[GroupMailstackDomain].Unlock()
-			cm.checkMailstackDomainReputation()
+			cm.checkMailstackDomainReputation(ctx)
 		})
 		if err != nil {
 			cm.log.Fatalf("Could not add mailstack reputation cron job: %v", err)
@@ -198,10 +204,13 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add mailbox ramp up job
 	if cronConfig.CronScheduleRampUpMailboxes != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleRampUpMailboxes, func() {
-			defer tracing.RecoverAndLogToJaeger(cm.log)
+			spans, ctx := telemetry.StartSpan(context.Background(), "CronManager.rampUpMailboxes")
+			defer telemetry.FinishSpans(spans)
+			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			telemetry.TagComponentCronJob(spans)
 			jobLocks.locks[GroupMailstackMailbox].Lock()
 			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
-			cm.rampUpMailboxes()
+			cm.rampUpMailboxes(ctx)
 		})
 		if err != nil {
 			cm.log.Fatalf("Could not add mailbox ramp up cron job: %v", err)
@@ -213,10 +222,13 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add configure mailboxes job
 	if cronConfig.CronScheduleConfigureMailboxes != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleConfigureMailboxes, func() {
-			defer tracing.RecoverAndLogToJaeger(cm.log)
+			spans, ctx := telemetry.StartSpan(context.Background(), "CronManager.configureMailboxes")
+			defer telemetry.FinishSpans(spans)
+			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			telemetry.TagComponentCronJob(spans)
 			jobLocks.locks[GroupMailstackMailbox].Lock()
 			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
-			cm.configureMailboxes()
+			cm.configureMailboxes(ctx)
 		})
 		if err != nil {
 			cm.log.Fatalf("Could not add configure mailboxes cron job: %v", err)
@@ -243,19 +255,16 @@ func (cm *CronManager) StartCron() {
 	cm.cron = c
 }
 
-func (cm *CronManager) checkMailstackDomainReputation() {
+func (cm *CronManager) checkMailstackDomainReputation(ctx context.Context) {
 	cm.log.Info("Running mailstack domain reputation check")
 
-	// Create a background context for the operation
-	ctx := context.Background()
-
-	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.checkMailstackDomainReputation")
-	defer span.Finish()
-	tracing.TagComponentCronJob(span)
+	spans, ctx := telemetry.StartSpan(ctx, "checkMailstackDomainReputation")
+	defer telemetry.FinishSpans(spans)
+	telemetry.TagComponentCronJob(spans)
 
 	// Call the domain service to check reputation
 	if err := cm.domain.CheckMailstackDomainReputations(ctx); err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		cm.log.Errorf("Failed to check domain reputations: %v", err)
 		return
 	}
@@ -263,19 +272,16 @@ func (cm *CronManager) checkMailstackDomainReputation() {
 	cm.log.Info("Successfully completed domain reputation check")
 }
 
-func (cm *CronManager) rampUpMailboxes() {
+func (cm *CronManager) rampUpMailboxes(ctx context.Context) {
 	cm.log.Info("Running mailbox ramp up check")
 
-	// Create a background context for the operation
-	ctx := context.Background()
-
-	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.rampUpMailboxes")
-	defer span.Finish()
-	tracing.TagComponentCronJob(span)
+	spans, ctx := telemetry.StartSpan(ctx, "rampUpMailboxes")
+	defer telemetry.FinishSpans(spans)
+	telemetry.TagComponentCronJob(spans)
 
 	// Call the mailbox service to ramp up mailboxes
 	if err := cm.mailbox.RampUpMailboxes(ctx); err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		cm.log.Errorf("Failed to ramp up mailboxes: %v", err)
 		return
 	}
@@ -283,25 +289,22 @@ func (cm *CronManager) rampUpMailboxes() {
 	cm.log.Info("Successfully completed mailbox ramp up check")
 }
 
-func (cm *CronManager) configureMailboxes() {
+func (cm *CronManager) configureMailboxes(ctx context.Context) {
 	cm.log.Info("Running configure mailboxes check")
 
-	// Create a background context for the operation
-	ctx := context.Background()
-
-	span, ctx := tracing.StartTracerSpan(ctx, "CronManager.configureMailboxes")
-	defer span.Finish()
-	tracing.TagComponentCronJob(span)
+	spans, ctx := telemetry.StartSpan(ctx, "configureMailboxes")
+	defer telemetry.FinishSpans(spans)
+	telemetry.TagComponentCronJob(spans)
 
 	// Get mailboxes that need configuration directly from repository
 	mailboxes, err := cm.postgres.MailboxRepository.GetForConfiguration(ctx, 10)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		cm.log.Errorf("Failed to get mailboxes for configuration: %v", err)
 		return
 	}
 
-	span.LogFields(log.Int("mailboxes.count", len(mailboxes)))
+	spans.LogFields(log.Int("mailboxes.count", len(mailboxes)))
 
 	// Process each mailbox
 	for _, mailbox := range mailboxes {

@@ -107,7 +107,7 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 	tracing.TagComponentPostgresRepository(span)
 
 	if attachment == nil {
-		err := errors.New("Nil attachment")
+		err := errors.New("nil attachment")
 		tracing.TraceErr(span, err)
 		return err
 	}

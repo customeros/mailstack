@@ -8,18 +8,19 @@ receivers:
 
 processors:
   batch:
-    timeout: 1s
-    send_batch_size: 100
+    timeout: 5s
+    send_batch_size: 5000
 
 exporters:
   clickhouse:
     endpoint: tcp://clickhouse:9000
-    database: logs
     username: default
     password: password
+    database: logs
+    create_schema: true
+    logs_table_name: otel_logs
+    traces_table_name: otel_traces
     timeout: 5s
-    sending_queue:
-      queue_size: 100
     retry_on_failure:
       enabled: true
       initial_interval: 5s

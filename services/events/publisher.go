@@ -16,6 +16,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -446,11 +447,11 @@ func (r *RabbitMQPublisher) ensureConnectionAndChannel() error {
 }
 
 func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}, exchange, routingKey string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishEventOnExchange")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartSpan(ctx, "RabbitMQPublisher.PublishEventOnExchange")
+	defer telemetry.FinishSpans(spans)
+	telemetry.SetSpanKindProducer(spans)
 
-	tracingData := tracing.ExtractTextMapCarrier((span).Context())
+	tracingData := tracing.ExtractTextMapCarrier((spans.Jaeger).Context())
 
 	messageType := reflect.TypeOf(message)
 	if messageType.Kind() == reflect.Ptr {
@@ -478,11 +479,11 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 }
 
 func (r *RabbitMQPublisher) publishMessageOnExchange(ctx context.Context, message interface{}, exchange, routingKey string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishMessageOnExchange")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartSpan(ctx, "RabbitMQPublisher.PublishMessageOnExchange")
+	defer telemetry.FinishSpans(spans)
+	telemetry.SetSpanKindProducer(spans)
 
-	tracing.LogObjectAsJson(span, "message", message)
+	spans.LogObjectAsJson("message", message)
 
 	for attempt := 0; attempt < r.config.MaxRetries; attempt++ {
 		err := r.publishWithConfirm(ctx, message, exchange, routingKey)
