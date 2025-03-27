@@ -16,10 +16,8 @@ import (
 
 // GetAllThreads is the resolver for the getAllThreads field.
 func (r *queryResolver) GetAllThreads(ctx context.Context, userID string, pagination *graphql_model.PaginationInput) (*graphql_model.EmailThreadConnection, error) {
-	spans, ctx := telemetry.StartSpan(ctx, "queryResolver.GetAllThreads")
+	spans, ctx := telemetry.StartGraphQLSpan(ctx, "queryResolver.GetAllThreads")
 	defer telemetry.FinishSpans(spans)
-	telemetry.TagComponentGraphQL(spans)
-	telemetry.SetSpanKindServer(spans)
 
 	// Set pagination info
 	limit := 50

@@ -76,9 +76,8 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 }
 
 func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error) {
-	spans, ctx := telemetry.StartSpan(ctx, "mailboxRepository.GetMailboxesByUserID")
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxesByUserID")
 	defer telemetry.FinishSpans(spans)
-	telemetry.TagComponentPostgres(spans)
 	spans.LogKV("userId", userID)
 
 	tenant := utils.GetTenantFromContext(ctx)
