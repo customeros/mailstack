@@ -6,21 +6,18 @@ import (
 
 	"github.com/customeros/mailwatcher/blscan"
 	"github.com/customeros/mailwatcher/domainage"
-	"github.com/opentracing/opentracing-go"
 
 	models "github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 func (s *mailboxServiceOld) ReputationScore(ctx context.Context, domain, tenant string) (int, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.ReputationScore")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.ReputationScore")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
-	domainAgePenalty := s.domainAgePenalty(span, domain)
+	domainAgePenalty := s.domainAgePenalty(spans, domain)
 	blacklistPenaltyPct := s.blacklistPenaltyPercent(domain)
 
 	score := (100 - domainAgePenalty) * (1 - (blacklistPenaltyPct)/100)
@@ -42,10 +39,10 @@ func (s *mailboxServiceOld) ReputationScore(ctx context.Context, domain, tenant 
 	return score, err
 }
 
-func (s *mailboxServiceOld) domainAgePenalty(span opentracing.Span, domain string) int {
+func (s *mailboxServiceOld) domainAgePenalty(spans *telemetry.Spans, domain string) int {
 	domainDates, err := domainage.GetDomainDates(domain)
 	if err != nil {
-		tracing.TraceErr(span, fmt.Errorf("cannot determine domain dates: %v", err))
+		spans.TraceError(fmt.Errorf("cannot determine domain dates: %v", err))
 		return 0
 	}
 

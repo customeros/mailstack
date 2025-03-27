@@ -18,7 +18,7 @@ import (
 	"github.com/customeros/mailstack/internal/config"
 	er "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 // Namecheap supported commands: https://www.namecheap.com/support/api/methods/
@@ -36,14 +36,14 @@ func NewNamecheapService(cfg *config.NamecheapConfig, postgres *repository.Repos
 
 // CheckDomainAvailability checks if the domain is available using Namecheap API
 func (s *namecheapService) CheckDomainAvailability(ctx context.Context, domain string) (bool, bool, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "NamecheapService.CheckDomainAvailability")
-	defer span.Finish()
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "NamecheapService.CheckDomainAvailability")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// validate if namecheap is configured
 	if s.cfg.ApiKey == "" || s.cfg.ApiUser == "" || s.cfg.ApiUsername == "" || s.cfg.ApiClientIp == "" {
 		err := errors.New("Namecheap API configuration is missing")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return false, false, err
 	}
 
@@ -57,15 +57,15 @@ func (s *namecheapService) CheckDomainAvailability(ctx context.Context, domain s
 
 	resp, err := http.PostForm(s.cfg.Url, params)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to call Namecheap API"))
+		spans.TraceError(errors.Wrap(err, "failed to call Namecheap API"))
 		return false, false, err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
-	span.LogFields(tracingLog.String("responseBody", string(responseBody)))
+	spans.LogKV("responseBody", string(responseBody))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read Namecheap response"))
+		spans.TraceError(errors.Wrap(err, "failed to read Namecheap response"))
 		if string(responseBody) == "error code: 522" {
 			return false, false, er.ErrConnectionTimeout
 		}
@@ -94,36 +94,35 @@ func (s *namecheapService) CheckDomainAvailability(ctx context.Context, domain s
 	var result NamecheapCheckResult
 
 	if err = xml.Unmarshal(responseBody, &result); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to parse Namecheap XML response"))
+		spans.TraceError(errors.Wrap(err, "failed to parse Namecheap XML response"))
 		return false, false, err
 	}
 	// Check if any errors exist
 	if len(result.Errors.Error) > 0 {
 		for _, e := range result.Errors.Error {
 			errMsg := fmt.Sprintf("Error %s: %s", e.Number, e.Message)
-			tracing.TraceErr(span, fmt.Errorf(errMsg))
+			spans.TraceError(fmt.Errorf(errMsg))
 		}
 		return false, false, fmt.Errorf("Namecheap API returned errors")
 	}
 
 	// Check availability
-	span.LogFields(tracingLog.Bool("result.available", result.CommandResponse.DomainCheckResult.Available))
-	span.LogFields(tracingLog.Bool("result.premium", result.CommandResponse.DomainCheckResult.IsPremiumName))
+	spans.LogKV("result.available", result.CommandResponse.DomainCheckResult.Available)
+	spans.LogKV("result.premium", result.CommandResponse.DomainCheckResult.IsPremiumName)
 
 	return result.CommandResponse.DomainCheckResult.Available, result.CommandResponse.DomainCheckResult.IsPremiumName, nil
 }
 
 // PurchaseDomain purchases the domain using Namecheap API
 func (s *namecheapService) PurchaseDomain(ctx context.Context, tenant, domain string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "NamecheapService.PurchaseDomain")
-	defer span.Finish()
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "NamecheapService.PurchaseDomain")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// validate if namecheap is configured
 	if s.cfg.ApiKey == "" || s.cfg.ApiUser == "" || s.cfg.ApiUsername == "" || s.cfg.ApiClientIp == "" {
 		err := errors.New("Namecheap API configuration is missing")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -188,15 +187,15 @@ func (s *namecheapService) PurchaseDomain(ctx context.Context, tenant, domain st
 	// Execute the request
 	resp, err := http.PostForm(s.cfg.Url, params)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to call Namecheap API for domain purchase"))
+		spans.TraceError(errors.Wrap(err, "failed to call Namecheap API for domain purchase"))
 		return err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
-	span.LogFields(tracingLog.String("responseBody", string(responseBody)))
+	spans.LogKV("responseBody", string(responseBody))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read Namecheap response"))
+		spans.TraceError(errors.Wrap(err, "failed to read Namecheap response"))
 		return err
 	}
 
@@ -223,14 +222,14 @@ func (s *namecheapService) PurchaseDomain(ctx context.Context, tenant, domain st
 	var result NamecheapPurchaseResult
 
 	if err = xml.Unmarshal(responseBody, &result); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to parse Namecheap XML response"))
+		spans.TraceError(errors.Wrap(err, "failed to parse Namecheap XML response"))
 		return err
 	}
 	// Check if any errors exist
 	if len(result.Errors.Error) > 0 {
 		for _, e := range result.Errors.Error {
 			errMsg := fmt.Sprintf("Error %s: %s", e.Number, e.Message)
-			tracing.TraceErr(span, fmt.Errorf(errMsg))
+			spans.TraceError(fmt.Errorf(errMsg))
 		}
 		return fmt.Errorf("Namecheap API returned errors")
 	}
@@ -238,22 +237,20 @@ func (s *namecheapService) PurchaseDomain(ctx context.Context, tenant, domain st
 	// Check if the purchase was successful
 	if !result.CommandResponse.DomainCreateResult.Registered {
 		err = fmt.Errorf("failed to register domain %s: Namecheap API returned unsuccessful status", domain)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Log and store the purchase details
-	span.LogFields(
-		tracingLog.String("result.domain", result.CommandResponse.DomainCreateResult.Domain),
-		tracingLog.String("result.orderID", result.CommandResponse.DomainCreateResult.OrderID),
-		tracingLog.String("result.transactionID", result.CommandResponse.DomainCreateResult.TransactionID),
-		tracingLog.String("result.chargedAmount", result.CommandResponse.DomainCreateResult.ChargedAmount),
-	)
+	spans.LogKV("result.domain", result.CommandResponse.DomainCreateResult.Domain)
+	spans.LogKV("result.orderID", result.CommandResponse.DomainCreateResult.OrderID)
+	spans.LogKV("result.transactionID", result.CommandResponse.DomainCreateResult.TransactionID)
+	spans.LogKV("result.chargedAmount", result.CommandResponse.DomainCreateResult.ChargedAmount)
 
 	// Store domain
 	_, err = s.postgres.DomainRepository.RegisterDomain(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to store mailstack domain in postgres"))
+		spans.TraceError(errors.Wrap(err, "failed to store mailstack domain in postgres"))
 		return nil
 	}
 
@@ -262,14 +259,14 @@ func (s *namecheapService) PurchaseDomain(ctx context.Context, tenant, domain st
 }
 
 func (s *namecheapService) GetDomainPrice(ctx context.Context, domain string) (float64, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "NamecheapService.GetDomainPrice")
-	defer span.Finish()
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "NamecheapService.GetDomainPrice")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// validate if namecheap is configured
 	if s.cfg.ApiKey == "" || s.cfg.ApiUser == "" || s.cfg.ApiUsername == "" || s.cfg.ApiClientIp == "" {
 		err := errors.New("Namecheap API configuration is missing")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return 0, err
 	}
 
@@ -288,15 +285,15 @@ func (s *namecheapService) GetDomainPrice(ctx context.Context, domain string) (f
 
 	resp, err := http.PostForm(s.cfg.Url, params)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to call Namecheap API for domain pricing"))
+		spans.TraceError(errors.Wrap(err, "failed to call Namecheap API for domain pricing"))
 		return 0, err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
-	span.LogFields(tracingLog.String("responseBody", string(responseBody)))
+	spans.LogKV("responseBody", string(responseBody))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read Namecheap response"))
+		spans.TraceError(errors.Wrap(err, "failed to read Namecheap response"))
 		return 0, err
 	}
 
@@ -336,14 +333,14 @@ func (s *namecheapService) GetDomainPrice(ctx context.Context, domain string) (f
 	var result NamecheapPricingResult
 
 	if err = xml.Unmarshal(responseBody, &result); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to parse Namecheap XML response"))
+		spans.TraceError(errors.Wrap(err, "failed to parse Namecheap XML response"))
 		return 0, err
 	}
 	// Check if any errors exist
 	if len(result.Errors.Error) > 0 {
 		for _, e := range result.Errors.Error {
 			errMsg := fmt.Sprintf("Error %s: %s", e.Number, e.Message)
-			tracing.TraceErr(span, fmt.Errorf(errMsg))
+			spans.TraceError(fmt.Errorf(errMsg))
 		}
 		return 0, fmt.Errorf("Namecheap API returned errors")
 	}
@@ -358,10 +355,10 @@ func (s *namecheapService) GetDomainPrice(ctx context.Context, domain string) (f
 							// Parse the price and return it
 							parsedPrice, err := strconv.ParseFloat(price.YourPrice, 64)
 							if err != nil {
-								tracing.TraceErr(span, errors.Wrap(err, "failed to parse registration price"))
+								spans.TraceError(errors.Wrap(err, "failed to parse registration price"))
 								return 0, err
 							}
-							span.LogKV("result.price", parsedPrice)
+							spans.LogKV("result.price", parsedPrice)
 							return parsedPrice, nil
 						}
 					}
@@ -374,27 +371,26 @@ func (s *namecheapService) GetDomainPrice(ctx context.Context, domain string) (f
 }
 
 func (s *namecheapService) GetDomainInfo(ctx context.Context, tenant, domain string) (interfaces.NamecheapDomainInfo, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "NamecheapService.GetDomainInfo")
-	defer span.Finish()
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "NamecheapService.GetDomainInfo")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// validate if namecheap is configured
 	if s.cfg.ApiKey == "" || s.cfg.ApiUser == "" || s.cfg.ApiUsername == "" || s.cfg.ApiClientIp == "" {
 		err := errors.New("Namecheap API configuration is missing")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 
 	// Check if domain belongs to the tenant in PostgreSQL and is active
 	exists, err := s.postgres.DomainRepository.CheckDomainOwnership(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to check domain ownership in postgres"))
+		spans.TraceError(errors.Wrap(err, "failed to check domain ownership in postgres"))
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 	if !exists {
 		err := fmt.Errorf("domain %s does not belong to tenant %s or is not active", domain, tenant)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 
@@ -409,15 +405,15 @@ func (s *namecheapService) GetDomainInfo(ctx context.Context, tenant, domain str
 	// Execute the request
 	resp, err := http.PostForm(s.cfg.Url, params)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to call Namecheap API for domain info"))
+		spans.TraceError(errors.Wrap(err, "failed to call Namecheap API for domain info"))
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
-	span.LogFields(tracingLog.String("responseBody", string(responseBody)))
+	spans.LogKV("responseBody", string(responseBody))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read Namecheap response"))
+		spans.TraceError(errors.Wrap(err, "failed to read Namecheap response"))
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 
@@ -471,7 +467,7 @@ func (s *namecheapService) GetDomainInfo(ctx context.Context, tenant, domain str
 
 	var result NamecheapDomainInfoResult
 	if err = xml.Unmarshal(responseBody, &result); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to parse Namecheap XML response"))
+		spans.TraceError(errors.Wrap(err, "failed to parse Namecheap XML response"))
 		return interfaces.NamecheapDomainInfo{}, err
 	}
 
@@ -479,7 +475,7 @@ func (s *namecheapService) GetDomainInfo(ctx context.Context, tenant, domain str
 	if len(result.Errors.Error) > 0 {
 		for _, e := range result.Errors.Error {
 			errMsg := fmt.Sprintf("Error %s: %s", e.Number, e.Message)
-			tracing.TraceErr(span, fmt.Errorf(errMsg))
+			spans.TraceError(fmt.Errorf(errMsg))
 		}
 		return interfaces.NamecheapDomainInfo{}, fmt.Errorf("Namecheap API returned errors")
 	}
@@ -494,33 +490,33 @@ func (s *namecheapService) GetDomainInfo(ctx context.Context, tenant, domain str
 	}
 
 	// Log retrieved domain info
-	span.LogKV("domainInfo", domainInfo)
+	spans.LogObjectAsJson("domainInfo", domainInfo)
 
 	return domainInfo, nil
 }
 
 func (s *namecheapService) UpdateNameservers(ctx context.Context, tenant, domain string, nameservers []string) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "NamecheapService.UpdateNameservers")
-	defer span.Finish()
-	tracing.TagTenant(span, tenant)
-	span.LogKV("domain", domain, "nameservers", nameservers)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "NamecheapService.UpdateNameservers")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
+	spans.LogKV("nameservers", nameservers)
 
 	// validate if namecheap is configured
 	if s.cfg.ApiKey == "" || s.cfg.ApiUser == "" || s.cfg.ApiUsername == "" || s.cfg.ApiClientIp == "" {
 		err := errors.New("Namecheap API configuration is missing")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Check if domain belongs to the tenant in PostgreSQL and is active
 	exists, err := s.postgres.DomainRepository.CheckDomainOwnership(ctx, tenant, domain)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to check domain ownership in postgres"))
+		spans.TraceError(errors.Wrap(err, "failed to check domain ownership in postgres"))
 		return err
 	}
 	if !exists {
 		err := fmt.Errorf("domain %s does not belong to tenant %s or is not active", domain, tenant)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -541,15 +537,15 @@ func (s *namecheapService) UpdateNameservers(ctx context.Context, tenant, domain
 	// Execute the request
 	resp, err := http.PostForm(s.cfg.Url, params)
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to call Namecheap API for setting custom nameservers"))
+		spans.TraceError(errors.Wrap(err, "failed to call Namecheap API for setting custom nameservers"))
 		return err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
-	span.LogFields(tracingLog.String("responseBody", string(responseBody)))
+	spans.LogKV("responseBody", string(responseBody))
 	if err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to read Namecheap response"))
+		spans.TraceError(errors.Wrap(err, "failed to read Namecheap response"))
 		return err
 	}
 
@@ -573,7 +569,7 @@ func (s *namecheapService) UpdateNameservers(ctx context.Context, tenant, domain
 
 	var result NamecheapSetCustomDNSResult
 	if err = xml.Unmarshal(responseBody, &result); err != nil {
-		tracing.TraceErr(span, errors.Wrap(err, "failed to parse Namecheap XML response"))
+		spans.TraceError(errors.Wrap(err, "failed to parse Namecheap XML response"))
 		return err
 	}
 
@@ -581,7 +577,7 @@ func (s *namecheapService) UpdateNameservers(ctx context.Context, tenant, domain
 	if len(result.Errors.Error) > 0 {
 		for _, e := range result.Errors.Error {
 			errMsg := fmt.Sprintf("Error %s: %s", e.Number, e.Message)
-			tracing.TraceErr(span, fmt.Errorf(errMsg))
+			spans.TraceError(fmt.Errorf(errMsg))
 		}
 		return fmt.Errorf("Namecheap API returned errors")
 	}
@@ -589,12 +585,12 @@ func (s *namecheapService) UpdateNameservers(ctx context.Context, tenant, domain
 	// Check if the operation was successful
 	if !result.CommandResponse.DomainDNSSetCustomResult.Updated {
 		err := fmt.Errorf("failed to set custom nameservers for domain %s", domain)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	// Log success
-	span.LogKV("result", "success")
+	spans.LogKV("result", "success")
 
 	return nil
 }

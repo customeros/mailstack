@@ -64,7 +64,7 @@ func StartTracerSpan(ctx context.Context, operationName string) (opentracing.Spa
 	return serverSpan, opentracing.ContextWithSpan(ctx, serverSpan)
 }
 
-func setDefaultSpanTags(ctx context.Context, span opentracing.Span) {
+func SetDefaultSpanTags(ctx context.Context, span opentracing.Span) {
 	tenant := utils.GetTenantFromContext(ctx)
 	loggedInUserId := utils.GetUserIdFromContext(ctx)
 	loggedInUserEmail := utils.GetUserEmailFromContext(ctx)
@@ -77,31 +77,6 @@ func setDefaultSpanTags(ctx context.Context, span opentracing.Span) {
 	if loggedInUserEmail != "" {
 		span.SetTag(SpanTagUserEmail, loggedInUserEmail)
 	}
-}
-
-func SetDefaultRestSpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentRest(span)
-}
-
-func SetDefaultGraphqlSpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentGraphql(span)
-}
-
-func SetDefaultServiceSpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentService(span)
-}
-
-func SetDefaultPostgresRepositorySpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	TagComponentPostgresRepository(span)
-}
-
-func SetDefaultListenerSpanTags(ctx context.Context, span opentracing.Span) {
-	setDefaultSpanTags(ctx, span)
-	span.SetTag(SpanTagComponent, SpanTagComponentListener)
 }
 
 func TraceErr(span opentracing.Span, err error, fields ...log.Field) {

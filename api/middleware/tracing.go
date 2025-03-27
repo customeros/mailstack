@@ -47,7 +47,7 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 		telemetry.TagComponentREST(spans)
 
 		// Set default span tags (tenant, user-id, user-email)
-		tracing.SetDefaultServiceSpanTags(jaegerCtx, jaegerSpan)
+		tracing.SetDefaultSpanTags(jaegerCtx, jaegerSpan)
 		telemetry.SetDefaultServiceSpanAttributes(jaegerCtx, otelSpan)
 
 		// Add entity ID if present in URL params

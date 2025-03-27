@@ -9,47 +9,43 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/log"
-
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 // checkDomain checks if a domain is likely available using multiple methods
 func (s *mailboxServiceOld) IsDomainAvailable(ctx context.Context, domain string) (ok, available bool) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.IsDomainAvailable")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogFields(log.String("domain", domain))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.IsDomainAvailable")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// First try DNS lookup
 	dnsOk, dnsCheck := s.dnsCheck(ctx, domain)
 	if dnsCheck {
-		span.LogFields(log.Bool("result.available", false))
+		spans.LogKV("result.available", false)
 		return true, false
 	}
 
 	whoOk, whoCheck := s.checkWhois(ctx, domain)
 
 	if !dnsOk && !whoOk {
-		span.LogFields(log.Bool("result.available", false))
+		spans.LogKV("result.available", false)
 		return false, false
 	}
 
 	if whoCheck {
-		span.LogFields(log.Bool("result.available", false))
+		spans.LogKV("result.available", false)
 		return true, false
 	}
 
-	span.LogFields(log.Bool("result.available", true))
+	spans.LogKV("result.available", true)
 	return true, true
 }
 
 func (s *mailboxServiceOld) RecommendOutboundDomains(ctx context.Context, domainRoot string, count int) []string {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.RecommendOutboundDomains")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogFields(log.String("domainRoot", domainRoot), log.Int("count", count))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.RecommendOutboundDomains")
+	defer spans.Finish()
+	spans.TagString("domainRoot", domainRoot)
+	spans.LogKV("count", count)
 
 	var (
 		prefixResults       []string
@@ -124,16 +120,15 @@ func (s *mailboxServiceOld) RecommendOutboundDomains(ctx context.Context, domain
 		return results[:count]
 	}
 
-	span.LogFields(log.Int("results.count", len(results)))
-	tracing.LogObjectAsJson(span, "results", results)
+	spans.LogKV("results.count", len(results))
+	spans.LogObjectAsJson("results", results)
 	return results
 }
 
 func (s *mailboxServiceOld) dnsCheck(ctx context.Context, domain string) (ok bool, exists bool) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.dnsCheck")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogFields(log.String("domain", domain))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.dnsCheck")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	ips, err := net.LookupIP(domain)
 	if len(ips) > 0 {
@@ -141,7 +136,7 @@ func (s *mailboxServiceOld) dnsCheck(ctx context.Context, domain string) (ok boo
 	}
 
 	if err != nil {
-		span.LogFields(log.String("result", err.Error()))
+		spans.LogKV("result", err.Error())
 		if strings.Contains(err.Error(), "no such host") {
 			return true, false
 		}
@@ -153,10 +148,9 @@ func (s *mailboxServiceOld) dnsCheck(ctx context.Context, domain string) (ok boo
 
 // checkWhois runs a whois query and analyzes the output
 func (s *mailboxServiceOld) checkWhois(ctx context.Context, domain string) (ok, exists bool) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "MailboxService.checkWhois")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.LogFields(log.String("domain", domain))
+	spans, ctx := telemetry.StartServiceSpan(ctx, "MailboxService.checkWhois")
+	defer spans.Finish()
+	spans.TagString("domain", domain)
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -174,7 +168,7 @@ func (s *mailboxServiceOld) checkWhois(ctx context.Context, domain string) (ok, 
 	}
 
 	if err != nil {
-		span.LogFields(log.String("result", err.Error()))
+		spans.LogKV("result", err.Error())
 		// Check if it's an exit error (whois sometimes exits with status 1)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// Still process the output if we got any
