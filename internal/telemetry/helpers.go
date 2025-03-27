@@ -22,6 +22,11 @@ type Spans struct {
 	OTel   trace.Span
 }
 
+// contextKey is a custom type for context keys
+type contextKey string
+
+const otelSpanKey contextKey = "otel_span"
+
 // StartSpan starts a new span with the given operation name and returns the spans and context
 // This will create spans for both Jaeger and OpenTelemetry
 func StartSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
@@ -50,7 +55,7 @@ func StartSpan(ctx context.Context, operationName string) (*Spans, context.Conte
 
 	// Store both spans in the context
 	ctx = otelCtx
-	ctx = context.WithValue(ctx, "otel_span", otelSpan)
+	ctx = context.WithValue(ctx, otelSpanKey, otelSpan)
 
 	return &Spans{
 		Jaeger: jaegerSpan,
@@ -95,7 +100,7 @@ func LogError(ctx context.Context, err error, fields ...log.Field) {
 	}
 
 	// Log to OpenTelemetry
-	if otelSpan, ok := ctx.Value("otel_span").(trace.Span); ok {
+	if otelSpan, ok := ctx.Value(otelSpanKey).(trace.Span); ok {
 		otelSpan.RecordError(err)
 		otelSpan.SetStatus(codes.Error, err.Error())
 		otelSpan.SetAttributes(
@@ -128,7 +133,7 @@ func LogInfo(ctx context.Context, msg string, fields ...log.Field) {
 	}
 
 	// Log to OpenTelemetry
-	if otelSpan, ok := ctx.Value("otel_span").(trace.Span); ok {
+	if otelSpan, ok := ctx.Value(otelSpanKey).(trace.Span); ok {
 		otelSpan.SetStatus(codes.Ok, msg)
 		otelSpan.SetAttributes(
 			attribute.String("event", "info"),
@@ -161,7 +166,7 @@ func LogDebug(ctx context.Context, msg string, fields ...log.Field) {
 	}
 
 	// Log to OpenTelemetry
-	if otelSpan, ok := ctx.Value("otel_span").(trace.Span); ok {
+	if otelSpan, ok := ctx.Value(otelSpanKey).(trace.Span); ok {
 		otelSpan.SetAttributes(
 			attribute.String("event", "debug"),
 			attribute.String("message", msg),
@@ -320,6 +325,7 @@ func TagComponentCronJob(spans *Spans) {
 	if spans == nil {
 		return
 	}
+	SetSpanKindInternal(spans)
 	if spans.Jaeger != nil {
 		spans.Jaeger.SetTag(componentKey, ComponentCronJob)
 	}

@@ -91,10 +91,6 @@ func MigrateClickhouseDatabases() error {
 		return fmt.Errorf("failed to migrate main database: %w", err)
 	}
 
-	if err := migrateLogsDB(); err != nil {
-		return fmt.Errorf("failed to migrate logs database: %w", err)
-	}
-
 	return nil
 }
 
@@ -111,21 +107,6 @@ func migrateMainDB() error {
 	if err := migrateTable(mainDB, &models.EmailStore{}); err != nil {
 		return fmt.Errorf("failed to migrate EmailStore table: %w", err)
 	}
-	return nil
-}
-
-// migrateLogsDB migrates tables in the logs database
-func migrateLogsDB() error {
-	// Migrate LogEntry table
-	if err := migrateTable(logsDB, &models.LogEntry{}); err != nil {
-		return fmt.Errorf("failed to migrate LogEntry table: %w", err)
-	}
-
-	// Migrate TraceEntry table
-	if err := migrateTable(logsDB, &models.TraceEntry{}); err != nil {
-		return fmt.Errorf("failed to migrate TraceEntry table: %w", err)
-	}
-
 	return nil
 }
 
