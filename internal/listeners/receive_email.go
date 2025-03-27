@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/opentracing/opentracing-go"
-
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services/events"
 )
 
@@ -36,21 +34,20 @@ func NewReceiveEmailListener(
 }
 
 func (l *ReceiveEmailListener) Handle(ctx context.Context, baseEvent any) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ReceiveEmailListener.Handle")
-	defer span.Finish()
-	tracing.SetDefaultListenerSpanTags(ctx, span)
-	tracing.LogObjectAsJson(span, "event", baseEvent)
+	spans, ctx := telemetry.StartListenerSpan(ctx, "ReceiveEmailListener.Handle")
+	defer spans.Finish()
+	spans.LogObjectAsJson("event", baseEvent)
 
 	// First validate and extract the base event
 	validatedEvent, err := l.ValidateBaseEvent(ctx, baseEvent)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
 	inboundEmail, err := events.DecodeEventData[dto.EmailReceived](ctx, validatedEvent)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 

@@ -9,13 +9,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/config"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 type aiService struct {
@@ -29,20 +28,19 @@ func NewAIService(config *config.CustomerOSAPIConfig) interfaces.AIService {
 }
 
 func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.StructuredEmailRequest) (*dto.StructuredEmailResponse, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "aiService.GetStructuredEmailBody")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	tracing.LogObjectAsJson(span, "request", request)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "aiService.GetStructuredEmailBody")
+	defer spans.Finish()
+	spans.LogObjectAsJson("request", request)
 
 	payload, err := json.Marshal(request)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, errors.Wrap(err, "failed to marshal payload")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.CustomerOSAPIConfig.Url+"/internal/v1/askAIForEmail", bytes.NewBuffer(payload))
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, errors.Wrap(err, "failed to create request")
 	}
 
@@ -56,7 +54,7 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 	// Execute the request
 	resp, err := client.Do(req)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, errors.Wrap(err, "request failed")
 	}
 	defer resp.Body.Close()
@@ -64,13 +62,13 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, errors.Wrap(err, "Unable to read response body")
 	}
 
 	// Check status code
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, fmt.Errorf("request failed with status code %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -78,11 +76,11 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 	if resp != nil {
 		err := json.Unmarshal(body, &response)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 	}
-	tracing.LogObjectAsJson(span, "response", response)
+	spans.LogObjectAsJson("response", response)
 
 	return &response, nil
 }

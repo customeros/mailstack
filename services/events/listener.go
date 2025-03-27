@@ -11,7 +11,7 @@ import (
 	"github.com/customeros/mailstack/dto"
 	mailstack_errors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/logger"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -47,45 +47,45 @@ func (b BaseEventListener) GetQueueName() string {
 }
 
 func (b BaseEventListener) ValidateBaseEvent(ctx context.Context, input any) (*dto.Event, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Events.ValidateEvent")
-	defer span.Finish()
-	tracing.SetDefaultListenerSpanTags(ctx, span)
+	spans, ctx := telemetry.StartListenerSpan(ctx, "Events.ValidateEvent")
+	defer spans.Finish()
+	spans.LogObjectAsJson("input", input)
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
 		err := mailstack_errors.ErrTenantMissing
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	message, ok := input.(dto.Event)
 	if !ok {
 		err := errors.New("unable to cast to event type")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	if message.Event.Data == nil {
 		err := errors.New("message data is nil")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	if message.Event.EntityId == "" {
 		err := errors.New("entity id is empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	if message.Event.Tenant == "" {
 		err := errors.New("tenant is empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	if message.Event.EventType == "" {
 		err := errors.New("event type is empty")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -93,30 +93,30 @@ func (b BaseEventListener) ValidateBaseEvent(ctx context.Context, input any) (*d
 }
 
 func DecodeEventData[T any](ctx context.Context, event *dto.Event) (T, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Listener.DecodeEventData")
-	defer span.Finish()
-	tracing.SetDefaultListenerSpanTags(ctx, span)
+	spans, ctx := telemetry.StartListenerSpan(ctx, "Listener.DecodeEventData")
+	defer spans.Finish()
+	spans.LogObjectAsJson("event", event)
 
 	var decoded T
 
 	bytes, ok := event.Event.Data.(map[string]interface{})
 	if !ok {
 		err := errors.New("failed to cast event data to map[string]interface{}")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return decoded, err
 	}
 
 	// Convert map[string]interface{} to JSON bytes
 	jsonBytes, err := json.Marshal(bytes)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return decoded, err
 	}
 
 	// Now unmarshal the JSON bytes into the target struct or map
 	err = json.Unmarshal(jsonBytes, &decoded)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return decoded, err
 	}
 
