@@ -235,3 +235,62 @@ func TagComponentListener(span opentracing.Span) {
 func TagComponentCronJob(span opentracing.Span) {
 	span.SetTag(componentKey, ComponentCronJob)
 }
+
+// SpanKind constants
+const (
+	SpanKindInternal = "internal"
+	SpanKindServer   = "server"
+	SpanKindClient   = "client"
+	SpanKindProducer = "producer"
+	SpanKindConsumer = "consumer"
+)
+
+// SetSpanKindInternal sets the span kind to internal
+func SetSpanKindInternal(span interface{}) {
+	switch s := span.(type) {
+	case trace.Span:
+		s.SetAttributes(attribute.String("span.kind", SpanKindInternal))
+	case opentracing.Span:
+		s.SetTag("span.kind", SpanKindInternal)
+	}
+}
+
+// SetSpanKindServer sets the span kind to server
+func SetSpanKindServer(span interface{}) {
+	switch s := span.(type) {
+	case trace.Span:
+		s.SetAttributes(attribute.String("span.kind", SpanKindServer))
+	case opentracing.Span:
+		s.SetTag("span.kind", SpanKindServer)
+	}
+}
+
+// SetSpanKindClient sets the span kind to client
+func SetSpanKindClient(span interface{}) {
+	switch s := span.(type) {
+	case trace.Span:
+		s.SetAttributes(attribute.String("span.kind", SpanKindClient))
+	case opentracing.Span:
+		s.SetTag("span.kind", SpanKindClient)
+	}
+}
+
+// SetSpanKindProducer sets the span kind to producer
+func SetSpanKindProducer(span interface{}) {
+	switch s := span.(type) {
+	case trace.Span:
+		s.SetAttributes(attribute.String("span.kind", SpanKindProducer))
+	case opentracing.Span:
+		s.SetTag("span.kind", SpanKindProducer)
+	}
+}
+
+// SetSpanKindConsumer sets the span kind to consumer
+func SetSpanKindConsumer(span interface{}) {
+	switch s := span.(type) {
+	case trace.Span:
+		s.SetAttributes(attribute.String("span.kind", SpanKindConsumer))
+	case opentracing.Span:
+		s.SetTag("span.kind", SpanKindConsumer)
+	}
+}

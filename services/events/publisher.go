@@ -16,6 +16,7 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -449,6 +450,7 @@ func (r *RabbitMQPublisher) publishEventOnExchange(ctx context.Context, entityId
 	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishEventOnExchange")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+	telemetry.SetSpanKindProducer(span)
 
 	tracingData := tracing.ExtractTextMapCarrier((span).Context())
 
@@ -481,6 +483,7 @@ func (r *RabbitMQPublisher) publishMessageOnExchange(ctx context.Context, messag
 	span, ctx := opentracing.StartSpanFromContext(ctx, "RabbitMQPublisher.PublishMessageOnExchange")
 	defer span.Finish()
 	tracing.SetDefaultServiceSpanTags(ctx, span)
+	telemetry.SetSpanKindProducer(span)
 
 	tracing.LogObjectAsJson(span, "message", message)
 

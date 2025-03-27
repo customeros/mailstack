@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -74,10 +75,10 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 }
 
 func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID string) ([]*models.Mailbox, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "mailboxRepository.GetMailboxesByUserID")
-	defer span.Finish()
-	tracing.SetDefaultPostgresRepositorySpanTags(ctx, span)
-	span.LogKV("userId", userID)
+	jaegerSpan, otelSpan, ctx := telemetry.StartSpan(ctx, "mailboxRepository.GetMailboxesByUserID")
+	defer telemetry.FinishSpans(jaegerSpan, otelSpan)
+	telemetry.TagComponentPostgres(jaegerSpan)
+	jaegerSpan.LogKV("userId", userID)
 
 	tenant := utils.GetTenantFromContext(ctx)
 	var mailboxes []*models.Mailbox
@@ -85,11 +86,11 @@ func (r *mailboxRepository) GetMailboxesByUserID(ctx context.Context, userID str
 	// search by user and tenant
 	result := r.db.Where("user_id = ? AND tenant = ?", userID, tenant).Find(&mailboxes)
 	if result.Error != nil {
-		tracing.TraceErr(span, result.Error)
+		tracing.TraceErr(jaegerSpan, result.Error)
 		return nil, result.Error
 	}
 
-	span.LogKV("result.count", len(mailboxes))
+	jaegerSpan.LogKV("result.count", len(mailboxes))
 	return mailboxes, nil
 }
 
