@@ -11,12 +11,11 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
-	"github.com/opentracing/opentracing-go"
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
@@ -26,19 +25,18 @@ func (s *IMAPService) performInitialSync(
 	c *client.Client,
 	mailboxID, folderName string,
 ) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.performInitialSync")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.performInitialSync")
+	defer spans.Finish()
 
 	// Get all UIDs that need to be synced
 	syncState, uidsToProcess, err := s.getUIDsToSync(ctx, c, mailboxID, folderName)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 	if syncState == nil {
 		err := errors.New("no sync state")
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return err
 	}
 
@@ -57,14 +55,13 @@ func (s *IMAPService) performInitialSync(
 // getUIDsToSync returns a slice of UIDs that need to be synced
 func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailboxID, folderName string,
 ) (*models.MailboxSyncState, []uint32, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.getUIDsToSync")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.getUIDsToSync")
+	defer spans.Finish()
 
 	// Get the last synced UID, if any (from previous incomplete sync)
 	syncState, err := s.repositories.MailboxSyncRepository.GetSyncState(ctx, mailboxID, folderName)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, nil, err
 	}
 
@@ -124,9 +121,8 @@ func (s *IMAPService) processBatches(
 	uidsToProcess []uint32,
 	totalMessagesToProcess int,
 ) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.processBatches")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.processBatches")
+	defer spans.Finish()
 
 	batchSize := INITIAL_SYNC_BATCH_SIZE
 	processedCount := 0
@@ -167,7 +163,7 @@ func (s *IMAPService) processBatches(
 
 		err = s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &syncState)
 		if err != nil {
-			tracing.TraceErr(span, err)
+			spans.TraceError(err)
 			// Continue despite error saving state
 		} else {
 			log.Printf("[%s][%s] Saved batch progress (UID %d, %d/%d messages)",

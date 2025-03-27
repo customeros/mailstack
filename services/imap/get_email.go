@@ -5,30 +5,28 @@ import (
 	"fmt"
 
 	"github.com/emersion/go-imap"
-	"github.com/opentracing/opentracing-go"
 
-	"github.com/customeros/mailstack/internal/tracing"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 func (s *IMAPService) GetMessageByUID(ctx context.Context, mailboxID, folderName string, uid uint32) (*imap.Message, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "IMAPService.GetMessageByUID")
-	defer span.Finish()
-	tracing.SetDefaultServiceSpanTags(ctx, span)
-	span.SetTag("mailbox_id", mailboxID)
-	span.SetTag("folder", folderName)
-	span.SetTag("uid", uid)
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.GetMessageByUID")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+	spans.TagString("folder", folderName)
+	spans.TagUint32("uid", uid)
 
 	// Get the client for this mailbox
 	client, err := s.getConnectedClient(ctx, mailboxID)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	// Select the folder
 	_, err = client.Select(folderName, true) // Read-only mode
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -40,13 +38,13 @@ func (s *IMAPService) GetMessageByUID(ctx context.Context, mailboxID, folderName
 	// Search for the message
 	uids, err := client.Search(criteria)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
 	if len(uids) == 0 {
 		err = fmt.Errorf("message with UID %d not found", uid)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -66,7 +64,7 @@ func (s *IMAPService) GetMessageByUID(ctx context.Context, mailboxID, folderName
 	messages := make(chan *imap.Message, 1)
 	err = client.Fetch(seqSet, items, messages)
 	if err != nil {
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 
@@ -74,7 +72,7 @@ func (s *IMAPService) GetMessageByUID(ctx context.Context, mailboxID, folderName
 	msg, ok := <-messages
 	if !ok {
 		err = fmt.Errorf("failed to fetch message with UID %d", uid)
-		tracing.TraceErr(span, err)
+		spans.TraceError(err)
 		return nil, err
 	}
 

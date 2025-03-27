@@ -352,6 +352,21 @@ func (s *Spans) TagInt(key string, value int) {
 	}
 }
 
+func (s *Spans) TagUint32(key string, value uint32) {
+	if s == nil {
+		return
+	}
+	if key == "" {
+		return
+	}
+	if s.Jaeger != nil {
+		s.Jaeger.SetTag(key, value)
+	}
+	if s.OTel != nil {
+		s.OTel.SetAttributes(attribute.Int64(key, int64(value)))
+	}
+}
+
 func (s *Spans) TagBool(key string, value bool) {
 	if s == nil {
 		return
