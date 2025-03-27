@@ -2,9 +2,11 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -14,9 +16,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Spans wraps both Jaeger and OpenTelemetry spans
+type Spans struct {
+	Jaeger opentracing.Span
+	OTel   trace.Span
+}
+
 // StartSpan starts a new span with the given operation name and returns the spans and context
 // This will create spans for both Jaeger and OpenTelemetry
-func StartSpan(ctx context.Context, operationName string) (opentracing.Span, trace.Span, context.Context) {
+func StartSpan(ctx context.Context, operationName string) (*Spans, context.Context) {
 	// Start Jaeger span
 	jaegerSpan, ctx := opentracing.StartSpanFromContext(ctx, operationName)
 	jaegerSpan.SetTag("service.name", "mailstack")
@@ -43,16 +51,23 @@ func StartSpan(ctx context.Context, operationName string) (opentracing.Span, tra
 	// Store both spans in the context
 	ctx = otelCtx
 	ctx = context.WithValue(ctx, "otel_span", otelSpan)
-	return jaegerSpan, otelSpan, ctx
+
+	return &Spans{
+		Jaeger: jaegerSpan,
+		OTel:   otelSpan,
+	}, ctx
 }
 
 // FinishSpans finishes both Jaeger and OpenTelemetry spans
-func FinishSpans(jaegerSpan opentracing.Span, otelSpan trace.Span) {
-	if jaegerSpan != nil {
-		jaegerSpan.Finish()
+func FinishSpans(spans *Spans) {
+	if spans == nil {
+		return
 	}
-	if otelSpan != nil {
-		otelSpan.End()
+	if spans.Jaeger != nil {
+		spans.Jaeger.Finish()
+	}
+	if spans.OTel != nil {
+		spans.OTel.End()
 	}
 }
 
@@ -173,28 +188,56 @@ func TagError(span opentracing.Span, err error) {
 	}
 }
 
-// TagString adds a string tag to a span for both systems
-func TagString(span opentracing.Span, key, value string) {
-	span.SetTag(key, value)
-	// Add OpenTelemetry specific prefix for certain keys
-	if key == "component" || key == "service.name" || key == "tenant" {
-		span.SetTag("otel."+key, value)
+// TagString adds a string tag/attribute to both spans
+func (s *Spans) TagString(key, value string) {
+	if s == nil {
+		return
+	}
+	if s.Jaeger != nil {
+		s.Jaeger.SetTag(key, value)
+	}
+	if s.OTel != nil {
+		s.OTel.SetAttributes(attribute.String(key, value))
 	}
 }
 
-// TagInt adds an integer tag to a span for both systems
-func TagInt(span opentracing.Span, key string, value int) {
-	span.SetTag(key, value)
+// TagInt adds an integer tag/attribute to both spans
+func (s *Spans) TagInt(key string, value int) {
+	if s == nil {
+		return
+	}
+	if s.Jaeger != nil {
+		s.Jaeger.SetTag(key, value)
+	}
+	if s.OTel != nil {
+		s.OTel.SetAttributes(attribute.Int(key, value))
+	}
 }
 
-// TagBool adds a boolean tag to a span for both systems
-func TagBool(span opentracing.Span, key string, value bool) {
-	span.SetTag(key, value)
+// TagBool adds a boolean tag/attribute to both spans
+func (s *Spans) TagBool(key string, value bool) {
+	if s == nil {
+		return
+	}
+	if s.Jaeger != nil {
+		s.Jaeger.SetTag(key, value)
+	}
+	if s.OTel != nil {
+		s.OTel.SetAttributes(attribute.Bool(key, value))
+	}
 }
 
-// TagStringSlice adds a string slice tag to a span for both systems
-func TagStringSlice(span opentracing.Span, key string, value []string) {
-	span.SetTag(key, fmt.Sprintf("%v", value))
+// TagStringSlice adds a string slice tag/attribute to both spans
+func (s *Spans) TagStringSlice(key string, value []string) {
+	if s == nil {
+		return
+	}
+	if s.Jaeger != nil {
+		s.Jaeger.SetTag(key, fmt.Sprintf("%v", value))
+	}
+	if s.OTel != nil {
+		s.OTel.SetAttributes(attribute.StringSlice(key, value))
+	}
 }
 
 // Component tag constants
@@ -212,28 +255,77 @@ const (
 )
 
 // Component tagging helpers
-func TagComponentGraphQL(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentGraphQL)
+func TagComponentGraphQL(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentGraphQL)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentGraphQL))
+	}
 }
 
-func TagComponentPostgres(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentPostgres)
+func TagComponentPostgres(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	SetSpanKindDatabase(spans)
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentPostgres)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentPostgres))
+	}
 }
 
-func TagComponentREST(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentREST)
+func TagComponentREST(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentREST)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentREST))
+	}
 }
 
-func TagComponentService(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentService)
+func TagComponentService(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentService)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentService))
+	}
 }
 
-func TagComponentListener(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentListener)
+func TagComponentListener(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentListener)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentListener))
+	}
 }
 
-func TagComponentCronJob(span opentracing.Span) {
-	span.SetTag(componentKey, ComponentCronJob)
+func TagComponentCronJob(spans *Spans) {
+	if spans == nil {
+		return
+	}
+	if spans.Jaeger != nil {
+		spans.Jaeger.SetTag(componentKey, ComponentCronJob)
+	}
+	if spans.OTel != nil {
+		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentCronJob))
+	}
 }
 
 // SpanKind constants
@@ -246,51 +338,180 @@ const (
 )
 
 // SetSpanKindInternal sets the span kind to internal
-func SetSpanKindInternal(span interface{}) {
-	switch s := span.(type) {
-	case trace.Span:
-		s.SetAttributes(attribute.String("span.kind", SpanKindInternal))
-	case opentracing.Span:
-		s.SetTag("span.kind", SpanKindInternal)
+func SetSpanKindInternal(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
 	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindInternal))
 }
 
 // SetSpanKindServer sets the span kind to server
-func SetSpanKindServer(span interface{}) {
-	switch s := span.(type) {
-	case trace.Span:
-		s.SetAttributes(attribute.String("span.kind", SpanKindServer))
-	case opentracing.Span:
-		s.SetTag("span.kind", SpanKindServer)
+func SetSpanKindServer(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
 	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindServer))
 }
 
 // SetSpanKindClient sets the span kind to client
-func SetSpanKindClient(span interface{}) {
-	switch s := span.(type) {
-	case trace.Span:
-		s.SetAttributes(attribute.String("span.kind", SpanKindClient))
-	case opentracing.Span:
-		s.SetTag("span.kind", SpanKindClient)
+func SetSpanKindClient(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
 	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindClient))
 }
 
 // SetSpanKindProducer sets the span kind to producer
-func SetSpanKindProducer(span interface{}) {
-	switch s := span.(type) {
-	case trace.Span:
-		s.SetAttributes(attribute.String("span.kind", SpanKindProducer))
-	case opentracing.Span:
-		s.SetTag("span.kind", SpanKindProducer)
+func SetSpanKindProducer(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
 	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindProducer))
 }
 
 // SetSpanKindConsumer sets the span kind to consumer
-func SetSpanKindConsumer(span interface{}) {
-	switch s := span.(type) {
-	case trace.Span:
-		s.SetAttributes(attribute.String("span.kind", SpanKindConsumer))
-	case opentracing.Span:
-		s.SetTag("span.kind", SpanKindConsumer)
+func SetSpanKindConsumer(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
+	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindConsumer))
+}
+
+// SetSpanKindDatabase sets the span kind to client for database operations
+func SetSpanKindDatabase(spans *Spans) {
+	if spans == nil || spans.OTel == nil {
+		return
+	}
+	spans.OTel.SetAttributes(attribute.String("span.kind", SpanKindClient))
+}
+
+// TraceError adds error information to both Jaeger and OpenTelemetry spans
+func (s *Spans) TraceError(err error) {
+	if s == nil || err == nil {
+		return
+	}
+
+	// Trace error in Jaeger
+	if s.Jaeger != nil {
+		tracing.TraceErr(s.Jaeger, err)
+	}
+
+	// Trace error in OpenTelemetry
+	if s.OTel != nil {
+		s.OTel.RecordError(err)
+		s.OTel.SetStatus(codes.Error, err.Error())
+		s.OTel.SetAttributes(
+			attribute.String("event", "error"),
+			attribute.String("time", time.Now().Format(time.RFC3339)),
+		)
+	}
+}
+
+// LogFields logs fields to both Jaeger and OpenTelemetry spans
+func (s *Spans) LogFields(fields ...log.Field) {
+	if s == nil {
+		return
+	}
+
+	// Log to Jaeger
+	if s.Jaeger != nil {
+		s.Jaeger.LogFields(fields...)
+	}
+
+	// Log to OpenTelemetry
+	if s.OTel != nil {
+		attrs := make([]attribute.KeyValue, 0, len(fields))
+		for _, field := range fields {
+			key := field.Key()
+			value := field.Value()
+			switch v := value.(type) {
+			case string:
+				attrs = append(attrs, attribute.String(key, v))
+			case int:
+				attrs = append(attrs, attribute.Int(key, v))
+			case bool:
+				attrs = append(attrs, attribute.Bool(key, v))
+			case float64:
+				attrs = append(attrs, attribute.Float64(key, v))
+			case error:
+				attrs = append(attrs, attribute.String(key, v.Error()))
+			default:
+				attrs = append(attrs, attribute.String(key, fmt.Sprintf("%v", v)))
+			}
+		}
+		s.OTel.AddEvent("log", trace.WithAttributes(attrs...))
+	}
+}
+
+// LogKV logs key-value pairs to both Jaeger and OpenTelemetry spans
+func (s *Spans) LogKV(alternatingKeyValues ...interface{}) {
+	if s == nil {
+		return
+	}
+
+	// Log to Jaeger
+	if s.Jaeger != nil {
+		s.Jaeger.LogKV(alternatingKeyValues...)
+	}
+
+	// Log to OpenTelemetry
+	if s.OTel != nil {
+		attrs := make([]attribute.KeyValue, 0, len(alternatingKeyValues)/2)
+		for i := 0; i < len(alternatingKeyValues); i += 2 {
+			if i+1 >= len(alternatingKeyValues) {
+				break
+			}
+			key, ok := alternatingKeyValues[i].(string)
+			if !ok {
+				continue
+			}
+			value := alternatingKeyValues[i+1]
+			switch v := value.(type) {
+			case string:
+				attrs = append(attrs, attribute.String(key, v))
+			case int:
+				attrs = append(attrs, attribute.Int(key, v))
+			case bool:
+				attrs = append(attrs, attribute.Bool(key, v))
+			case float64:
+				attrs = append(attrs, attribute.Float64(key, v))
+			case error:
+				attrs = append(attrs, attribute.String(key, v.Error()))
+			default:
+				// For unknown types, try to marshal as JSON
+				if jsonBytes, err := json.Marshal(v); err == nil {
+					attrs = append(attrs, attribute.String(key, string(jsonBytes)))
+				} else {
+					attrs = append(attrs, attribute.String(key, fmt.Sprintf("%v", v)))
+				}
+			}
+		}
+		s.OTel.AddEvent("log", trace.WithAttributes(attrs...))
+	}
+}
+
+// LogObjectAsJson logs an object as JSON to both Jaeger and OpenTelemetry spans
+func (s *Spans) LogObjectAsJson(key string, obj interface{}) {
+	if s == nil {
+		return
+	}
+
+	// Log to Jaeger
+	if s.Jaeger != nil {
+		tracing.LogObjectAsJson(s.Jaeger, key, obj)
+	}
+
+	// Log to OpenTelemetry
+	if s.OTel != nil {
+		jsonBytes, err := json.Marshal(obj)
+		if err != nil {
+			s.OTel.AddEvent("log", trace.WithAttributes(
+				attribute.String("error", fmt.Sprintf("failed to marshal object to JSON: %v", err)),
+			))
+			return
+		}
+		s.OTel.AddEvent("log", trace.WithAttributes(
+			attribute.String(key, string(jsonBytes)),
+		))
 	}
 }
