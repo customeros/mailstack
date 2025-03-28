@@ -77,7 +77,6 @@ func main() {
 		User:              cfg.ClickhouseConfig.User,
 		Password:          cfg.ClickhouseConfig.Password,
 		MailstackDatabase: cfg.ClickhouseConfig.DBName,
-		LogsDatabase:      cfg.ClickhouseConfig.DBNameLogs,
 	})
 	if err != nil {
 		log.Fatalf("Clickhouse database initialization failed: %v", err)

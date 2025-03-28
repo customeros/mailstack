@@ -16,12 +16,10 @@ type ClickhouseConfig struct {
 	User              string
 	Password          string
 	MailstackDatabase string
-	LogsDatabase      string
 }
 
 var (
 	mainDB *ch.DB
-	logsDB *ch.DB
 )
 
 // InitClickhouseDatabases initializes connections to both main and logs databases
@@ -50,31 +48,6 @@ func InitClickhouseDatabases(config ClickhouseConfig) error {
 		return fmt.Errorf("main clickhouse connection failed: %w", err)
 	}
 	mainDB = mainConn
-
-	// Initialize logs database connection
-	logsConn := ch.Connect(
-		ch.WithAddr(fmt.Sprintf("%s:%d", config.Host, config.Port)),
-		ch.WithUser(config.User),
-		ch.WithPassword(config.Password),
-		ch.WithDatabase(config.LogsDatabase),
-		ch.WithAutoCreateDatabase(true),
-		ch.WithPoolSize(20),
-		ch.WithConnMaxIdleTime(time.Hour),
-		ch.WithTimeout(30*time.Second),
-		ch.WithDialTimeout(10*time.Second),
-		ch.WithReadTimeout(30*time.Second),
-		ch.WithWriteTimeout(30*time.Second),
-		ch.WithQuerySettings(map[string]interface{}{
-			"max_execution_time":            60,
-			"send_progress_in_http_headers": 0,
-		}),
-	)
-
-	// Verify logs connection
-	if err := logsConn.Ping(context.Background()); err != nil {
-		return fmt.Errorf("logs clickhouse connection failed: %w", err)
-	}
-	logsDB = logsConn
 
 	return nil
 }
@@ -127,9 +100,4 @@ func migrateTable(db *ch.DB, model interface{}) error {
 // GetDB returns the main database connection
 func GetDB() *ch.DB {
 	return mainDB
-}
-
-// GetLogsDB returns the logs database connection
-func GetLogsDB() *ch.DB {
-	return logsDB
 }
