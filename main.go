@@ -2,10 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"strconv"
-
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/database"
@@ -13,6 +9,8 @@ import (
 	"github.com/customeros/mailstack/internal/server"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"log"
+	"os"
 )
 
 func main() {
@@ -65,22 +63,22 @@ func main() {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
-	port, err := strconv.ParseUint(cfg.ClickhouseConfig.Port, 10, 16)
-	if err != nil {
-		log.Fatalf("Invalid ClickHouse port: %v", err)
-	}
+	//port, err := strconv.ParseUint(cfg.ClickhouseConfig.Port, 10, 16)
+	//if err != nil {
+	//	log.Fatalf("Invalid ClickHouse port: %v", err)
+	//}
 
 	// Initialize ClickHouse connections
-	err = database.InitClickhouseDatabases(database.ClickhouseConfig{
-		Host:              cfg.ClickhouseConfig.Host,
-		Port:              uint16(port),
-		User:              cfg.ClickhouseConfig.User,
-		Password:          cfg.ClickhouseConfig.Password,
-		MailstackDatabase: cfg.ClickhouseConfig.DBName,
-	})
-	if err != nil {
-		log.Fatalf("Clickhouse database initialization failed: %v", err)
-	}
+	//err = database.InitClickhouseDatabases(database.ClickhouseConfig{
+	//	Host:              cfg.ClickhouseConfig.Host,
+	//	Port:              uint16(port),
+	//	User:              cfg.ClickhouseConfig.User,
+	//	Password:          cfg.ClickhouseConfig.Password,
+	//	MailstackDatabase: cfg.ClickhouseConfig.DBName,
+	//})
+	//if err != nil {
+	//	log.Fatalf("Clickhouse database initialization failed: %v", err)
+	//}
 
 	// Try to get Kubernetes config
 	var k8sClient kubernetes.Interface

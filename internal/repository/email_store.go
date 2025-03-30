@@ -27,14 +27,14 @@ func (r *emailStore) InitSchema(ctx context.Context) error {
 	defer spans.Finish()
 
 	// Use the raw SQL from the model
-	sql := models.EmailStore{}.CreateTableSQL()
+	//sql := models.EmailStore{}.CreateTableSQL()
 
 	// Execute the raw SQL
-	_, err := r.ch.Exec(sql)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
+	//_, err := r.ch.Exec(sql)
+	//if err != nil {
+	//	spans.TraceError(err)
+	//	return err
+	//}
 
 	return nil
 }
