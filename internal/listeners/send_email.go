@@ -25,8 +25,8 @@ func NewSendEmailListener(
 	return &SendEmailListener{
 		BaseEventListener: events.NewBaseEventListener(
 			logger,
-			events.GetEventType[dto.SendEmail](), // subscribed event
-			events.QueueSendEmail,                // listening on Direct queue
+			events.GetEventType[dto.EmailRecord](), // subscribed event
+			events.QueueSendEmail,                  // listening on Direct queue
 		),
 		repositories: repos,
 		emailService: emailService,
@@ -46,12 +46,12 @@ func (l *SendEmailListener) Handle(ctx context.Context, baseEvent any) error {
 	}
 
 	// Option 1: If you're using SendEmail DTO
-	sendEmail, err := events.DecodeEventData[dto.SendEmail](ctx, validatedEvent)
+	sendEmail, err := events.DecodeEventData[dto.EmailRecord](ctx, validatedEvent)
 	if err != nil {
 		spans.TraceError(err)
 		return err
 	}
-	email := sendEmail.Email
+	email := sendEmail
 
 	// get mailbox for email
 	mailbox, err := l.repositories.MailboxRepository.GetMailbox(ctx, email.MailboxID)
@@ -78,6 +78,6 @@ func (l *SendEmailListener) Handle(ctx context.Context, baseEvent any) error {
 		// TODO
 		return nil
 	default:
-		return l.emailService.SendWithSMTP(ctx, mailbox, email, attachments)
+		return l.emailService.SendWithSMTP(ctx, mailbox, &email, attachments)
 	}
 }

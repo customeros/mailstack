@@ -2,9 +2,7 @@ package mappers
 
 import (
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
-	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/utils"
 )
 
 func MapGormEmailToGraph(email *models.Email) *graphql_model.EmailMessage {
@@ -20,23 +18,5 @@ func MapGormEmailToGraph(email *models.Email) *graphql_model.EmailMessage {
 		Subject:    email.Subject,
 		Body:       email.Body,
 		ReceivedAt: *email.SentAt,
-	}
-}
-
-func MapGraphEmailInputToGorm(email *graphql_model.EmailInput) *models.EmailStore {
-	return &models.EmailStore{
-		MailboxID:    utils.GetOrDefault(email.MailboxID, ""),
-		Direction:    enum.EmailDirectionOutbound.String(),
-		FromAddress:  email.FromAddress,
-		FromName:     utils.GetOrDefault(email.FromName, ""),
-		ToAddresses:  email.ToAddresses,
-		CcAddresses:  email.CcAddresses,
-		BccAddresses: email.BccAddresses,
-		ReplyTo:      utils.GetOrDefault(email.ReplyTo, ""),
-		Subject:      email.Subject,
-		BodyText:     utils.GetOrDefault(email.Body.Text, ""),
-		BodyHTML:     utils.GetOrDefault(email.Body.HTML, ""),
-		ScheduledFor: email.ScheduleFor,
-		TrackClicks:  utils.GetOrDefault(email.TrackClicks, false),
 	}
 }

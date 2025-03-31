@@ -5,6 +5,7 @@ type AppConfig struct {
 	APIKey            string `env:"API_KEY,required"`
 	RabbitMQURL       string `env:"RABBITMQ_URL"`
 	TrackingPublicUrl string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`
+	EMLStorageBucket  string `env:"EML_STORAGE_BUCKET" envDefault:"emails-test"`
 }
 
 type MailstackDatabaseConfig struct {
@@ -17,28 +18,18 @@ type MailstackDatabaseConfig struct {
 	MaxIdleConn     int    `env:"MAILSTACK_POSTGRES_DB_MAX_IDLE_CONN"`
 	ConnMaxLifetime int    `env:"MAILSTACK_POSTGRES_DB_CONN_MAX_LIFETIME"`
 	LogLevel        string `env:"MAILSTACK_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
-	SSLMode         string `env:"MAILSTACK_POSTGRES_SSL_MODE" envDefault:"require"`
 }
 
-type OpenlineDatabaseConfig struct {
-	Host            string `env:"OPENLINE_POSTGRES_HOST,required"`
-	Port            string `env:"OPENLINE_POSTGRES_PORT,required"`
-	User            string `env:"OPENLINE_POSTGRES_USER,required"`
-	DBName          string `env:"OPENLINE_POSTGRES_DB_NAME,required"`
-	Password        string `env:"OPENLINE_POSTGRES_PASSWORD,required"`
-	MaxConn         int    `env:"OPENLINE_POSTGRES_DB_MAX_CONN"`
-	MaxIdleConn     int    `env:"OPENLINE_POSTGRES_DB_MAX_IDLE_CONN"`
-	ConnMaxLifetime int    `env:"OPENLINE_POSTGRES_DB_CONN_MAX_LIFETIME"`
-	LogLevel        string `env:"OPENLINE_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
-	SSLMode         string `env:"OPENLINE_POSTGRES_SSL_MODE" envDefault:"require"`
-}
-
-type ClickhouseConfig struct {
-	Host     string `env:"CLICKHOUSE_HOST,required"`
-	Port     string `env:"CLICKHOUSE_PORT,required"`
-	User     string `env:"CLICKHOUSE_USERNAME,required"`
-	DBName   string `env:"CLICKHOUSE_DB_NAME,required"`
-	Password string `env:"CLICKHOUSE_PASSWORD,required"`
+type TimescaleDBConfig struct {
+	Host            string `env:"TIMESCALE_DB_HOST,required"`
+	Port            string `env:"TIMESCALE_DB_PORT,required"`
+	User            string `env:"TIMESCALE_DB_USER,required"`
+	DBName          string `env:"TIMESCALE_DB_NAME,required"`
+	Password        string `env:"TIMESCALE_DB_PASSWORD,required"`
+	MaxConn         int    `env:"TIMESCALE_DB_MAX_CONN"`
+	MaxIdleConn     int    `env:"TIMESCALE_DB_MAX_IDLE_CONN"`
+	ConnMaxLifetime int    `env:"TIMESCALE_DB_CONN_MAX_LIFETIME"`
+	LogLevel        string `env:"TIMESCALE_DB_LOG_LEVEL" envDefault:"WARN"`
 }
 
 type R2StorageConfig struct {

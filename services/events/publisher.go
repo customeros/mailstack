@@ -14,7 +14,6 @@ import (
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/logger"
-	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
@@ -104,8 +103,8 @@ func (r *RabbitMQPublisher) PublishReceiveEmailEvent(ctx context.Context, messag
 	}
 }
 
-func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *models.EmailStore) error {
-	return r.publishEventOnExchange(ctx, email.ID, enum.EMAIL, dto.SendEmail{Email: email}, ExchangeMailstackDirect, RoutingKeySendEmail)
+func (r *RabbitMQPublisher) PublishSendEmailEvent(ctx context.Context, email *dto.EmailRecord) error {
+	return r.publishEventOnExchange(ctx, email.ID, enum.EMAIL, email, ExchangeMailstackDirect, RoutingKeySendEmail)
 }
 
 func (r *RabbitMQPublisher) PublishFanoutEvent(ctx context.Context, entityId string, entityType enum.EntityType, message interface{}) error {

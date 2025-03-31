@@ -2,6 +2,7 @@ package utils
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -45,4 +46,22 @@ func GenerateNanoIDWithPrefix(prefix string, length int) string {
 		panic(err)
 	}
 	return fmt.Sprintf("%s_%s", prefix, id)
+}
+
+func GenerateIMAPHash(mailboxID, folder string, uid uint32) string {
+	// Create a deterministic string combining all elements
+	// Using a separator that's unlikely to appear in mailboxID or folder
+	combined := fmt.Sprintf("%s::%s::%d", mailboxID, folder, uid)
+
+	// Generate SHA-256 hash
+	hasher := sha256.New()
+	hasher.Write([]byte(combined))
+	hashBytes := hasher.Sum(nil)
+
+	// Convert to hex string
+	hashString := hex.EncodeToString(hashBytes)
+
+	// Return a shortened version (first 16 characters is usually sufficient)
+	// You can adjust the length based on your collision probability needs
+	return hashString[:21]
 }

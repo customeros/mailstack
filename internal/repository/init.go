@@ -1,12 +1,8 @@
 package repository
 
 import (
-	"context"
-	"fmt"
-	"log"
 	"time"
 
-	"github.com/uptrace/go-clickhouse/ch"
 	"gorm.io/gorm"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -18,8 +14,8 @@ import (
 type Repositories struct {
 	DomainRepository          DomainRepository
 	EmailRepository           interfaces.EmailRepository
-	EmailStore                interfaces.EmailStore
 	EmailAttachmentRepository interfaces.EmailAttachmentRepository
+	EmailEventRepository      interfaces.EmailEvent
 	EmailThreadRepository     interfaces.EmailThreadRepository
 	MailboxRepository         interfaces.MailboxRepository
 	MailboxSyncRepository     interfaces.MailboxSyncRepository
@@ -27,7 +23,7 @@ type Repositories struct {
 	SenderRepository          interfaces.SenderRepository
 }
 
-func InitRepositories(mailstackDB *gorm.DB, clickhousDB *ch.DB, r2Config *config.R2StorageConfig) (*Repositories, error) {
+func InitRepositories(mailstackDB *gorm.DB, timescaleDB *gorm.DB, r2Config *config.R2StorageConfig) *Repositories {
 	emailAttachmentStorage := storage.NewR2StorageService(
 		r2Config.AccountID,
 		r2Config.AccessKeyID,
@@ -36,19 +32,9 @@ func InitRepositories(mailstackDB *gorm.DB, clickhousDB *ch.DB, r2Config *config
 		false, // private access
 	)
 
-	emailStore := NewEmailStore(clickhousDB)
-	err := emailStore.InitSchema(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Clickhouse schema: %w", err)
-	}
-	if emailStore == nil {
-		log.Fatalf("email store not initialized")
-	}
-
 	return &Repositories{
-		// Openline
-		DomainRepository: NewDomainRepository(mailstackDB),
 		// Mailstack
+		DomainRepository:          NewDomainRepository(mailstackDB),
 		EmailRepository:           NewEmailRepository(mailstackDB),
 		EmailAttachmentRepository: NewEmailAttachmentRepository(mailstackDB, emailAttachmentStorage),
 		EmailThreadRepository:     NewEmailThreadRepository(mailstackDB),
@@ -56,9 +42,9 @@ func InitRepositories(mailstackDB *gorm.DB, clickhousDB *ch.DB, r2Config *config
 		MailboxSyncRepository:     NewMailboxSyncRepository(mailstackDB),
 		OrphanEmailRepository:     NewOrphanEmailRepository(mailstackDB),
 		SenderRepository:          NewSenderRepository(mailstackDB),
-		// Clickhouse
-		EmailStore: emailStore,
-	}, nil
+		// Timescale
+		EmailEventRepository: NewEmailEventRepository(timescaleDB),
+	}
 }
 
 func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *gorm.DB) error {
@@ -80,6 +66,25 @@ func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *g
 		&models.DMARCMonitoring{},
 		&models.MailStackDomain{},
 		&models.MailstackReputation{},
+	)
+
+	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
+	db.SetMaxOpenConns(dbConfig.MaxConn)
+	db.SetConnMaxLifetime(time.Duration(dbConfig.ConnMaxLifetime) * time.Minute)
+
+	return err
+}
+
+func MigrateTimescaleDB(dbConfig *config.TimescaleDBConfig, timescaleDB *gorm.DB) error {
+	db, err := timescaleDB.DB()
+	if err != nil {
+		return err
+	}
+
+	db.SetMaxOpenConns(5)
+
+	err = timescaleDB.AutoMigrate(
+		&models.EmailEvent{},
 	)
 
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)

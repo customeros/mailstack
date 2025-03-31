@@ -6,14 +6,14 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/internal/dbmapper"
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStore, attachmentIDs []string) (string, enum.EmailStatus, error) {
+func (s *emailService) ScheduleSend(ctx context.Context, email *dto.EmailRecord, attachmentIDs []string) (string, enum.EmailStatus, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.ScheduleSend")
 	defer spans.Finish()
 
@@ -34,9 +34,10 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 
 	// save email to db
 	if email.ScheduledFor != nil {
-		email.Status = enum.EmailStatusScheduled.String()
+		email.Status = enum.EmailStatusScheduled
 	}
-	emailID, err := s.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
+	// TODO FIX THIS
+	emailID, err := s.repositories.EmailRepository.Create(ctx, &models.Email{})
 	if err != nil {
 		spans.TraceError(err)
 		return "", enum.EmailStatusFailed, err
@@ -54,7 +55,7 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailStor
 	return emailID, enum.EmailStatus(email.Status), nil
 }
 
-func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *models.EmailStore) error {
+func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.createNewEmailThreadForEmail")
 	defer spans.Finish()
 
@@ -83,13 +84,13 @@ func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *
 	return nil
 }
 
-func setDefaultSendingValues(email *models.EmailStore) {
-	email.Direction = enum.EmailDirectionOutbound.String()
-	email.Status = enum.EmailStatusQueued.String()
+func setDefaultSendingValues(email *dto.EmailRecord) {
+	email.Direction = enum.EmailDirectionOutbound
+	email.Status = enum.EmailStatusQueued
 	email.MessageID = utils.GenerateMessageID(email.FromDomain, "")
 }
 
-func (s *emailService) validateEmail(ctx context.Context, email *models.EmailStore, attachmentIDs []string) error {
+func (s *emailService) validateEmail(ctx context.Context, email *dto.EmailRecord, attachmentIDs []string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateEmail")
 	defer spans.Finish()
 
@@ -156,7 +157,7 @@ func (s *emailService) validateAttachment(ctx context.Context, attachmentID stri
 	return nil
 }
 
-func validateRecipients(email *models.EmailStore) error {
+func validateRecipients(email *dto.EmailRecord) error {
 	if len(email.ToAddresses) == 0 {
 		err := ErrRecipientsMissing
 		return err
@@ -185,7 +186,7 @@ func validateRecipients(email *models.EmailStore) error {
 	return nil
 }
 
-func (s *emailService) validateSender(ctx context.Context, email *models.EmailStore) error {
+func (s *emailService) validateSender(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateSender")
 	defer spans.Finish()
 
@@ -275,7 +276,7 @@ func (s *emailService) getMailbox(ctx context.Context, mailboxID, fromAddress st
 
 // buildEmailSender fills in sender details.  Values provided in the email request override default values
 // attached to senderID.  SenderID only used to fill in gaps in the request.
-func (s *emailService) buildEmailSender(ctx context.Context, email *models.EmailStore, mailbox *models.Mailbox) error {
+func (s *emailService) buildEmailSender(ctx context.Context, email *dto.EmailRecord, mailbox *models.Mailbox) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.buildEmailSender")
 	defer spans.Finish()
 
