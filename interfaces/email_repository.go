@@ -18,9 +18,3 @@ type EmailRepository interface {
 	Update(ctx context.Context, email *models.Email) error
 	SetEmailRawData(ctx context.Context, emailID string, headers, envelope, bodyStructure models.JSONMap) error
 }
-
-type EmailStore interface {
-	InitSchema(ctx context.Context) error
-	SaveEmail(ctx context.Context, email *models.EmailStore) error
-	EmailExists(ctx context.Context, messageId string) (bool, error)
-}

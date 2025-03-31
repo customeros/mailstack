@@ -13,7 +13,7 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/internal/dbmapper"
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -33,7 +33,7 @@ func NewSMTPClient(repos *repository.Repositories, mailbox *models.Mailbox) *SMT
 	}
 }
 
-func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment) error {
+func (s *SMTPClient) Send(ctx context.Context, email *dto.EmailRecord, attachments []*models.EmailAttachment) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.Send")
 	defer spans.Finish()
 	if email == nil {
@@ -57,7 +57,8 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachm
 	}
 
 	// Create email in db
-	email.ID, err = s.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(email))
+	// TODO FIX THIS
+	email.ID, err = s.repositories.EmailRepository.Create(ctx, &models.Email{})
 	if err != nil {
 		spans.TraceError(err)
 		return err
@@ -68,40 +69,33 @@ func (s *SMTPClient) Send(ctx context.Context, email *models.EmailStore, attachm
 	if err != nil {
 		spans.TraceError(err)
 		email.LastAttemptAt = utils.NowPtr()
-		email.Status = enum.EmailStatusFailed.String()
+		email.Status = enum.EmailStatusFailed
 		email.StatusDetail = err.Error()
-		err = s.repositories.EmailRepository.Update(ctx, dbmapper.MapEmailStoreToEmail(email))
+		// TODO FIX
+		err = s.repositories.EmailRepository.Update(ctx, &models.Email{})
 		if err != nil {
 			spans.TraceError(err)
 		}
 
-		// write to clickhouse
-		err = s.repositories.EmailStore.SaveEmail(ctx, email)
-		if err != nil {
-			spans.TraceError(err)
-		}
-		return err
+		// TODO write to timescale
 	}
 
 	// update db with success
 	email.SentAt = utils.NowPtr()
 	email.LastAttemptAt = email.SentAt
-	email.Status = enum.EmailStatusSent.String()
-	err = s.repositories.EmailRepository.Update(ctx, dbmapper.MapEmailStoreToEmail(email))
+	email.Status = enum.EmailStatusSent
+	// TODO FIX
+	err = s.repositories.EmailRepository.Update(ctx, &models.Email{})
 	if err != nil {
 		spans.TraceError(err)
 	}
-	// write to clickhouse
-	err = s.repositories.EmailStore.SaveEmail(ctx, email)
-	if err != nil {
-		spans.TraceError(err)
-	}
+	// TODO write to timescale
 
 	return err
 }
 
 // validateEmail performs basic validation on the email
-func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailStore) error {
+func (s *SMTPClient) validateEmail(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.validateEmail")
 	defer spans.Finish()
 
@@ -111,7 +105,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailStore
 		return err
 	}
 	spans.TagEntity(email.ID)
-	email.Direction = enum.EmailDirectionOutbound.String()
+	email.Direction = enum.EmailDirectionOutbound
 
 	if email.FromAddress == "" {
 		err := fmt.Errorf("from address is required")
@@ -161,7 +155,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailStore
 }
 
 // prepareMessage builds the email message in proper MIME format and stores raw metadata
-func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.EmailStore, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
+func (s *SMTPClient) prepareMessage(ctx context.Context, email *dto.EmailRecord, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.prepareMessage")
 	defer spans.Finish()
 	if email == nil {
@@ -190,11 +184,11 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.EmailStor
 		return nil, nil, err
 	}
 
-	return email.AllRecipients(), buffer, nil
+	return email.Recipients(), buffer, nil
 }
 
 // prepareHeaders generates email headers and stores them in the Email model
-func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.EmailStore) map[string]string {
+func (s *SMTPClient) prepareHeaders(ctx context.Context, email *dto.EmailRecord) map[string]string {
 	headers := email.BuildHeaders()
 
 	// Store raw headers in Email model
@@ -207,7 +201,7 @@ func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.EmailStor
 
 // buildMultipartMessageWithStructure creates a multipart MIME message with text, HTML, and attachments
 // while also capturing body structure metadata
-func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *models.EmailStore,
+func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *dto.EmailRecord,
 	headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer,
 ) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.buildMultipartMessageWithStructure")
@@ -275,7 +269,7 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 }
 
 // buildPlainTextMessageWithStructure creates a simple text-only email and captures body structure
-func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *models.EmailStore,
+func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *dto.EmailRecord,
 	headers map[string]string, buffer *bytes.Buffer,
 ) error {
 	headers["Content-Type"] = "text/plain; charset=UTF-8"
@@ -297,7 +291,7 @@ func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, ema
 }
 
 // initializeBodyStructure creates the base body structure object
-func initializeBodyStructure(email *models.EmailStore) models.JSONMap {
+func initializeBodyStructure(email *dto.EmailRecord) models.JSONMap {
 	return models.JSONMap{
 		"hasAttachments": email.HasAttachment,
 	}

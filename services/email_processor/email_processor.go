@@ -11,7 +11,6 @@ import (
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/dbmapper"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -38,11 +37,11 @@ func NewEmailProcessor(
 	}
 }
 
-func (p *emailProcessor) NewInboundEmail() *models.EmailStore {
-	return &models.EmailStore{
+func (p *emailProcessor) NewInboundEmail() *dto.EmailRecord {
+	return &dto.EmailRecord{
 		ID:         utils.GenerateNanoIDWithPrefix("email", 21),
-		Direction:  enum.EmailDirectionInbound.String(),
-		Status:     enum.EmailStatusReceived.String(),
+		Direction:  enum.EmailDirectionInbound,
+		Status:     enum.EmailStatusReceived,
 		ReceivedAt: utils.NowPtr(),
 	}
 }
@@ -64,7 +63,7 @@ func (p *emailProcessor) NewAttachmentFile(attachmentID string, data []byte) *in
 
 func (p *emailProcessor) ProcessEmail(
 	ctx context.Context,
-	emailStore *models.EmailStore,
+	emailStore *dto.EmailRecord,
 	attachments []*models.EmailAttachment,
 	files []*interfaces.AttachmentFile,
 ) error {
@@ -88,18 +87,15 @@ func (p *emailProcessor) ProcessEmail(
 	}
 
 	// Save the email entity to the database
-	emailID, err := p.repositories.EmailRepository.Create(ctx, dbmapper.MapEmailStoreToEmail(emailStore))
+	// TODO FIX
+	emailID, err := p.repositories.EmailRepository.Create(ctx, &models.Email{})
 	if err != nil {
 		err = errors.Wrap(err, "Error saving email")
 		return err
 	}
 	emailStore.ID = emailID
 
-	// save emailStore in clickhouse
-	err = p.repositories.EmailStore.SaveEmail(ctx, emailStore)
-	if err != nil {
-		spans.TraceError(err)
-	}
+	// TODO save emailStore in timescale
 
 	// Throw events
 	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, emailID, enum.EMAIL, dto.EmailParticipants{Emails: emailStore.AllParticipants()})
@@ -110,7 +106,70 @@ func (p *emailProcessor) ProcessEmail(
 	return nil
 }
 
-func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *models.EmailStore) error {
+func (p *emailProcessor) EmailFilter(ctx context.Context, email *dto.EmailRecord, rawHeaders map[string]interface{}) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailFilterService.ScanEmail")
+	defer spans.Finish()
+	spans.LogKV("email_id", email.ID)
+
+	headers, err := processHeaders(rawHeaders)
+	if err != nil {
+		spans.TraceError(err)
+		return err
+	}
+	if headers == nil {
+		err := errors.New("email headers are nil")
+		spans.TraceError(err)
+		return err
+	}
+
+	isBounceNotification, reason := isBounceNotification(headers, email.Subject, email.FromAddress)
+	if isBounceNotification {
+		// todo determine what email bounced
+		// todo send bounced email event
+		email.Classification = enum.EmailBounceNotification
+		email.ClassificationReason = reason
+		return nil
+	}
+
+	isAutoresponder, reason := isAutoresponder(headers)
+	if isAutoresponder {
+		// todo analyze autoresponder content and do something
+		email.Classification = enum.EmailAutoResponder
+		email.ClassificationReason = reason
+		return nil
+	}
+
+	isBulkEmail, reason := isBulkEmail(headers, email.ReplyTo, email.FromAddress)
+	if isBulkEmail {
+		email.Classification = enum.EmailBulk
+		email.ClassificationReason = reason
+		return nil
+	}
+
+	isInternal := isInternalEmail(email)
+	if isInternal {
+		email.Classification = enum.EmailInternal
+		return nil
+	}
+
+	isSensitive, reason := isSensitiveSubject(email.Subject)
+	if isSensitive {
+		email.Classification = enum.EmailSensitive
+		email.ClassificationReason = reason
+		return nil
+	}
+
+	// todo add spam check + email warmer check (if required)
+
+	email.Classification = enum.EmailOK
+	return nil
+}
+
+func (p *emailProcessor) SaveRawEmail(ctx context.Context, email *dto.EmailRecord) error {
+	return nil
+}
+
+func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.getStructuredMessageBody")
 	defer spans.Finish()
 	spans.LogKV("email_id", email.ID)
@@ -145,65 +204,6 @@ func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *mo
 		return err
 	}
 
-	return nil
-}
-
-func (p *emailProcessor) EmailFilter(ctx context.Context, email *models.EmailStore, rawHeaders map[string]interface{}) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailFilterService.ScanEmail")
-	defer spans.Finish()
-	spans.LogKV("email_id", email.ID)
-
-	headers, err := processHeaders(rawHeaders)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-	if headers == nil {
-		err := errors.New("email headers are nil")
-		spans.TraceError(err)
-		return err
-	}
-
-	isBounceNotification, reason := isBounceNotification(headers, email.Subject, email.FromAddress)
-	if isBounceNotification {
-		// todo determine what email bounced
-		// todo send bounced email event
-		email.Classification = enum.EmailBounceNotification.String()
-		email.ClassificationReason = reason
-		return nil
-	}
-
-	isAutoresponder, reason := isAutoresponder(headers)
-	if isAutoresponder {
-		// todo analyze autoresponder content and do something
-		email.Classification = enum.EmailAutoResponder.String()
-		email.ClassificationReason = reason
-		return nil
-	}
-
-	isBulkEmail, reason := isBulkEmail(headers, email.ReplyTo, email.FromAddress)
-	if isBulkEmail {
-		email.Classification = enum.EmailBulk.String()
-		email.ClassificationReason = reason
-		return nil
-	}
-
-	isInternal := isInternalEmail(email)
-	if isInternal {
-		email.Classification = enum.EmailInternal.String()
-		return nil
-	}
-
-	isSensitive, reason := isSensitiveSubject(email.Subject)
-	if isSensitive {
-		email.Classification = enum.EmailSensitive.String()
-		email.ClassificationReason = reason
-		return nil
-	}
-
-	// todo add spam check + email warmer check (if required)
-
-	email.Classification = enum.EmailOK.String()
 	return nil
 }
 
@@ -289,7 +289,7 @@ func isSensitiveSubject(subject string) (bool, string) {
 	return false, ""
 }
 
-func isInternalEmail(email *models.EmailStore) bool {
+func isInternalEmail(email *dto.EmailRecord) bool {
 	senderValidation := mailvalidate.ValidateEmailSyntax(email.FromAddress)
 	if !senderValidation.IsValid || senderValidation.IsFreeAccount || senderValidation.Domain == "" {
 		return false

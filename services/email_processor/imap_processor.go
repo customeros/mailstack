@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/customeros/mailsherpa/mailvalidate"
 	go_imap "github.com/emersion/go-imap"
@@ -15,24 +16,31 @@ import (
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
+	mailstack_errors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/models"
+	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
 type ImapProcessor struct {
 	interfaces.EmailProcessor
-	imapService interfaces.IMAPService
-	emailStore  interfaces.EmailStore
+	repositories   *repository.Repositories
+	imapService    interfaces.IMAPService
+	storageService interfaces.StorageService
 }
 
 func NewImapProcessor(
-	processor interfaces.EmailProcessor, imapService interfaces.IMAPService, emailStore interfaces.EmailStore,
+	repositories *repository.Repositories,
+	processor interfaces.EmailProcessor,
+	imapService interfaces.IMAPService,
+	storageService interfaces.StorageService,
 ) *ImapProcessor {
 	return &ImapProcessor{
 		EmailProcessor: processor,
+		repositories:   repositories,
 		imapService:    imapService,
-		emailStore:     emailStore,
+		storageService: storageService,
 	}
 }
 
@@ -41,29 +49,38 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	defer spans.Finish()
 	spans.LogObjectAsJson("inboundEmail", inboundEmail)
 
+	emailHash := utils.GenerateIMAPHash(inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
+
+	emailExists, err := p.repositories.EmailEventRepository.IsDuplicateByHash(ctx, emailHash)
+	if err != nil {
+		spans.TraceError(err)
+		return err
+	}
+
+	if emailExists {
+		return nil
+	}
+
+	email := p.EmailProcessor.NewInboundEmail()
+	email.MailboxID = inboundEmail.MailboxID
+	email.Folder = inboundEmail.Folder
+	email.EmailHash = email.EmailHash
+
 	msg, err := p.imapService.GetMessageByUID(ctx, inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
 	if err != nil {
 		spans.TraceError(err)
 		return err
 	}
 
-	email := p.EmailProcessor.NewInboundEmail()
-	email.MailboxID = inboundEmail.MailboxID
-	email.Folder = inboundEmail.Folder
-	email.ImapUID = msg.Uid
-
-	// Process envelope data
-	processEnvelope(email, msg.Envelope)
-
-	// check if email has already been processed
-	exists, err := p.emailStore.EmailExists(ctx, email.MessageID)
+	bucketKey, err := p.SaveMessageAsEML(ctx, msg, email.ID)
 	if err != nil {
 		spans.TraceError(err)
 		return err
 	}
-	if exists {
-		return nil
-	}
+	email.EmailKey = bucketKey
+
+	// Process envelope data
+	processEnvelope(email, msg.Envelope)
 
 	// Process message content
 	headers, attachments := processMessageContent(email, msg)
@@ -75,12 +92,10 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	}
 
 	// return early if spam
-	if email.Classification != enum.EmailOK.String() {
-		// done processing, write to clickhouse
-		err = p.emailStore.SaveEmail(ctx, email)
+	if email.Classification != enum.EmailOK {
+		err := p.repositories.EmailEventRepository.Create(ctx, buildEmailEvent(ctx, email))
 		if err != nil {
 			spans.TraceError(err)
-			return err
 		}
 		return nil
 	}
@@ -95,7 +110,82 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	return p.EmailProcessor.ProcessEmail(ctx, email, attachmentRecords, files)
 }
 
-func processEnvelope(email *models.EmailStore, envelope *go_imap.Envelope) {
+func (p *ImapProcessor) SaveMessageAsEML(ctx context.Context, msg *go_imap.Message, emailID string) (string, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "ImapProcessor.ProcessIMAPMessage")
+	defer spans.Finish()
+
+	tenant := utils.GetTenantFromContext(ctx)
+	if tenant == "" {
+		spans.TraceError(mailstack_errors.ErrTenantMissing)
+		return "", mailstack_errors.ErrTenantMissing
+	}
+
+	// Extract date from message
+	var msgTime time.Time
+	if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
+		msgTime = msg.Envelope.Date
+	} else {
+		// Fallback to current time if no date in message
+		msgTime = time.Now()
+	}
+
+	// Format parts of the path
+	year := msgTime.Format("2006")
+	month := msgTime.Format("01")
+
+	outputPath := fmt.Sprintf("%s/%s/%s/%s.eml", tenant, year, month, emailID)
+
+	// Get the body reader for the RFC822 format
+	r := msg.GetBody(&go_imap.BodySectionName{})
+	if r == nil {
+		return "", fmt.Errorf("message body not found")
+	}
+
+	// Read the message into a byte array
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		spans.TraceError(err)
+		return "", fmt.Errorf("failed to read message body: %w", err)
+	}
+	emlFile := buf.Bytes()
+
+	// Set the proper MIME content type for EML files
+	contentType := "message/rfc822"
+
+	// Upload the file to storage
+	err := p.storageService.Upload(ctx, outputPath, emlFile, contentType)
+	if err != nil {
+		err = fmt.Errorf("failed to upload EML file: %w", err)
+		spans.TraceError(err)
+		return "", err
+	}
+
+	return outputPath, nil
+}
+
+func buildEmailEvent(ctx context.Context, email *dto.EmailRecord) *models.EmailEvent {
+	return &models.EmailEvent{
+		Timestamp:      utils.Now(),
+		Tenant:         utils.GetTenantFromContext(ctx),
+		EmailID:        email.ID,
+		MailboxID:      email.MailboxID,
+		MessageID:      email.MessageID,
+		ThreadID:       email.ThreadID,
+		FromAddress:    email.FromAddress,
+		FromUser:       email.FromUser,
+		FromDomain:     email.FromDomain,
+		Recipients:     email.Recipients(),
+		EmailKey:       email.EmailKey,
+		Subject:        email.Subject,
+		Direction:      string(email.Direction),
+		Classification: string(email.Classification),
+		SentAt:         email.SentAt,
+		ReceivedAt:     email.ReceivedAt,
+		ScheduledFor:   email.ScheduledFor,
+	}
+}
+
+func processEnvelope(email *dto.EmailRecord, envelope *go_imap.Envelope) {
 	if envelope == nil {
 		return
 	}
@@ -142,7 +232,7 @@ func processEnvelope(email *models.EmailStore, envelope *go_imap.Envelope) {
 	envelopeMap["bcc"] = addressesToMap(envelope.Bcc)
 }
 
-func processInReplyTo(email *models.EmailStore, envelope *go_imap.Envelope) {
+func processInReplyTo(email *dto.EmailRecord, envelope *go_imap.Envelope) {
 	var allReferences []string
 
 	// Process In-Reply-To (can contain multiple IDs space-separated)
@@ -288,7 +378,7 @@ func extractAttachmentsFromStructure(bs *go_imap.BodyStructure) []map[string]int
 	return attachments
 }
 
-func processMessageContent(email *models.EmailStore, msg *go_imap.Message) (headers map[string]interface{}, attachments []map[string]interface{}) {
+func processMessageContent(email *dto.EmailRecord, msg *go_imap.Message) (headers map[string]interface{}, attachments []map[string]interface{}) {
 	// Get the full message content
 	fullMessageData := extractFullMessage(msg)
 
@@ -321,7 +411,7 @@ func extractFullMessage(msg *go_imap.Message) []byte {
 }
 
 // Parse message using enmime
-func parseWithEnmime(email *models.EmailStore, messageData []byte) (headers map[string]interface{}, attachments []map[string]interface{}) {
+func parseWithEnmime(email *dto.EmailRecord, messageData []byte) (headers map[string]interface{}, attachments []map[string]interface{}) {
 	emailParser, err := enmime.ReadEnvelope(bytes.NewReader(messageData))
 	if err != nil {
 		return nil, nil
@@ -450,7 +540,7 @@ func createBodyStructureFromEnmime(emailParser *enmime.Envelope) map[string]inte
 	return bodyStructure
 }
 
-func processReferences(email *models.EmailStore, headers map[string]interface{}) {
+func processReferences(email *dto.EmailRecord, headers map[string]interface{}) {
 	var allReferences []string
 
 	// Get references from headers

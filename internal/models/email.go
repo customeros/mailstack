@@ -31,6 +31,7 @@ type Email struct {
 	BccAddresses pq.StringArray `gorm:"column:bcc_addresses;type:text[]" json:"bccAddresses"`
 	TrackClicks  bool           `gorm:"column:track_clicks;default:false" json:"trackClicks"`
 	IsViewed     bool           `gorm:"column:isViewed;default:false" json:"isViewed"`
+	EmailKey     string         `gorm:"column:email_key;type:text;not null" json:"emailKey"`
 
 	Folder string `gorm:"column:folder;type:varchar(100)" json:"folder"`
 

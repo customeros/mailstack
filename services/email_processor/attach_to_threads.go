@@ -5,12 +5,13 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.EmailStore) error {
+func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.attachMessageToThread")
 	defer spans.Finish()
 
@@ -57,7 +58,7 @@ func (p *emailProcessor) attachEmailToThread(ctx context.Context, email *models.
 }
 
 // findExistingThread attempts to find an existing thread for the email
-func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.EmailStore) (string, error) {
+func (p *emailProcessor) findExistingThread(ctx context.Context, email *dto.EmailRecord) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findExistingThread")
 	defer spans.Finish()
 
@@ -102,7 +103,7 @@ func (p *emailProcessor) findExistingThread(ctx context.Context, email *models.E
 }
 
 // checkForOrphanedParentMessage attempts to find a thread where this email is the parent of orphaned messages
-func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, email *models.EmailStore) (string, error) {
+func (p *emailProcessor) checkForOrphanedParentMessage(ctx context.Context, email *dto.EmailRecord) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.checkForOrphanedParentMessage")
 	defer spans.Finish()
 
@@ -150,7 +151,7 @@ func (p *emailProcessor) findThreadByMessageID(ctx context.Context, messageID st
 }
 
 // findThreadBySubjectMatch attempts to find an existing thread by subject and participants
-func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *models.EmailStore) (string, error) {
+func (p *emailProcessor) findThreadBySubjectMatch(ctx context.Context, email *dto.EmailRecord) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.findThreadBySubjectMatch")
 	defer spans.Finish()
 
@@ -227,7 +228,7 @@ func (p *emailProcessor) findThreadBySubjectAndParticipants(ctx context.Context,
 }
 
 // updateThreadMetadata updates thread metadata with data from the new email
-func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models.EmailStore, threadID string) error {
+func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *dto.EmailRecord, threadID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.updateThreadMetadata")
 	defer spans.Finish()
 
@@ -275,7 +276,7 @@ func (p *emailProcessor) updateThreadMetadata(ctx context.Context, email *models
 }
 
 // createNewThread creates a new thread for the email
-func (p *emailProcessor) createNewThread(ctx context.Context, email *models.EmailStore) (string, error) {
+func (p *emailProcessor) createNewThread(ctx context.Context, email *dto.EmailRecord) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.createNewThread")
 	defer spans.Finish()
 
@@ -297,7 +298,7 @@ func (p *emailProcessor) createNewThread(ctx context.Context, email *models.Emai
 }
 
 // recordMissingParents records referenced messages that are missing
-func (p *emailProcessor) recordMissingParents(ctx context.Context, email *models.EmailStore) error {
+func (p *emailProcessor) recordMissingParents(ctx context.Context, email *dto.EmailRecord) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcesssor.recordMissingParents")
 	defer spans.Finish()
 

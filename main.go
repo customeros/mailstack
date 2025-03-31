@@ -2,15 +2,17 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/database"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/server"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"log"
-	"os"
 )
 
 func main() {
@@ -31,22 +33,6 @@ func main() {
 	}
 
 	// Setup the databases
-	openlineDB, err := database.InitOpenlineDatabase(&database.DatabaseConfig{
-		DBName:          cfg.OpenlineDatabaseConfig.DBName,
-		Host:            cfg.OpenlineDatabaseConfig.Host,
-		Port:            cfg.OpenlineDatabaseConfig.Port,
-		User:            cfg.OpenlineDatabaseConfig.User,
-		Password:        cfg.OpenlineDatabaseConfig.Password,
-		MaxConn:         cfg.OpenlineDatabaseConfig.MaxConn,
-		MaxIdleConn:     cfg.OpenlineDatabaseConfig.MaxIdleConn,
-		ConnMaxLifetime: cfg.OpenlineDatabaseConfig.ConnMaxLifetime,
-		LogLevel:        cfg.OpenlineDatabaseConfig.LogLevel,
-		SSLMode:         cfg.OpenlineDatabaseConfig.SSLMode,
-	})
-	if err != nil {
-		log.Fatalf("Openline database initialization failed: %v", err)
-	}
-
 	mailstackDB, err := database.InitMailstackDatabase(&database.DatabaseConfig{
 		DBName:          cfg.MailstackDatabaseConfig.DBName,
 		Host:            cfg.MailstackDatabaseConfig.Host,
@@ -57,28 +43,25 @@ func main() {
 		MaxIdleConn:     cfg.MailstackDatabaseConfig.MaxIdleConn,
 		ConnMaxLifetime: cfg.MailstackDatabaseConfig.ConnMaxLifetime,
 		LogLevel:        cfg.MailstackDatabaseConfig.LogLevel,
-		SSLMode:         cfg.MailstackDatabaseConfig.SSLMode,
 	})
 	if err != nil {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
-	//port, err := strconv.ParseUint(cfg.ClickhouseConfig.Port, 10, 16)
-	//if err != nil {
-	//	log.Fatalf("Invalid ClickHouse port: %v", err)
-	//}
-
-	// Initialize ClickHouse connections
-	//err = database.InitClickhouseDatabases(database.ClickhouseConfig{
-	//	Host:              cfg.ClickhouseConfig.Host,
-	//	Port:              uint16(port),
-	//	User:              cfg.ClickhouseConfig.User,
-	//	Password:          cfg.ClickhouseConfig.Password,
-	//	MailstackDatabase: cfg.ClickhouseConfig.DBName,
-	//})
-	//if err != nil {
-	//	log.Fatalf("Clickhouse database initialization failed: %v", err)
-	//}
+	timescaleDB, err := database.InitMailstackTimescaleDB(&database.DatabaseConfig{
+		DBName:          cfg.TimescaleDBConfig.DBName,
+		Host:            cfg.TimescaleDBConfig.Host,
+		Port:            cfg.TimescaleDBConfig.Port,
+		User:            cfg.TimescaleDBConfig.User,
+		Password:        cfg.TimescaleDBConfig.Password,
+		MaxConn:         cfg.TimescaleDBConfig.MaxConn,
+		MaxIdleConn:     cfg.TimescaleDBConfig.MaxIdleConn,
+		ConnMaxLifetime: cfg.TimescaleDBConfig.ConnMaxLifetime,
+		LogLevel:        cfg.TimescaleDBConfig.LogLevel,
+	})
+	if err != nil {
+		log.Fatalf("Openline database initialization failed: %v", err)
+	}
 
 	// Try to get Kubernetes config
 	var k8sClient kubernetes.Interface
@@ -102,7 +85,7 @@ func main() {
 		log.Println("Mailstack database migration completed successfully")
 
 		// Run ClickHouse migrations
-		err = database.MigrateClickhouseDatabases()
+		err = repository.MigrateTimescaleDB(cfg.TimescaleDBConfig, timescaleDB)
 		if err != nil {
 			log.Fatalf("Clickhouse database migration failed: %v", err)
 		}
@@ -112,7 +95,7 @@ func main() {
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		srv, err := server.NewServer(cfg, mailstackDB, openlineDB)
+		srv, err := server.NewServer(cfg, mailstackDB, timescaleDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}

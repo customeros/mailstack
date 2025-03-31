@@ -3,12 +3,13 @@ package email
 import (
 	"context"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services/smtp"
 )
 
-func (s *emailService) SendWithSMTP(ctx context.Context, mailbox *models.Mailbox, email *models.EmailStore, attachments []*models.EmailAttachment) error {
+func (s *emailService) SendWithSMTP(ctx context.Context, mailbox *models.Mailbox, email *dto.EmailRecord, attachments []*models.EmailAttachment) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.SendWithSMTP")
 	defer spans.Finish()
 

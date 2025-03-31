@@ -16,6 +16,7 @@ import (
 	mailboxold "github.com/customeros/mailstack/services/mailbox_old"
 	"github.com/customeros/mailstack/services/namecheap"
 	"github.com/customeros/mailstack/services/opensrs"
+	"github.com/customeros/mailstack/services/storage"
 )
 
 type Services struct {
@@ -72,11 +73,17 @@ func InitServices(rabbitmqURL string, log logger.Logger, repos *repository.Repos
 		CloudflareService: cloudflareImpl,
 		EmailProcessor:    emailProcessorImpl,
 		EmailService:      email.NewEmailService(events, repos),
-		IMAPProcessor:     email_processor.NewImapProcessor(emailProcessorImpl, imapImpl, repos.EmailStore),
-		IMAPService:       imapImpl,
-		MailboxService:    mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
-		NamecheapService:  namecheapImpl,
-		OpenSrsService:    opensrsImpl,
+		IMAPProcessor: email_processor.NewImapProcessor(repos, emailProcessorImpl, imapImpl, storage.NewR2StorageService(
+			cfg.R2StorageConfig.AccountID,
+			cfg.R2StorageConfig.AccessKeyID,
+			cfg.R2StorageConfig.AccessKeySecret,
+			cfg.AppConfig.EMLStorageBucket,
+			false,
+		)),
+		IMAPService:      imapImpl,
+		MailboxService:   mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
+		NamecheapService: namecheapImpl,
+		OpenSrsService:   opensrsImpl,
 
 		MailboxServiceOld: mailboxOldImpl,
 		DomainService:     domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxOldImpl, opensrsImpl),
