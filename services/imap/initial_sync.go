@@ -290,14 +290,15 @@ func (s *IMAPService) processMessages(
 					}
 				}()
 
-				s.events.Publisher.PublishReceiveEmailEvent(eventCtx, dto.EmailReceived{
+				event := dto.EmailReceivedIMAP{
 					Source:      enum.EmailImportIMAP,
 					MailboxID:   mailboxID,
 					Folder:      folderName,
 					InitialSync: true,
 					ImapSeqNum:  msg.SeqNum,
 					ImapUID:     msg.Uid,
-				})
+				}
+				s.publishNewEmailEvent(eventCtx, &event)
 			}()
 		}(msg)
 	}

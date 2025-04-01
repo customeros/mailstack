@@ -4,11 +4,11 @@ import (
 	"github.com/customeros/mailstack/internal/enum"
 )
 
-type EmailReceived struct {
-	Source      enum.EmailImportSource
-	InitialSync bool
-	MailboxID   string
-	Folder      string
-	ImapUID     uint32
-	ImapSeqNum  uint32
+type EmailReceivedIMAP struct {
+	Source      enum.EmailImportSource `json:"source"`
+	InitialSync bool                   `json:"initialSync"`
+	MailboxID   string                 `json:"mailboxId"`
+	Folder      string                 `json:"folder"`
+	ImapUID     uint32                 `json:"imapUID"`
+	ImapSeqNum  uint32                 `json:"imapSeqNum"`
 }

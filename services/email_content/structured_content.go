@@ -1,31 +1,4 @@
-package ai
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"time"
-
-	"github.com/pkg/errors"
-
-	"github.com/customeros/mailstack/dto"
-	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/config"
-	"github.com/customeros/mailstack/internal/telemetry"
-)
-
-type aiService struct {
-	CustomerOSAPIConfig *config.CustomerOSAPIConfig
-}
-
-func NewAIService(config *config.CustomerOSAPIConfig) interfaces.AIService {
-	return &aiService{
-		CustomerOSAPIConfig: config,
-	}
-}
+package email_content
 
 func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.StructuredEmailRequest) (*dto.StructuredEmailResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "aiService.GetStructuredEmailBody")

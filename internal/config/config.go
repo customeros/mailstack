@@ -8,6 +8,12 @@ type AppConfig struct {
 	EMLStorageBucket  string `env:"EML_STORAGE_BUCKET" envDefault:"emails-test"`
 }
 
+type NATSConfig struct {
+	Node1 string `env:"NATS_NODE_1_URL,required"`
+	Node2 string `env:"NATS_NODE_2_URL"`
+	Node3 string `env:"NATS_NODE_3_URL"`
+}
+
 type MailstackDatabaseConfig struct {
 	Host            string `env:"MAILSTACK_POSTGRES_HOST,required"`
 	Port            string `env:"MAILSTACK_POSTGRES_PORT,required"`

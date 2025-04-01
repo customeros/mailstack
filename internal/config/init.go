@@ -15,6 +15,7 @@ type Config struct {
 	AppConfig               *AppConfig
 	Logger                  *logger.Config
 	Tracing                 *tracing.JaegerConfig
+	NATSConfig              *NATSConfig
 	OpenTelemetry           *telemetry.OpenTelemetryConfig
 	MailstackDatabaseConfig *MailstackDatabaseConfig
 	TimescaleDBConfig       *TimescaleDBConfig
@@ -31,6 +32,7 @@ func InitConfig() (*Config, error) {
 		AppConfig:               &AppConfig{},
 		Logger:                  &logger.Config{},
 		Tracing:                 &tracing.JaegerConfig{},
+		NATSConfig:              &NATSConfig{},
 		OpenTelemetry:           &telemetry.OpenTelemetryConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
 		TimescaleDBConfig:       &TimescaleDBConfig{},

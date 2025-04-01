@@ -20,13 +20,12 @@ import (
 	"github.com/customeros/mailstack/api"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
-	"github.com/customeros/mailstack/internal/listeners"
 	"github.com/customeros/mailstack/internal/logger"
+	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
-	"github.com/customeros/mailstack/services/events"
 )
 
 type Server struct {
@@ -35,6 +34,7 @@ type Server struct {
 	tracerCloser io.Closer
 	httpServer   *http.Server
 	router       *gin.Engine
+	natsConn     *nats_internal.NATSConnections
 	services     *services.Services
 	repositories *repository.Repositories
 }
@@ -69,18 +69,10 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 		return nil, err
 	}
 
-	// Initialize listeners
-	svcs.EventsService.Subscriber.RegisterListener(listeners.NewSendEmailListener(appLogger, repos, svcs.EmailService))
-	svcs.EventsService.Subscriber.RegisterListener(listeners.NewReceiveEmailListener(appLogger, repos, svcs.IMAPProcessor))
-
-	// Start Listening on rabbit queues
-	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueSendEmail)
+	// Initialize NATS Streams
+	natsConn, err := nats_internal.InitNats(cfg.NATSConfig)
 	if err != nil {
-		appLogger.Errorf("Failed to start listening on send email queue: %v", err)
-	}
-	err = svcs.EventsService.Subscriber.ListenQueue(events.QueueReceiveEmail)
-	if err != nil {
-		appLogger.Errorf("Failed to start listening on receive email queue: %v", err)
+		log.Fatalf("Failed to initialize NATS: %v", err)
 	}
 
 	// Initialize Gin
@@ -90,6 +82,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 	return &Server{
 		config:       cfg,
 		router:       router,
+		natsConn:     natsConn,
 		services:     svcs,
 		repositories: repos,
 		tracerCloser: closer,
@@ -221,6 +214,13 @@ func (s *Server) waitForShutdown() error {
 		log.Println("IMAP service stopped gracefully")
 	case <-time.After(10 * time.Second):
 		log.Println("⚠️ IMAP service stop timed out, forcing exit")
+	}
+
+	// Close NATS connection
+	if s.natsConn != nil {
+		log.Println("Closing NATS connection...")
+		s.natsConn.Close()
+		log.Println("✅ NATS connection closed")
 	}
 
 	return nil
