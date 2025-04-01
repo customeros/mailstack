@@ -3,6 +3,7 @@ package imap
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
+	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
@@ -25,7 +27,7 @@ import (
 )
 
 type IMAPService struct {
-	events         *events.EventsService
+	natsConn       *nats_internal.NATSConnections
 	repositories   *repository.Repositories
 	clients        map[string]*client.Client
 	mailboxConfigs map[string]*models.Mailbox
@@ -37,9 +39,9 @@ type IMAPService struct {
 	statusMutex    sync.RWMutex
 }
 
-func NewIMAPService(events *events.EventsService, repos *repository.Repositories) interfaces.IMAPService {
+func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories) interfaces.IMAPService {
 	return &IMAPService{
-		events:         events,
+		natsConn:       nats,
 		repositories:   repos,
 		clients:        make(map[string]*client.Client),
 		mailboxConfigs: make(map[string]*models.Mailbox),
@@ -48,8 +50,6 @@ func NewIMAPService(events *events.EventsService, repos *repository.Repositories
 }
 
 const (
-	DEFAULT_IMAP_LOGOUT     = 25 // minutes
-	DEFAULT_POLLING_PERIOD  = 20 // minutes
 	INITIAL_SYNC_BATCH_SIZE = 20
 	INITIAL_SYNC_MAX_TOTAL  = 50000
 )
@@ -772,14 +772,19 @@ func (s *IMAPService) fetchNewMessages(
 		}
 
 		// Process the message
-		s.events.Publisher.PublishReceiveEmailEvent(ctx, dto.EmailReceived{
+		event := dto.EmailReceivedIMAP{
 			Source:      enum.EmailImportIMAP,
 			MailboxID:   mailboxID,
 			Folder:      folderName,
 			ImapSeqNum:  msg.SeqNum,
 			ImapUID:     msg.Uid,
 			InitialSync: false,
-		})
+		}
+		err := s.publishNewEmailEvent(ctx, &event)
+		if err != nil {
+			spans.TraceError(err)
+			return err
+		}
 	}
 
 	// Reset timeout
@@ -809,6 +814,26 @@ func (s *IMAPService) fetchNewMessages(
 	if err != nil {
 		spans.TraceError(err)
 		return err
+	}
+
+	return nil
+}
+
+func (s *IMAPService) publishNewEmailEvent(ctx context.Context, event *dto.EmailReceivedIMAP) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.publishNewEmailEvent")
+	defer spans.Finish()
+	// Convert to JSON
+	data, err := json.Marshal(event)
+	if err != nil {
+		spans.TraceError(err)
+		return fmt.Errorf("failed to marshal stored email: %w", err)
+	}
+
+	// Publish to the stored subject
+	_, err = s.natsConn.JS.Publish(enum.EventEmailInboundReceivedIMAP.String(), data)
+	if err != nil {
+		spans.TraceError(err)
+		return fmt.Errorf("failed to publish stored email: %w", err)
 	}
 
 	return nil
@@ -889,14 +914,19 @@ func (s *IMAPService) syncNewMessagesSince(
 		}
 
 		// Process the message
-		s.events.Publisher.PublishReceiveEmailEvent(ctx, dto.EmailReceived{
+		event := dto.EmailReceivedIMAP{
 			Source:      enum.EmailImportIMAP,
 			MailboxID:   mailboxID,
 			Folder:      folderName,
 			ImapSeqNum:  msg.SeqNum,
 			ImapUID:     msg.Uid,
 			InitialSync: false,
-		})
+		}
+		err := s.publishNewEmailEvent(ctx, &event)
+		if err != nil {
+			spans.TraceError(err)
+			return err
+		}
 	}
 
 	// Reset timeout

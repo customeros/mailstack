@@ -1,104 +1,16 @@
-package email_processor
+package email_content
 
-import (
-	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"strings"
-	"time"
-
-	"github.com/customeros/mailsherpa/mailvalidate"
-	go_imap "github.com/emersion/go-imap"
-	"github.com/jhillyerd/enmime"
-	"github.com/lib/pq"
-
-	"github.com/customeros/mailstack/dto"
-	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/enum"
-	mailstack_errors "github.com/customeros/mailstack/internal/errors"
-	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/telemetry"
-	"github.com/customeros/mailstack/internal/utils"
-)
-
-type ImapProcessor struct {
-	interfaces.EmailProcessor
-	repositories   *repository.Repositories
-	imapService    interfaces.IMAPService
-	storageService interfaces.StorageService
-}
-
-func NewImapProcessor(
-	repositories *repository.Repositories,
-	processor interfaces.EmailProcessor,
-	imapService interfaces.IMAPService,
-	storageService interfaces.StorageService,
-) *ImapProcessor {
-	return &ImapProcessor{
-		EmailProcessor: processor,
-		repositories:   repositories,
-		imapService:    imapService,
-		storageService: storageService,
-	}
-}
-
-func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto.EmailReceived) error {
+func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, msg *imap.Message) (dto.EmailRecord, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "ImapProcessor.ProcessIMAPMessage")
 	defer spans.Finish()
-	spans.LogObjectAsJson("inboundEmail", inboundEmail)
-
-	emailHash := utils.GenerateIMAPHash(inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
-
-	emailExists, err := p.repositories.EmailEventRepository.IsDuplicateByHash(ctx, emailHash)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
-	if emailExists {
-		return nil
-	}
 
 	email := p.EmailProcessor.NewInboundEmail()
-	email.MailboxID = inboundEmail.MailboxID
-	email.Folder = inboundEmail.Folder
-	email.EmailHash = email.EmailHash
-
-	msg, err := p.imapService.GetMessageByUID(ctx, inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
-	bucketKey, err := p.SaveMessageAsEML(ctx, msg, email.ID)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-	email.EmailKey = bucketKey
 
 	// Process envelope data
 	processEnvelope(email, msg.Envelope)
 
 	// Process message content
 	headers, attachments := processMessageContent(email, msg)
-
-	err = p.EmailProcessor.EmailFilter(ctx, email, headers)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
-	// return early if spam
-	if email.Classification != enum.EmailOK {
-		err := p.repositories.EmailEventRepository.Create(ctx, buildEmailEvent(ctx, email))
-		if err != nil {
-			spans.TraceError(err)
-		}
-		return nil
-	}
 
 	// Create attachment records if any
 	if !email.HasAttachment || len(attachments) == 0 {
@@ -108,59 +20,6 @@ func (p *ImapProcessor) ProcessIMAPMessage(ctx context.Context, inboundEmail dto
 	attachmentRecords, files := p.processAttachments(attachments)
 
 	return p.EmailProcessor.ProcessEmail(ctx, email, attachmentRecords, files)
-}
-
-func (p *ImapProcessor) SaveMessageAsEML(ctx context.Context, msg *go_imap.Message, emailID string) (string, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "ImapProcessor.ProcessIMAPMessage")
-	defer spans.Finish()
-
-	tenant := utils.GetTenantFromContext(ctx)
-	if tenant == "" {
-		spans.TraceError(mailstack_errors.ErrTenantMissing)
-		return "", mailstack_errors.ErrTenantMissing
-	}
-
-	// Extract date from message
-	var msgTime time.Time
-	if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
-		msgTime = msg.Envelope.Date
-	} else {
-		// Fallback to current time if no date in message
-		msgTime = time.Now()
-	}
-
-	// Format parts of the path
-	year := msgTime.Format("2006")
-	month := msgTime.Format("01")
-
-	outputPath := fmt.Sprintf("%s/%s/%s/%s.eml", tenant, year, month, emailID)
-
-	// Get the body reader for the RFC822 format
-	r := msg.GetBody(&go_imap.BodySectionName{})
-	if r == nil {
-		return "", fmt.Errorf("message body not found")
-	}
-
-	// Read the message into a byte array
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		spans.TraceError(err)
-		return "", fmt.Errorf("failed to read message body: %w", err)
-	}
-	emlFile := buf.Bytes()
-
-	// Set the proper MIME content type for EML files
-	contentType := "message/rfc822"
-
-	// Upload the file to storage
-	err := p.storageService.Upload(ctx, outputPath, emlFile, contentType)
-	if err != nil {
-		err = fmt.Errorf("failed to upload EML file: %w", err)
-		spans.TraceError(err)
-		return "", err
-	}
-
-	return outputPath, nil
 }
 
 func buildEmailEvent(ctx context.Context, email *dto.EmailRecord) *models.EmailEvent {
@@ -621,4 +480,42 @@ func (p *ImapProcessor) processAttachment(attachmentData map[string]interface{})
 	}
 
 	return attachment, files
+}
+
+func (p *emailProcessor) getStructuredMessageBody(ctx context.Context, email *dto.EmailRecord) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailProcessor.getStructuredMessageBody")
+	defer spans.Finish()
+	spans.LogKV("email_id", email.ID)
+
+	structuredData, err := p.aiService.GetStructuredEmailBody(ctx, dto.StructuredEmailRequest{
+		FromName:         email.FromName,
+		FromEmailAddress: email.FromAddress,
+		ToEmailAddress:   email.ToAddresses[0],
+		EmailBodyText:    email.BodyText,
+		EmailBodyHTML:    email.BodyHTML,
+	})
+	if err != nil {
+		spans.TraceError(err)
+		return nil
+	}
+
+	if structuredData == nil {
+		return nil
+	}
+
+	email.HasSignature = structuredData.EmailData.HasSignature
+	email.BodyMarkdown = structuredData.EmailData.MessageBody
+
+	if !structuredData.EmailData.HasSignature {
+		return nil
+	}
+
+	structuredData.EmailData.Signature.CompanyInfo.Domain = email.FromDomain
+	err = p.eventsService.Publisher.PublishFanoutEvent(ctx, email.ID, enum.EMAIL_SIGNATURE, structuredData.EmailData.Signature)
+	if err != nil {
+		spans.TraceError(err)
+		return err
+	}
+
+	return nil
 }
