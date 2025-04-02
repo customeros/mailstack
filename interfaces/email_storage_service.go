@@ -3,12 +3,11 @@ package interfaces
 import (
 	"context"
 
-	"github.com/customeros/mailstack/dto"
+	"github.com/customeros/mailstack/internal/models"
 )
 
 type EmailStorageService interface {
-	Start(ctx context.Context)
-	HandleRawEmail(ctx context.Context, rawEmail dto.EmailInboundNew)
-	PublishStoredEmail(ctx context.Context, email *dto.EmailRecord)
+	Start(ctx context.Context) error
 	Close() error
+	NewEmailLog() *models.EmailLog
 }

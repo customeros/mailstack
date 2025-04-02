@@ -6,7 +6,6 @@ import (
 	"github.com/customeros/mailstack/internal/models"
 )
 
-type EmailEvent interface {
+type EmailEventRepository interface {
 	Create(ctx context.Context, emailEvent *models.EmailEvent) error
-	IsDuplicateByHash(ctx context.Context, hash string) (bool, error)
 }

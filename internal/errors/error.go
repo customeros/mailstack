@@ -12,6 +12,9 @@ var (
 	ErrDomainNotFound            = errors.New("domain not found")
 	ErrDomainConfigurationFailed = errors.New("domain configuration failed")
 
+	// email errors
+	ErrEmailAlreadyProcessed = errors.New("email already processed, skipping")
+
 	// mailbox errors
 	ErrMailboxExists           = errors.New("mailbox already exists")
 	ErrMailboxNotFound         = errors.New("mailbox not found")
