@@ -1,78 +1,79 @@
 package email_storage
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"time"
+
+	"github.com/emersion/go-imap"
 
 	"github.com/customeros/mailstack/dto"
+	mailstack_errors "github.com/customeros/mailstack/internal/errors"
+	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 // HandleRawEmail processes a single raw email message
-func (s *emailStorageService) HandleIMAPEmail(ctx context.Context, emailEvent dto.EmailReceivedIMAP) error {
+func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event dto.EmailReceivedIMAP, eventRecord *models.EmailEvent) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.handleRawEmail")
 	defer spans.Finish()
-	spans.LogObjectAsJson("emailEvent", emailEvent)
+	spans.LogObjectAsJson("emailEvent", event)
 
-	emailExists, err := s.imapEmailExists(ctx, emailEvent)
+	email := s.NewEmailLog()
+
+	email.EmailHash = utils.GenerateIMAPHash(event.MailboxID, event.Folder, event.ImapUID)
+
+	emailExists, err := s.repositories.EmailLogRepository.IsDuplicateByHash(ctx, email.EmailHash)
 	if err != nil {
 		spans.TraceError(err)
-		return err
+		eventRecord.ErrorMessage = err.Error()
+		return
 	}
 	if emailExists {
-		// Log duplicate detection
-		spans.LogKV("status", "skipped_duplicate")
-		// Log the skipped event in TimescaleDB with "skipped" status
-		err = s.logEmailEvent(ctx, "emails.inbound.skipped", emailEvent.Email, map[string]interface{}{
-			"reason": "duplicate",
-			"hash":   emailEvent.Email.EmailHash,
-		})
-		if err != nil {
-			spans.TraceError(err)
-		}
+		eventRecord.ErrorMessage = mailstack_errors.ErrEmailAlreadyProcessed.Error()
+		return
 	}
 
 	// get message from imap server
-	msg, err := s.imapService.GetMessageByUID(ctx, inboundEmail.MailboxID, inboundEmail.Folder, inboundEmail.ImapUID)
+	msg, err := s.imapService.GetMessageByUID(ctx, event.MailboxID, event.Folder, event.ImapUID)
 	if err != nil {
 		spans.TraceError(err)
-		return err
+		eventRecord.ErrorMessage = err.Error()
+		return
 	}
 
 	// save message as .eml
 	bucketKey, err := s.SaveIMAPMessageAsEML(ctx, msg, email.ID)
 	if err != nil {
 		spans.TraceError(err)
-		return err
+		eventRecord.ErrorMessage = err.Error()
+		return
 	}
+	email.EMLKey = bucketKey
 
-	// Log the event in TimescaleDB
-	err = s.logEmailEvent(ctx, "emails.inbound.stored", email)
+	// log email
+	err = s.repositories.EmailLogRepository.Create(ctx, email)
 	if err != nil {
+		eventRecord.ErrorMessage = err.Error()
 		spans.TraceError(err)
-		// Don't return error here, continue with publishing
-		log.Printf("Warning: Failed to log email event: %v", err)
+		return
 	}
 
 	// Publish to next stage
-	err = s.PublishStoredEmail(ctx, email)
+	err = s.publishStoredEmail(ctx, &dto.EmailStored{ID: email.ID})
 	if err != nil {
+		eventRecord.ErrorMessage = err.Error()
 		spans.TraceError(err)
-		return fmt.Errorf("failed to publish stored email: %w", err)
+		return
 	}
 
-	return nil
+	return
 }
 
-func (s *emailStorageService) imapEmailExists(ctx context.Context, emailEvent dto.EmailReceivedIMAP) (bool, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.handleRawEmail")
-	defer spans.Finish()
-
-	emailHash := utils.GenerateIMAPHash(emailEvent.MailboxID, emailEvent.Folder, emailEvent.ImapUID)
-
-	return s.repositories.EmailEventRepository.IsDuplicateByHash(ctx, emailHash)
-}
-
-func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *go_imap.Message, emailID string) (string, error) {
+func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.SaveIMAPMessageAsEML")
 	defer spans.Finish()
 
@@ -98,7 +99,7 @@ func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *go_
 	outputPath := fmt.Sprintf("%s/%s/%s/%s.eml", tenant, year, month, emailID)
 
 	// Get the body reader for the RFC822 format
-	r := msg.GetBody(&go_imap.BodySectionName{})
+	r := msg.GetBody(&imap.BodySectionName{})
 	if r == nil {
 		return "", fmt.Errorf("message body not found")
 	}

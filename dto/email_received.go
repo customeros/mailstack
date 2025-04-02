@@ -12,3 +12,7 @@ type EmailReceivedIMAP struct {
 	ImapUID     uint32                 `json:"imapUID"`
 	ImapSeqNum  uint32                 `json:"imapSeqNum"`
 }
+
+func (e EmailReceivedIMAP) EventType() enum.EmailEvent {
+	return enum.EventEmailInboundReceivedIMAP
+}

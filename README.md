@@ -17,3 +17,10 @@
 
 - Email analysis or processing beyond initial spam filtering
 - Notifications beyond sending the message via webhook
+
+## Inbound email processing pipeline
+- Email Storage Service
+- Email Classification Service
+- Email Content Service
+- Email Threading Service
+- Email Attachment Service

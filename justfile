@@ -15,9 +15,6 @@ generate: gen-api
 migrate:
     go run main.go migrate
 
-rabbit:
-    open "http://localhost:15672"
-
 run:
     go run main.go server
 

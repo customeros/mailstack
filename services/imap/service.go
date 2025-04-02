@@ -23,7 +23,6 @@ import (
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
-	"github.com/customeros/mailstack/services/events"
 )
 
 type IMAPService struct {
@@ -220,6 +219,9 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 	existingClient, exists := s.clients[mailboxID]
 	config, configExists := s.mailboxConfigs[mailboxID]
 	s.clientsMutex.RUnlock()
+
+	utils.SetTenantInContext(ctx, config.Tenant)
+	utils.SetUserIdInContext(ctx, config.UserID)
 
 	if !configExists {
 		err := fmt.Errorf("no configuration found for mailbox %s", mailboxID)

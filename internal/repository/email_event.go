@@ -8,14 +8,13 @@ import (
 
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/models"
-	"github.com/customeros/mailstack/internal/telemetry"
 )
 
 type emailEventRepository struct {
 	db *gorm.DB
 }
 
-func NewEmailEventRepository(db *gorm.DB) interfaces.EmailEvent {
+func NewEmailEventRepository(db *gorm.DB) interfaces.EmailEventRepository {
 	return &emailEventRepository{
 		db: db,
 	}
@@ -32,23 +31,4 @@ func (r *emailEventRepository) Create(ctx context.Context, emailEvent *models.Em
 	}
 
 	return nil
-}
-
-func (r *emailEventRepository) IsDuplicateByHash(ctx context.Context, hash string) (bool, error) {
-	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailEventRepository.IsDuplicateByHash")
-	defer spans.Finish()
-
-	var count int64
-	result := r.db.WithContext(ctx).
-		Model(&models.EmailEvent{}).
-		Where("hash = ?", hash).
-		Count(&count)
-
-	if result.Error != nil {
-		err := fmt.Errorf("error checking for duplicate email: %w", result.Error)
-		spans.TraceError(err)
-		return false, err
-	}
-
-	return count > 0, nil
 }

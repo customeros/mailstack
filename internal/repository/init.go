@@ -15,7 +15,8 @@ type Repositories struct {
 	DomainRepository          DomainRepository
 	EmailRepository           interfaces.EmailRepository
 	EmailAttachmentRepository interfaces.EmailAttachmentRepository
-	EmailEventRepository      interfaces.EmailEvent
+	EmailEventRepository      interfaces.EmailEventRepository
+	EmailLogRepository        interfaces.EmailLogRepository
 	EmailThreadRepository     interfaces.EmailThreadRepository
 	MailboxRepository         interfaces.MailboxRepository
 	MailboxSyncRepository     interfaces.MailboxSyncRepository
@@ -44,6 +45,7 @@ func InitRepositories(mailstackDB *gorm.DB, timescaleDB *gorm.DB, r2Config *conf
 		SenderRepository:          NewSenderRepository(mailstackDB),
 		// Timescale
 		EmailEventRepository: NewEmailEventRepository(timescaleDB),
+		EmailLogRepository:   NewEmailLogRepository(timescaleDB),
 	}
 }
 
@@ -85,6 +87,7 @@ func MigrateTimescaleDB(dbConfig *config.TimescaleDBConfig, timescaleDB *gorm.DB
 
 	err = timescaleDB.AutoMigrate(
 		&models.EmailEvent{},
+		&models.EmailLog{},
 	)
 
 	db.SetMaxIdleConns(dbConfig.MaxIdleConn)
