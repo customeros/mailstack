@@ -13,7 +13,6 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -33,7 +32,7 @@ func NewSMTPClient(repos *repository.Repositories, mailbox *models.Mailbox) *SMT
 	}
 }
 
-func (s *SMTPClient) Send(ctx context.Context, email *dto.EmailRecord, attachments []*models.EmailAttachment) error {
+func (s *SMTPClient) Send(ctx context.Context, email *models.EmailLog, attachments []*models.EmailAttachment) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.Send")
 	defer spans.Finish()
 	if email == nil {
@@ -95,7 +94,7 @@ func (s *SMTPClient) Send(ctx context.Context, email *dto.EmailRecord, attachmen
 }
 
 // validateEmail performs basic validation on the email
-func (s *SMTPClient) validateEmail(ctx context.Context, email *dto.EmailRecord) error {
+func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailLog) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.validateEmail")
 	defer spans.Finish()
 
@@ -135,7 +134,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *dto.EmailRecord) 
 		return err
 	}
 
-	if email.BodyText == "" && email.BodyHTML == "" {
+	if email.BodyText == "" && email.BodyHtml == "" {
 		err := fmt.Errorf("email must have either text or HTML content")
 		spans.TraceError(err)
 		return err
@@ -155,7 +154,7 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *dto.EmailRecord) 
 }
 
 // prepareMessage builds the email message in proper MIME format and stores raw metadata
-func (s *SMTPClient) prepareMessage(ctx context.Context, email *dto.EmailRecord, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
+func (s *SMTPClient) prepareMessage(ctx context.Context, email *models.EmailLog, attachments []*models.EmailAttachment) ([]string, *bytes.Buffer, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.prepareMessage")
 	defer spans.Finish()
 	if email == nil {
@@ -173,35 +172,30 @@ func (s *SMTPClient) prepareMessage(ctx context.Context, email *dto.EmailRecord,
 
 	// Prepare message content and body structure
 	var err error
-	if email.HasRichContent() {
-		err = s.buildMultipartMessageWithStructure(ctx, email, headers, attachments, buffer)
-	} else {
-		err = s.buildPlainTextMessageWithStructure(ctx, email, headers, buffer)
-	}
-
+	// TODO
+	// if email.HasRichContent() {
+	// 	err = s.buildMultipartMessageWithStructure(ctx, email, headers, attachments, buffer)
+	// } else {
+	err = s.buildPlainTextMessageWithStructure(ctx, email, headers, buffer)
+	// }
 	if err != nil {
 		spans.TraceError(err)
 		return nil, nil, err
 	}
 
-	return email.Recipients(), buffer, nil
+	// TODO FIX THIS
+	return nil, buffer, nil
 }
 
 // prepareHeaders generates email headers and stores them in the Email model
-func (s *SMTPClient) prepareHeaders(ctx context.Context, email *dto.EmailRecord) map[string]string {
-	headers := email.BuildHeaders()
-
-	// Store raw headers in Email model
-	rawHeaders := make(models.JSONMap)
-	for k, v := range headers {
-		rawHeaders[k] = v
-	}
-	return headers
+func (s *SMTPClient) prepareHeaders(ctx context.Context, email *models.EmailLog) map[string]string {
+	// TODO FIX
+	return nil
 }
 
 // buildMultipartMessageWithStructure creates a multipart MIME message with text, HTML, and attachments
 // while also capturing body structure metadata
-func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *dto.EmailRecord,
+func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, email *models.EmailLog,
 	headers map[string]string, attachments []*models.EmailAttachment, buffer *bytes.Buffer,
 ) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "SMTPClient.buildMultipartMessageWithStructure")
@@ -241,11 +235,11 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 	}
 
 	// Add HTML part if available
-	if email.BodyHTML != "" {
-		if err := addHtmlPart(ctx, writer, email.BodyHTML); err != nil {
+	if email.BodyHtml != "" {
+		if err := addHtmlPart(ctx, writer, email.BodyHtml); err != nil {
 			return err
 		}
-		parts = append(parts, createPartMetadata("text/html", len(email.BodyHTML), ""))
+		parts = append(parts, createPartMetadata("text/html", len(email.BodyHtml), ""))
 		hasHtmlPart = true
 	}
 
@@ -269,7 +263,7 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 }
 
 // buildPlainTextMessageWithStructure creates a simple text-only email and captures body structure
-func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *dto.EmailRecord,
+func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, email *models.EmailLog,
 	headers map[string]string, buffer *bytes.Buffer,
 ) error {
 	headers["Content-Type"] = "text/plain; charset=UTF-8"
@@ -291,7 +285,7 @@ func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, ema
 }
 
 // initializeBodyStructure creates the base body structure object
-func initializeBodyStructure(email *dto.EmailRecord) models.JSONMap {
+func initializeBodyStructure(email *models.EmailLog) models.JSONMap {
 	return models.JSONMap{
 		"hasAttachments": email.HasAttachment,
 	}

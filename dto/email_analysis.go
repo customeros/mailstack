@@ -1,25 +1,20 @@
 package dto
 
-type StructuredEmailRequest struct {
-	FromName         string `json:"emailFrom"`
-	FromEmailAddress string `json:"fromEmailAddress"`
-	ToName           string `json:"emailTo"`
-	ToEmailAddress   string `json:"toEmailAddress"`
-	EmailBodyText    string `json:"emailBodyText"`
-	EmailBodyHTML    string `json:"emailBodyHTML"`
+import "github.com/customeros/mailstack/internal/enum"
+
+type AnalyzeEmailRequest struct {
+	EmailID       string         `json:"emailId"`
+	From          EmailAddress   `json:"from"`
+	To            []EmailAddress `json:"to"`
+	EmailBodyText string         `json:"emailBodyText"`
+	EmailBodyHTML string         `json:"emailBodyHTML"`
 }
 
-type StructuredEmailResponse struct {
-	EmailData EmailData `json:"emailData"`
-	RequestID string    `json:"requestId"`
-	Status    string    `json:"status"`
-}
-
-// EmailData contains the parsed email information
-type EmailData struct {
-	HasSignature bool           `json:"hasSignature"`
-	MessageBody  string         `json:"messageBody"`
-	Signature    EmailSignature `json:"signature,omitempty"`
+type AnalyzeEmailResponse struct {
+	HasSignature        bool           `json:"hasSignature"`
+	MessageBodyMarkdown string         `json:"messageBodyMarkdown"`
+	Signature           EmailSignature `json:"signature,omitempty"`
+	ErrorMessage        string         `json:"errorMessage"`
 }
 
 // EmailSignature represents the complete email signature
@@ -60,4 +55,8 @@ type EmailSignatureAddress struct {
 	PostalCode string `json:"postalCode"`
 	Region     string `json:"region"`
 	Street     string `json:"street"`
+}
+
+func (e AnalyzeEmailRequest) EventType() enum.EmailEvent {
+	return enum.EventEmailInboundAnalysis
 }

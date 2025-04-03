@@ -20,36 +20,38 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-type emailStorageService struct {
+type EmailStorageService struct {
 	natsConn           *nats_internal.NATSConnections
 	repositories       *repository.Repositories
 	eventLoggerService interfaces.EventLoggerService
-	storageService     interfaces.StorageService
 	imapService        interfaces.IMAPService
+	emlStorage         interfaces.StorageService
 }
 
 func NewEmailStorageService(
 	natsConn *nats_internal.NATSConnections,
 	repositories *repository.Repositories,
 	eventLoggerService interfaces.EventLoggerService,
-	storageService interfaces.StorageService,
 	imapService interfaces.IMAPService,
-) interfaces.EmailStorageService {
-	return &emailStorageService{
+	emlStorage interfaces.StorageService,
+) interfaces.EmailProcessor {
+	return &EmailStorageService{
 		natsConn:           natsConn,
 		repositories:       repositories,
 		eventLoggerService: eventLoggerService,
-		storageService:     storageService,
 		imapService:        imapService,
+		emlStorage:         emlStorage,
 	}
 }
 
+var SUBSCRIBED_SUBJECT = enum.EventEmailInboundReceivedIMAP.String()
+
 const (
 	// queue group
-	QUEUE_GROUP = "storage-service"
+	QUEUE_GROUP = "email-storage-service"
 
 	// consumer config
-	CONSUMER_NAME         = "storage-consumer"
+	CONSUMER_NAME         = "email-storage-consumer"
 	ACK_WAIT              = 30 * time.Second
 	MAX_DELIVERY_ATTEMPTS = 5
 	MAX_ACK_PENDING       = 100
@@ -58,7 +60,7 @@ const (
 	ERR_BACKOFF           = 100 * time.Millisecond
 )
 
-func (s *emailStorageService) NewEmailLog() *models.EmailLog {
+func (s *EmailStorageService) NewEmailLog() *models.EmailLog {
 	return &models.EmailLog{
 		ID:        utils.GenerateNanoIDWithPrefix("email", 21),
 		Direction: enum.EmailDirectionInbound,
@@ -67,14 +69,14 @@ func (s *emailStorageService) NewEmailLog() *models.EmailLog {
 }
 
 // Start begins listening for raw email events and processing them
-func (s *emailStorageService) Start(ctx context.Context) error {
+func (s *EmailStorageService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
 		AckPolicy:     nats.AckExplicitPolicy,
 		AckWait:       ACK_WAIT,
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
-		FilterSubject: enum.EventEmailInboundReceivedIMAP.String(),
+		FilterSubject: SUBSCRIBED_SUBJECT,
 		MaxAckPending: MAX_ACK_PENDING,
 	})
 	if err != nil {
@@ -83,7 +85,7 @@ func (s *emailStorageService) Start(ctx context.Context) error {
 
 	// Create pull subscription
 	sub, err := s.natsConn.JS.PullSubscribe(
-		enum.EventEmailInboundReceivedIMAP.String(),
+		SUBSCRIBED_SUBJECT,
 		QUEUE_GROUP,
 		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
 	)
@@ -98,7 +100,7 @@ func (s *emailStorageService) Start(ctx context.Context) error {
 }
 
 // processRawEmailEvents continuously processes raw email events
-func (s *emailStorageService) processRawEmailEvents(ctx context.Context, sub *nats.Subscription) {
+func (s *EmailStorageService) processRawEmailEvents(ctx context.Context, sub *nats.Subscription) {
 	log.Println("Email Storage Service started")
 	for {
 		select {
@@ -112,7 +114,7 @@ func (s *emailStorageService) processRawEmailEvents(ctx context.Context, sub *na
 }
 
 // processBatch fetches and processes a batch of messages
-func (s *emailStorageService) processBatch(ctx context.Context, sub *nats.Subscription) {
+func (s *EmailStorageService) processBatch(ctx context.Context, sub *nats.Subscription) {
 	// Fetch messages batch
 	msgs, err := sub.Fetch(FETCH_BATCH_SIZE, nats.MaxWait(MAX_FETCH_WAIT))
 	if err != nil {
@@ -128,7 +130,7 @@ func (s *emailStorageService) processBatch(ctx context.Context, sub *nats.Subscr
 }
 
 // handleFetchError handles errors that occur during message fetching
-func (s *emailStorageService) handleFetchError(err error) {
+func (s *EmailStorageService) handleFetchError(err error) {
 	if err == nats.ErrTimeout {
 		// No messages available, this is normal
 		return
@@ -138,7 +140,7 @@ func (s *emailStorageService) handleFetchError(err error) {
 }
 
 // processMessage processes a single email message
-func (s *emailStorageService) processMessage(ctx context.Context, msg *nats.Msg) {
+func (s *EmailStorageService) processMessage(ctx context.Context, msg *nats.Msg) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.processMessage")
 	defer spans.Finish()
 
@@ -192,7 +194,7 @@ func (s *emailStorageService) processMessage(ctx context.Context, msg *nats.Msg)
 }
 
 // handleProcessingError deals with errors during email processing
-func (s *emailStorageService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
+func (s *EmailStorageService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
 	metadata, _ := msg.Metadata()
 
 	// Check if we should retry
@@ -207,7 +209,7 @@ func (s *emailStorageService) handleProcessingError(ctx context.Context, msg *na
 }
 
 // Close gracefully shuts down the service
-func (s *emailStorageService) Close() error {
+func (s *EmailStorageService) Close() error {
 	if s.natsConn != nil {
 		s.natsConn.Close()
 	}

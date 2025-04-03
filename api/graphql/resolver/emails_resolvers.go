@@ -11,8 +11,8 @@ import (
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
+	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
@@ -35,7 +35,7 @@ func (r *mutationResolver) SendEmail(ctx context.Context, input graphql_model.Em
 
 	var result graphql_model.EmailResult
 	// TODO FIX
-	emailID, emailStatus, err := r.services.EmailService.ScheduleSend(ctx, &dto.EmailRecord{}, input.AttachmentIds)
+	emailID, emailStatus, err := r.services.EmailService.ScheduleSend(ctx, &models.EmailLog{}, input.AttachmentIds)
 	if err != nil {
 		spans.TraceError(err)
 		errStr := err.Error()

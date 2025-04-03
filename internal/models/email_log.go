@@ -10,7 +10,7 @@ import (
 
 type EmailLog struct {
 	// Primary identifiers
-	ID        string `gorm:"primaryKey;column:id" json:"id"`
+	ID        string `gorm:"primaryKey;column:id;index" json:"id"`
 	MailboxID string `gorm:"column:mailbox_id;index" json:"mailboxId"`
 	MessageID string `gorm:"column:message_id;uniqueIndex" json:"messageId"`
 	ThreadID  string `gorm:"column:thread_id;index" json:"threadId"`
@@ -33,11 +33,11 @@ type EmailLog struct {
 	ToAddresses   pq.StringArray `gorm:"column:to_addresses;type:json" json:"toAddresses"`
 	CcAddresses   pq.StringArray `gorm:"column:cc_addresses;type:json" json:"ccAddresses"`
 	BccAddresses  pq.StringArray `gorm:"column:bcc_addresses;type:json" json:"bccAddresses"`
-	AttachmentIDs pq.StringArray `gorm:"column:attachments;type:json" json:"attachments"`
+	AttachmentIDs pq.StringArray `gorm:"column:attachment_ids;type:json" json:"attachments"`
 
 	// Content fields
 	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`
-	BodyHTML      string `gorm:"column:body_html;type:text" json:"bodyHtml"`
+	BodyHtml      string `gorm:"column:body_html;type:text" json:"bodyHtml"`
 	BodyMarkdown  string `gorm:"column:body_markdown;type:text" json:"bodyMarkdown"`
 	HasAttachment bool   `gorm:"column:has_attachment" json:"hasAttachment"`
 	HasSignature  bool   `gorm:"column:has_signature" json:"hasSignature"`

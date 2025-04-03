@@ -1,9 +1,30 @@
-package email_content
+package email_analysis
 
-func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.StructuredEmailRequest) (*dto.StructuredEmailResponse, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "aiService.GetStructuredEmailBody")
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/pkg/errors"
+
+	"github.com/customeros/mailstack/dto"
+	"github.com/customeros/mailstack/internal/telemetry"
+)
+
+type AskAIForEmailResponse struct {
+	EmailData dto.AnalyzeEmailResponse `json:"emailData"`
+}
+
+func (s *EmailAnalysisService) getStructuredEmailBody(ctx context.Context, request dto.AnalyzeEmailRequest) (*dto.AnalyzeEmailResponse, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailAnalysisService.getStructuredEmailBody")
 	defer spans.Finish()
 	spans.LogObjectAsJson("request", request)
+
+	// TODO migrate from HTTP call to NATS request/response
 
 	payload, err := json.Marshal(request)
 	if err != nil {
@@ -11,13 +32,13 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 		return nil, errors.Wrap(err, "failed to marshal payload")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.CustomerOSAPIConfig.Url+"/internal/v1/askAIForEmail", bytes.NewBuffer(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.config.Url+"/internal/v1/askAIForEmail", bytes.NewBuffer(payload))
 	if err != nil {
 		spans.TraceError(err)
 		return nil, errors.Wrap(err, "failed to create request")
 	}
 
-	req.Header.Set("X-Openline-API-KEY", s.CustomerOSAPIConfig.ApiKey)
+	req.Header.Set("X-Openline-API-KEY", s.config.ApiKey)
 	req.Header.Set("X-Openline-Username", "matt@customeros.ai")
 	req.Header.Set("X-Openline-Tenant", "customerosai")
 
@@ -45,7 +66,7 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 		return nil, fmt.Errorf("request failed with status code %d: %s", resp.StatusCode, string(body))
 	}
 
-	var response dto.StructuredEmailResponse
+	var response AskAIForEmailResponse
 	if resp != nil {
 		err := json.Unmarshal(body, &response)
 		if err != nil {
@@ -55,5 +76,5 @@ func (s *aiService) GetStructuredEmailBody(ctx context.Context, request dto.Stru
 	}
 	spans.LogObjectAsJson("response", response)
 
-	return &response, nil
+	return &response.EmailData, nil
 }
