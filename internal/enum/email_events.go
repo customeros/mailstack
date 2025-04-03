@@ -5,12 +5,14 @@ type EmailEvent string
 const (
 	EventEmailInboundReceivedIMAP            EmailEvent = "emails.inbound.received.imap"
 	EventEmailInboundStored                  EmailEvent = "emails.inbound.stored"
+	EventEmailInboundClassify                EmailEvent = "emails.inbound.classify"
 	EventEmailInboundClassifiedOK            EmailEvent = "emails.inbound.classified.ok"
 	EventEmailInboundClassifiedSkip          EmailEvent = "emails.inbound.classified.skip"
-	EventEmailInboundClassifiedBounce        EmailEvent = "emails.inbound.classified.skip"
+	EventEmailInboundClassifiedBounce        EmailEvent = "emails.inbound.classified.bounce"
 	EventEmailInboundClassifiedAutoresponder EmailEvent = "emails.inbound.classified.autoresponder"
 	EventEmailInboundAnalysis                EmailEvent = "emails.inbound.analysis"
 	EventEmailInboundAttachments             EmailEvent = "emails.inbound.attachments"
+	EventEmailInboundThread                  EmailEvent = "emails.inbound.thread"
 	EventEmailInboundCompleted               EmailEvent = "emails.inbound.completed"
 	EventEmailInboundError                   EmailEvent = "emails.inbound.error"
 

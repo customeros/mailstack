@@ -63,16 +63,16 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 		return nil, err
 	}
 
-	// Initialize services
-	svcs, err := services.InitServices(cfg.AppConfig.RabbitMQURL, appLogger, repos, cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	// Initialize NATS Streams
 	natsConn, err := nats_internal.InitNats(cfg.NATSConfig)
 	if err != nil {
 		log.Fatalf("Failed to initialize NATS: %v", err)
+	}
+
+	// Initialize services
+	svcs, err := services.InitServices(natsConn, appLogger, repos, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize Gin

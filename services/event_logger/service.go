@@ -14,22 +14,22 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-type eventLoggerService struct {
-	repositories   *repository.Repositories
-	storageService interfaces.StorageService
+type EventLoggerService struct {
+	repositories  *repository.Repositories
+	eventsStorage interfaces.StorageService
 }
 
 func NewEventLoggerService(
 	repos *repository.Repositories,
-	storageService interfaces.StorageService,
+	eventsStorage interfaces.StorageService,
 ) interfaces.EventLoggerService {
-	return &eventLoggerService{
-		repositories:   repos,
-		storageService: storageService,
+	return &EventLoggerService{
+		repositories:  repos,
+		eventsStorage: eventsStorage,
 	}
 }
 
-func (s *eventLoggerService) NewEmailEventRecord(ctx context.Context) *models.EmailEvent {
+func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.EmailEvent {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "eventLoggerService.NewEmailEventRecord")
 	defer spans.Finish()
 
@@ -56,14 +56,14 @@ func (s *eventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 }
 
 // storeEventInR2 stores the event data in R2 and returns the key
-func (s *eventLoggerService) StoreEmailEventInR2(ctx context.Context, eventID string, data []byte) (string, error) {
+func (s *EventLoggerService) StoreEmailEventInR2(ctx context.Context, eventID string, data []byte) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "eventLoggerService.StoreEventInR2")
 	defer spans.Finish()
 
 	payloadKey := fmt.Sprintf("emails/%s/%s.json", time.Now().Format("20060102"), eventID)
 
 	// Store in R2
-	err := s.storageService.Upload(ctx, payloadKey, data, "application/json")
+	err := s.eventsStorage.Upload(ctx, payloadKey, data, "application/json")
 	if err != nil {
 		spans.TraceError(err)
 	}
@@ -71,7 +71,7 @@ func (s *eventLoggerService) StoreEmailEventInR2(ctx context.Context, eventID st
 	return payloadKey, err
 }
 
-func (s *eventLoggerService) LogEmailEventToTimescale(ctx context.Context, event *models.EmailEvent) {
+func (s *EventLoggerService) LogEmailEventToTimescale(ctx context.Context, event *models.EmailEvent) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "eventLoggerService.LogEmailEventToTimescale")
 	defer spans.Finish()
 

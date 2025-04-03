@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -37,4 +40,45 @@ func (r *emailLogRepository) IsDuplicateByHash(ctx context.Context, emailHash st
 	}
 
 	return count > 0, nil
+}
+
+func (r *emailLogRepository) UpdateEmailLog(ctx context.Context, id string, updates map[string]interface{}) error {
+	if id == "" {
+		return errors.New("id is required for update")
+	}
+	if len(updates) == 0 {
+		return errors.New("no update fields provided")
+	}
+
+	// Always update the UpdatedAt field
+	updates["updated_at"] = time.Now()
+
+	// Use a transaction to ensure consistency
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Update only the specific email log with the given ID
+	// The map contains only the fields we want to update
+	result := tx.Model(&models.EmailLog{}).
+		Where("id = ?", id).
+		Updates(updates)
+
+	if result.Error != nil {
+		tx.Rollback()
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		return fmt.Errorf("email log with ID %s not found", id)
+	}
+
+	return tx.Commit().Error
 }

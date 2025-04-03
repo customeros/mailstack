@@ -1,25 +1,45 @@
 package email_content
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
+	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/telemetry"
 )
 
-type emailContentService struct {
-	natsConn *nats_internal.NATSConnections
+type EmailContentService struct {
+	natsConn           *nats_internal.NATSConnections
+	repositories       *repository.Repositories
+	eventLoggerService interfaces.EventLoggerService
+	emlStorage         interfaces.StorageService
 }
 
-func NewEmailContentService(natsConn *nats_internal.NATSConnections) interfaces.EmailContentService {
-	return &emailContentService{
-		natsConn: natsConn,
+func NewEmailContentService(
+	natsConn *nats_internal.NATSConnections,
+	repositories *repository.Repositories,
+	eventLoggerService interfaces.EventLoggerService,
+	emlStorage interfaces.StorageService,
+) interfaces.EmailProcessor {
+	return &EmailContentService{
+		natsConn:           natsConn,
+		repositories:       repositories,
+		eventLoggerService: eventLoggerService,
+		emlStorage:         emlStorage,
 	}
 }
+
+var SUBSCRIBED_SUBJECT = enum.EventEmailInboundStored.String()
 
 const (
 	// queue group
@@ -36,14 +56,14 @@ const (
 )
 
 // Start begins listening for raw email events and processing them
-func (s *emailContentService) Start(ctx context.Context) error {
+func (s *EmailContentService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
 		AckPolicy:     nats.AckExplicitPolicy,
 		AckWait:       ACK_WAIT,
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
-		FilterSubject: enum.EventEmailInboundClassifiedOK.String(),
+		FilterSubject: SUBSCRIBED_SUBJECT,
 		MaxAckPending: MAX_ACK_PENDING,
 	})
 	if err != nil {
@@ -52,7 +72,7 @@ func (s *emailContentService) Start(ctx context.Context) error {
 
 	// Create pull subscription
 	sub, err := s.natsConn.JS.PullSubscribe(
-		enum.EventEmailInboundReceivedIMAP.String(),
+		SUBSCRIBED_SUBJECT,
 		QUEUE_GROUP,
 		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
 	)
@@ -61,63 +81,125 @@ func (s *emailContentService) Start(ctx context.Context) error {
 	}
 
 	// Start processing
-	go s.processEmails(ctx, sub)
+	go s.processEvents(ctx, sub)
 
 	return nil
 }
 
-// processEmails continuously processes raw email events
-func (s *emailStorageService) processRawEmailEvents(ctx context.Context, sub *nats.Subscription) {
+// processRawEmailEvents continuously processes raw email events
+func (s *EmailContentService) processEvents(ctx context.Context, sub *nats.Subscription) {
 	log.Println("Email Storage Service started")
-
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("Email Storage Service shutting down")
 			return
 		default:
-			// Fetch messages batch
-			msgs, err := sub.Fetch(FETCH_BATCH_SIZE, nats.MaxWait(MAX_FETCH_WAIT))
-			if err != nil {
-				if err == nats.ErrTimeout {
-					// No messages available, this is normal
-					continue
-				}
-				log.Printf("Fetch error: %v", err)
-				time.Sleep(ERR_BACKOFF) // Small backoff on error
-				continue
-			}
-
-			for _, msg := range msgs {
-				// Parse the raw message
-				var rawEmail dto.EmailReceivedIMAP
-				if err := json.Unmarshal(msg.Data, &rawEmail); err != nil {
-					log.Printf("Failed to unmarshal inbound.email.received.imap: %v", err)
-					msg.Ack() // Ack malformed messages to avoid redelivery
-					continue
-				}
-
-				// Process the email
-				err := s.HandleIMAPEmail(ctx, rawEmail)
-
-				if err != nil {
-					log.Printf("Processing error: %v", err)
-					metadata, _ := msg.Metadata()
-
-					// Check if we should retry
-					if metadata.NumDelivered <= uint64(MAX_DELIVERY_ATTEMPTS) {
-						// Negative acknowledgment triggers redelivery
-						msg.Nak()
-					} else {
-						// Max retries reached, acknowledge but publish to dead letter
-						msg.Ack()
-						s.publishError(ctx, msg.Data, err)
-					}
-				} else {
-					// Successfully processed
-					msg.Ack()
-				}
-			}
+			s.processBatch(ctx, sub)
 		}
 	}
+}
+
+// processBatch fetches and processes a batch of messages
+func (s *EmailContentService) processBatch(ctx context.Context, sub *nats.Subscription) {
+	// Fetch messages batch
+	msgs, err := sub.Fetch(FETCH_BATCH_SIZE, nats.MaxWait(MAX_FETCH_WAIT))
+	if err != nil {
+		s.handleFetchError(err)
+		return
+	}
+
+	for _, msg := range msgs {
+		msgCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		s.processMessage(msgCtx, msg)
+		cancel()
+	}
+}
+
+// handleFetchError handles errors that occur during message fetching
+func (s *EmailContentService) handleFetchError(err error) {
+	if err == nats.ErrTimeout {
+		// No messages available, this is normal
+		return
+	}
+	log.Printf("Fetch error: %v", err)
+	time.Sleep(ERR_BACKOFF) // Small backoff on error
+}
+
+// processMessage processes a single email message
+func (s *EmailContentService) processMessage(ctx context.Context, msg *nats.Msg) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processMessage")
+	defer spans.Finish()
+
+	var rawMessage dto.EmailStored
+
+	event := s.eventLoggerService.NewEmailEventRecord(ctx)
+	event.Event = rawMessage.EventType()
+	if event.ErrorMessage != "" {
+		msg.Ack() // Ack malformed messages to avoid redelivery
+		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+		return
+	}
+
+	// Parse the raw message
+	if err := json.Unmarshal(msg.Data, &rawMessage); err != nil {
+		err = fmt.Errorf("Failed to unmarshal inbound.email.received.imap: %v", err)
+		msg.Ack() // Ack malformed messages to avoid redelivery
+		event.ErrorMessage = err.Error()
+		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+		spans.TraceError(err)
+		return
+	}
+	event.EmailID = rawMessage.ID
+	event.MailboxID = rawMessage.MailboxID
+
+	// Store original event in R2
+	payloadKey, err := s.eventLoggerService.StoreEmailEventInR2(ctx, event.ID, msg.Data)
+	if err != nil {
+		err = fmt.Errorf("Failed to store event in R2: %v", err)
+		event.ErrorMessage = err.Error()
+		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+		s.handleProcessingError(ctx, msg, err)
+		spans.TraceError(err)
+		return
+	}
+	event.PayloadKey = payloadKey
+
+	// Process the email
+	s.processEmail(ctx, rawMessage, event)
+	s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+
+	if event.ErrorMessage != "" {
+		s.handleProcessingError(ctx, msg, err)
+		if !strings.Contains(event.ErrorMessage, "skipping") {
+			spans.TraceError(err)
+		}
+		return
+	}
+
+	msg.Ack()
+	return
+}
+
+// handleProcessingError deals with errors during email processing
+func (s *EmailContentService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
+	metadata, _ := msg.Metadata()
+
+	// Check if we should retry
+	if metadata.NumDelivered <= uint64(MAX_DELIVERY_ATTEMPTS) {
+		// Negative acknowledgment triggers redelivery
+		msg.Nak()
+	} else {
+		// Max retries reached, acknowledge but publish to dead letter
+		msg.Ack()
+		s.publishError(ctx, msg.Data, err)
+	}
+}
+
+// Close gracefully shuts down the service
+func (s *EmailContentService) Close() error {
+	if s.natsConn != nil {
+		s.natsConn.Close()
+	}
+	return nil
 }

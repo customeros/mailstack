@@ -1,4 +1,4 @@
-package email_storage
+package email_content
 
 import (
 	"context"
@@ -12,9 +12,8 @@ import (
 	"github.com/customeros/mailstack/internal/telemetry"
 )
 
-// PublishStoredEmail publishes the stored email to the next processing stage
-func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *dto.EmailStored) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.publishStoredEmail")
+func (s *EmailContentService) publishCompleted(ctx context.Context, email *dto.InboundEmailProcessingCompleted) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.publishCompleted")
 	defer spans.Finish()
 
 	// Convert to JSON
@@ -25,19 +24,19 @@ func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *dto
 	}
 
 	// Publish to the stored subject
-	_, err = s.natsConn.JS.Publish(enum.EventEmailInboundStored.String(), data)
+	_, err = s.natsConn.JS.Publish(enum.EventEmailInboundCompleted.String(), data)
 	if err != nil {
 		spans.TraceError(err)
-		return fmt.Errorf("failed to publish stored email: %w", err)
+		return fmt.Errorf("failed to publish completed email: %w", err)
 	}
 
-	spans.LogKV("published", email.ID)
+	spans.LogKV("completed", email.EmailID)
 	return nil
 }
 
 // publishError publishes an error event
-func (s *EmailStorageService) publishError(ctx context.Context, rawData []byte, err error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.publishError")
+func (s *EmailContentService) publishError(ctx context.Context, rawData []byte, err error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.publishError")
 	defer spans.Finish()
 
 	errorEvent := struct {

@@ -10,20 +10,21 @@ import (
 
 // EmailEvent represents the main email events table
 type EmailEvent struct {
-	ID           string                `gorm:"column:id:varchar(50);primaryKey;not null" json:"id"`
-	Timestamp    time.Time             `gorm:"not null;index"`
-	Event        enum.EmailEvent       `gorm:"column:event:varchar(50);index;not null" json:"event"`
-	Service      enum.MailstackService `gorm:"column:service:varchar(50);index;not null" json:"service"`
-	Tenant       string                `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
-	User         string                `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
-	EmailID      string                `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
-	MailboxID    string                `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
-	MessageID    string                `gorm:"column:message_id;type:text;not null;uniqueIndex"`
-	ThreadID     string                `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
-	Direction    enum.EmailDirection   `gorm:"column:direction;type:text;not null" json:"direction"`
-	PayloadKey   string                `gorm:"column:payload_key;type:varchar(255)" json:"payloadKey"`
-	Success      bool                  `gorm:"column:success;type:boolean" json:"success"`
-	ErrorMessage string                `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
+	ID             string                   `gorm:"column:id:varchar(50);primaryKey;not null" json:"id"`
+	Timestamp      time.Time                `gorm:"not null;index"`
+	Event          enum.EmailEvent          `gorm:"column:event:varchar(50);index;not null" json:"event"`
+	Service        enum.MailstackService    `gorm:"column:service:varchar(50);index;not null" json:"service"`
+	Tenant         string                   `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
+	User           string                   `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
+	EmailID        string                   `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
+	MailboxID      string                   `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
+	MessageID      string                   `gorm:"column:message_id;type:text;not null;uniqueIndex"`
+	ThreadID       string                   `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
+	Classification enum.EmailClassification `gorm:"column:classification;type:varchar(255)" json:"classification"`
+	Direction      enum.EmailDirection      `gorm:"column:direction;type:text;not null" json:"direction"`
+	PayloadKey     string                   `gorm:"column:payload_key;type:varchar(255)" json:"payloadKey"`
+	Success        bool                     `gorm:"column:success;type:boolean" json:"success"`
+	ErrorMessage   string                   `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
 }
 
 // TableName overrides the table name
@@ -64,10 +65,11 @@ func SetupTimescaleDB(db *gorm.DB) error {
 			event,
 			mailbox_id,
 			direction,
+            classification,
 			success,
 			count(*) AS email_count
 		FROM email_events
-		GROUP BY day, tenant, service, event, mailbox_id, direction, success
+		GROUP BY day, tenant, service, event, mailbox_id, direction, classification, success
 	`).Error; err != nil {
 		return err
 	}

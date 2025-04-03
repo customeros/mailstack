@@ -5,7 +5,9 @@ import (
 )
 
 type EmailStored struct {
-	ID string `json:"Id"`
+	ID        string `json:"Id"`
+	EMLKey    string `json:"emlKey"`
+	MailboxID string `json:"mailboxId"`
 }
 
 func (e EmailStored) EventType() enum.EmailEvent {

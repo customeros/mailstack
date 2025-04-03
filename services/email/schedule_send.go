@@ -6,14 +6,13 @@ import (
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/pkg/errors"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (s *emailService) ScheduleSend(ctx context.Context, email *dto.EmailRecord, attachmentIDs []string) (string, enum.EmailStatus, error) {
+func (s *emailService) ScheduleSend(ctx context.Context, email *models.EmailLog, attachmentIDs []string) (string, enum.EmailStatus, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.ScheduleSend")
 	defer spans.Finish()
 
@@ -43,26 +42,19 @@ func (s *emailService) ScheduleSend(ctx context.Context, email *dto.EmailRecord,
 		return "", enum.EmailStatusFailed, err
 	}
 
-	// if scheduleFor is empty, fire event to send now
-	if email.ScheduledFor == nil {
-		err = s.eventsService.Publisher.PublishSendEmailEvent(ctx, email)
-		if err != nil {
-			spans.TraceError(err)
-			return "", enum.EmailStatusFailed, err
-		}
-	}
+	// TODO if scheduleFor is empty, fire event to send now
 
 	return emailID, enum.EmailStatus(email.Status), nil
 }
 
-func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *dto.EmailRecord) error {
+func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *models.EmailLog) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.createNewEmailThreadForEmail")
 	defer spans.Finish()
 
 	thread := &models.EmailThread{
 		MailboxID:      email.MailboxID,
 		Subject:        email.Subject,
-		Participants:   email.AllParticipants(),
+		Participants:   []string{}, // TODO FIX THIS
 		LastMessageID:  email.MessageID,
 		HasAttachments: email.HasAttachment,
 		FirstMessageAt: utils.NowPtr(),
@@ -84,13 +76,13 @@ func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *
 	return nil
 }
 
-func setDefaultSendingValues(email *dto.EmailRecord) {
+func setDefaultSendingValues(email *models.EmailLog) {
 	email.Direction = enum.EmailDirectionOutbound
 	email.Status = enum.EmailStatusQueued
 	email.MessageID = utils.GenerateMessageID(email.FromDomain, "")
 }
 
-func (s *emailService) validateEmail(ctx context.Context, email *dto.EmailRecord, attachmentIDs []string) error {
+func (s *emailService) validateEmail(ctx context.Context, email *models.EmailLog, attachmentIDs []string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateEmail")
 	defer spans.Finish()
 
@@ -113,7 +105,7 @@ func (s *emailService) validateEmail(ctx context.Context, email *dto.EmailRecord
 		spans.TraceError(err)
 		return err
 	}
-	if email.BodyHTML == "" && email.BodyText == "" {
+	if email.BodyHtml == "" && email.BodyText == "" {
 		err = ErrEmptyEmailBody
 		spans.TraceError(err)
 		return err
@@ -157,7 +149,7 @@ func (s *emailService) validateAttachment(ctx context.Context, attachmentID stri
 	return nil
 }
 
-func validateRecipients(email *dto.EmailRecord) error {
+func validateRecipients(email *models.EmailLog) error {
 	if len(email.ToAddresses) == 0 {
 		err := ErrRecipientsMissing
 		return err
@@ -186,7 +178,7 @@ func validateRecipients(email *dto.EmailRecord) error {
 	return nil
 }
 
-func (s *emailService) validateSender(ctx context.Context, email *dto.EmailRecord) error {
+func (s *emailService) validateSender(ctx context.Context, email *models.EmailLog) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.validateSender")
 	defer spans.Finish()
 
@@ -276,7 +268,7 @@ func (s *emailService) getMailbox(ctx context.Context, mailboxID, fromAddress st
 
 // buildEmailSender fills in sender details.  Values provided in the email request override default values
 // attached to senderID.  SenderID only used to fill in gaps in the request.
-func (s *emailService) buildEmailSender(ctx context.Context, email *dto.EmailRecord, mailbox *models.Mailbox) error {
+func (s *emailService) buildEmailSender(ctx context.Context, email *models.EmailLog, mailbox *models.Mailbox) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailService.buildEmailSender")
 	defer spans.Finish()
 

@@ -17,7 +17,7 @@ import (
 )
 
 // HandleRawEmail processes a single raw email message
-func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event dto.EmailReceivedIMAP, eventRecord *models.EmailEvent) {
+func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event dto.EmailReceivedIMAP, eventRecord *models.EmailEvent) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.handleRawEmail")
 	defer spans.Finish()
 	spans.LogObjectAsJson("emailEvent", event)
@@ -63,7 +63,11 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event dto.Ema
 	}
 
 	// Publish to next stage
-	err = s.publishStoredEmail(ctx, &dto.EmailStored{ID: email.ID})
+	err = s.publishStoredEmail(ctx, &dto.EmailStored{
+		ID:        email.ID,
+		EMLKey:    email.EMLKey,
+		MailboxID: event.MailboxID,
+	})
 	if err != nil {
 		eventRecord.ErrorMessage = err.Error()
 		spans.TraceError(err)
@@ -73,7 +77,7 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event dto.Ema
 	return
 }
 
-func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
+func (s *EmailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.SaveIMAPMessageAsEML")
 	defer spans.Finish()
 
@@ -116,7 +120,7 @@ func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *ima
 	contentType := "message/rfc822"
 
 	// Upload the file to storage
-	err := s.storageService.Upload(ctx, outputPath, emlFile, contentType)
+	err := s.emlStorage.Upload(ctx, outputPath, emlFile, contentType)
 	if err != nil {
 		err = fmt.Errorf("failed to upload EML file: %w", err)
 		spans.TraceError(err)
