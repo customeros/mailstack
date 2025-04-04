@@ -1,6 +1,7 @@
 package config
 
 type AppConfig struct {
+	Environment         string `env:"ENVIRONMENT,required" envDefault:"dev"`
 	APIPort             string `env:"PORT,required" envDefault:"12222"`
 	APIKey              string `env:"API_KEY,required"`
 	TrackingPublicUrl   string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`

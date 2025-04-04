@@ -10,10 +10,10 @@ import (
 
 // EmailEvent represents the main email events table
 type EmailEvent struct {
-	ID             string                   `gorm:"column:id:varchar(50);primaryKey;not null" json:"id"`
+	ID             string                   `gorm:"column:id;type:varchar(50);primaryKey;not null" json:"id"`
+	Event          enum.EmailEvent          `gorm:"column:event;type:varchar(50);index;not null" json:"event"`
+	Service        enum.MailstackService    `gorm:"column:service;type:varchar(50);index;not null" json:"service"`
 	Timestamp      time.Time                `gorm:"not null;index"`
-	Event          enum.EmailEvent          `gorm:"column:event:varchar(50);index;not null" json:"event"`
-	Service        enum.MailstackService    `gorm:"column:service:varchar(50);index;not null" json:"service"`
 	Tenant         string                   `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
 	User           string                   `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
 	EmailID        string                   `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
