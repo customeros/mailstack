@@ -30,7 +30,12 @@ const (
 )
 
 // InitNats initializes the NATS connection and sets up streams
-func InitNats(config *config.NATSConfig) (*NATSConnections, error) {
+func InitNats(config *config.NATSConfig, environment string) (*NATSConnections, error) {
+	replicas := 3
+	if environment != "production" {
+		replicas = 1
+	}
+
 	opts := []nats.Option{
 		nats.Name("mailstack"),
 		nats.MaxReconnects(MAX_STREAM_RECONNECTS),
@@ -64,7 +69,7 @@ func InitNats(config *config.NATSConfig) (*NATSConnections, error) {
 	}
 
 	// Set up streams centrally
-	err = setupNATSStreams(js)
+	err = setupNATSStreams(js, replicas)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to set up NATS streams: %v", err)
@@ -78,12 +83,12 @@ func InitNats(config *config.NATSConfig) (*NATSConnections, error) {
 	}, nil
 }
 
-func setupNATSStreams(js nats.JetStreamContext) error {
+func setupNATSStreams(js nats.JetStreamContext, replicas int) error {
 	// Fix typo in "outbound"
-	return setupWorkQueueStream(js, EMAIL_STREAM, []string{"emails.inbound.>", "emails.outbound.>", "emails.tracking.>"})
+	return setupWorkQueueStream(js, EMAIL_STREAM, []string{"emails.inbound.>", "emails.outbound.>", "emails.tracking.>"}, replicas)
 }
 
-func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects []string) error {
+func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {
 	streamInfo, err := js.StreamInfo(streamName)
 	if err != nil {
 		// Stream doesn't exist, create it
@@ -92,7 +97,7 @@ func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects 
 			Subjects:  subjects,
 			Retention: nats.WorkQueuePolicy,
 			Storage:   nats.FileStorage,
-			Replicas:  3,
+			Replicas:  replicas,
 			MaxAge:    168 * time.Hour,
 			Discard:   nats.DiscardOld,
 		})

@@ -72,6 +72,7 @@ func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailb
 	// Set timeout
 	c.Timeout = 30 * time.Second
 	allUIDs, err := c.UidSearch(criteria)
+	spans.LogKV("messages", len(allUIDs))
 	c.Timeout = 0
 
 	if err != nil {

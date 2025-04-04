@@ -414,7 +414,7 @@ func (s *IMAPService) processSingleMailboxIteration(
 			spans.TraceError(err)
 		}
 
-		spans.TraceError(connectivityError)
+		spans.LogKV("connectivityError", true)
 		*backoff = 5 * time.Second
 		return connectivityError
 	}

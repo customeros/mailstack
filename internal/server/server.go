@@ -64,7 +64,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 	}
 
 	// Initialize NATS Streams
-	natsConn, err := nats_internal.InitNats(cfg.NATSConfig)
+	natsConn, err := nats_internal.InitNats(cfg.NATSConfig, cfg.AppConfig.Environment)
 	if err != nil {
 		log.Fatalf("Failed to initialize NATS: %v", err)
 	}
