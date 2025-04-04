@@ -209,13 +209,6 @@ func (r *emailThreadRepository) Update(ctx context.Context, thread *models.Email
 		updates["last_message_id"] = strings.Trim(thread.LastMessageID, "<>")
 	}
 
-	// Boolean value - need to check if it's explicitly being set to true
-	// HasAttachments is a bit special - we typically only want to set it to true if it's true
-	// We don't want to revert an existing true value to false
-	if thread.HasAttachments {
-		updates["has_attachments"] = true
-	}
-
 	// Conditionally include time pointers only if they're not nil
 	if thread.LastMessageAt != nil {
 		updates["last_message_at"] = thread.LastMessageAt

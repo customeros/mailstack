@@ -1,4 +1,4 @@
-package email_classification
+package email_thread
 
 import (
 	"context"
@@ -9,24 +9,28 @@ import (
 
 	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
+	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/enum"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 )
 
-type EmailClassificationService struct {
+type EmailThreadingService struct {
+	config             *config.CustomerOSAPIConfig
 	natsConn           *nats_internal.NATSConnections
 	repositories       *repository.Repositories
 	eventLoggerService interfaces.EventLoggerService
 	subscriptions      []*nats.Subscription
 }
 
-func NewEmailClassificationService(
+func NewEmailThreadingService(
+	config *config.CustomerOSAPIConfig,
 	natsConn *nats_internal.NATSConnections,
 	repositories *repository.Repositories,
 	eventLoggerService interfaces.EventLoggerService,
 ) interfaces.EmailProcessor {
-	return &EmailClassificationService{
+	return &EmailThreadingService{
+		config:             config,
 		natsConn:           natsConn,
 		repositories:       repositories,
 		eventLoggerService: eventLoggerService,
@@ -34,14 +38,14 @@ func NewEmailClassificationService(
 	}
 }
 
-var SUBSCRIBED_SUBJECT = enum.EventEmailInboundClassify.String()
+var SUBSCRIBED_SUBJECT = enum.EventEmailInboundThread.String()
 
 // Start begins listening for  events
-func (s *EmailClassificationService) Start(ctx context.Context) error {
+func (s *EmailThreadingService) Start(ctx context.Context) error {
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
 		// Process the incoming request
-		var request dto.EmailClassificationRequest
+		var request dto.AttachToThreadRequest
 
 		event := s.eventLoggerService.NewEmailEventRecord(ctx)
 		event.Event = request.EventType()
@@ -49,7 +53,7 @@ func (s *EmailClassificationService) Start(ctx context.Context) error {
 		err := json.Unmarshal(msg.Data, &request)
 		if err != nil {
 			errMsg := "Failed to parse request"
-			resp := dto.EmailClassificationResponse{
+			resp := dto.AttachToThreadResponse{
 				ErrorMessage: errMsg,
 			}
 			responseData, _ := json.Marshal(resp)
@@ -72,7 +76,7 @@ func (s *EmailClassificationService) Start(ctx context.Context) error {
 		event.PayloadKey = payloadKey
 
 		// Process the request
-		response := s.classifyEmail(ctx, request, event)
+		response := s.attachToThread(ctx, request)
 		if response.ErrorMessage != "" {
 			event.ErrorMessage = response.ErrorMessage
 		}
@@ -101,7 +105,7 @@ func (s *EmailClassificationService) Start(ctx context.Context) error {
 }
 
 // Close gracefully shuts down the service
-func (s *EmailClassificationService) Close() error {
+func (s *EmailThreadingService) Close() error {
 	if s.natsConn != nil {
 		s.natsConn.Close()
 	}

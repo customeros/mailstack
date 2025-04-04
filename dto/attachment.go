@@ -11,6 +11,7 @@ type ProcessAttachmentResponse struct {
 	EmailID       string   `json:"emailId"`
 	HasAttachment bool     `json:"hasAttachment"`
 	AttachmentIDs []string `json:"attachmentIds"`
+	ErrorMessage  string   `json:"errorMessage"`
 }
 
 type AttachmentMetadata struct {

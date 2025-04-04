@@ -76,10 +76,9 @@ func (s *EmailAnalysisService) Start(ctx context.Context) error {
 		event.PayloadKey = payloadKey
 
 		// Process the request
-		response, err := s.getStructuredEmailBody(ctx, request)
-		if err != nil {
-			response.ErrorMessage = err.Error()
-			event.ErrorMessage = err.Error()
+		response := s.getStructuredEmailBody(ctx, request)
+		if response.ErrorMessage != "" {
+			event.ErrorMessage = response.ErrorMessage
 		}
 
 		// Marshal and send response
