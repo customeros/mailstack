@@ -11,22 +11,21 @@ import (
 
 // EmailAttachment represents an attachment to an email
 type EmailAttachment struct {
-	ID          string         `gorm:"type:varchar(50);primaryKey"`
-	Emails      pq.StringArray `gorm:"type:varchar(50)[];index;not null"`
-	Threads     pq.StringArray `gorm:"type:varchar(50)[];index;not null"`
-	Filename    string         `gorm:"type:varchar(500)"`
-	ContentType string         `gorm:"type:varchar(255)"`
-	ContentID   string         `gorm:"type:varchar(255)"` // For inline attachments
-	Size        int            `gorm:"default:0"`
-	IsInline    bool           `gorm:"default:false"`
+	ID          string         `gorm:"column:id;type:varchar(50);primaryKey"`
+	EmailIDs    pq.StringArray `gorm:"column:email_ids;type:varchar(50)[];index;not null"`
+	Filename    string         `gorm:"column:filename;type:varchar(500)"`
+	ContentType string         `gorm:"column:content_type;type:varchar(255)"`
+	ContentID   string         `gorm:"column:content_id;type:varchar(255)"` // For inline attachments
+	Size        int            `gorm:"column:size;default:0"`
+	IsInline    bool           `gorm:"column:is_inline;default:false"`
 
 	// Storage options
-	StorageService string `gorm:"type:varchar(50)"`   // "s3", "azure", "local", etc.
-	StorageBucket  string `gorm:"type:varchar(255)"`  // For cloud storage
-	StorageKey     string `gorm:"type:varchar(1000)"` // If stored in S3/blob storage
+	StorageService string `gorm:"column:storage_service;type:varchar(50)"` // "s3", "azure", "local", etc.
+	StorageBucket  string `gorm:"column:storage_bucket;type:varchar(255)"` // For cloud storage
+	StorageKey     string `gorm:"column:storage_key;type:varchar(1000)"`   // If stored in S3/blob storage
 
 	// Security and verification
-	ContentHash string `gorm:"type:varchar(64);index"` // SHA-256 hash of content
+	ContentHash string `gorm:"column:content_hash;type:varchar(64);index"` // SHA-256 hash of content
 
 	// Standard timestamps
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;default:current_timestamp" json:"createdAt"`

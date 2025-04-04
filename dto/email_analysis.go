@@ -11,6 +11,7 @@ type AnalyzeEmailRequest struct {
 }
 
 type AnalyzeEmailResponse struct {
+	EmailID             string         `json:"emailId"`
 	HasSignature        bool           `json:"hasSignature"`
 	MessageBodyMarkdown string         `json:"messageBodyMarkdown"`
 	Signature           EmailSignature `json:"signature,omitempty"`

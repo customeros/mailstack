@@ -102,9 +102,8 @@ func (r *queryResolver) GetThreadMetadata(ctx context.Context, threadID string) 
 	threadMetadata := &graphql_model.ThreadMetadata{
 		ID: threadID,
 		// TODO implement email thread summary
-		Summary:        "This is a test email thread about testing",
-		Participants:   threadRecord.Participants,
-		HasAttachments: threadRecord.HasAttachments,
+		Summary:      "This is a test email thread about testing",
+		Participants: threadRecord.Participants,
 	}
 
 	if attachments == nil || len(attachments) == 0 {

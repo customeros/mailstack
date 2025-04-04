@@ -76,13 +76,10 @@ func (r *emailAttachmentRepository) ListByThread(ctx context.Context, threadID s
 	return attachments, nil
 }
 
-func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []byte) (*models.EmailAttachment, string, error) {
+func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, contentHash string) (*models.EmailAttachment, string, error) {
 	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.CheckFileExists")
 	defer spans.Finish()
 
-	hash := sha256.New()
-	hash.Write(data)
-	contentHash := hex.EncodeToString(hash.Sum(nil))
 	var existingAttachment models.EmailAttachment
 	err := r.db.WithContext(ctx).Where("content_hash = ?", contentHash).First(&existingAttachment).Error
 	if err != nil {
@@ -96,42 +93,43 @@ func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, data []
 }
 
 // Store saves attachment data to the configured storage service
-func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, threadID, emailID string, data []byte) error {
+func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, emailID string, data []byte) (string, error) {
 	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.Store")
 	defer spans.Finish()
 
 	if attachment == nil {
 		err := errors.New("nil attachment")
 		spans.TraceError(err)
-		return err
+		return "", err
 	}
 
-	existingAttachment, fileHash, err := r.CheckFileExists(ctx, data)
+	hash := sha256.Sum256(data)
+	fileHash := hex.EncodeToString(hash[:24])
+
+	existingAttachment, fileHash, err := r.CheckFileExists(ctx, fileHash)
 	if err != nil {
 		spans.TraceError(err)
-		return err
+		return "", err
 	}
 
 	// If file exists, update email and thread references
+	// If file exists, update email and thread references
 	if existingAttachment != nil {
-		if !utils.IsStringInSlice(emailID, existingAttachment.Emails) {
-			existingAttachment.Emails = append(existingAttachment.Emails, emailID)
-		}
-		if !utils.IsStringInSlice(threadID, existingAttachment.Threads) {
-			existingAttachment.Threads = append(existingAttachment.Threads, threadID)
+		if !utils.IsStringInSlice(emailID, existingAttachment.EmailIDs) {
+			existingAttachment.EmailIDs = append(existingAttachment.EmailIDs, emailID)
 		}
 		if attachment.Filename != "" {
 			existingAttachment.Filename = attachment.Filename
 		}
-		return r.db.WithContext(ctx).Save(existingAttachment).Error
+		err := r.db.WithContext(ctx).Save(existingAttachment).Error
+		return existingAttachment.ID, err
 	}
 
 	// This is a new file, proceed with upload
 	attachment.ContentHash = fileHash
 	attachment.Size = len(data)
 	attachment.UpdatedAt = time.Now()
-	attachment.Emails = []string{emailID}
-	attachment.Threads = []string{threadID}
+	attachment.EmailIDs = []string{emailID}
 
 	fileExt := utils.GetFileExtensionFromContentType(attachment.ContentType)
 	if attachment.ID == "" {
@@ -148,10 +146,10 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 	if err := r.storage.Upload(ctx, attachment.StorageKey, data, attachment.ContentType); err != nil {
 		spans.TraceError(err)
 		spans.LogObjectAsJson("attachment", attachment)
-		return fmt.Errorf("failed to upload attachment: %w", err)
+		return "", fmt.Errorf("failed to upload attachment: %w", err)
 	}
 
-	return r.db.WithContext(ctx).Save(attachment).Error
+	return attachment.ID, r.db.WithContext(ctx).Save(attachment).Error
 }
 
 // GetAttachment retrieves the attachment data from storage

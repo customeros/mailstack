@@ -15,11 +15,11 @@ import (
 	"github.com/customeros/mailstack/internal/utils"
 )
 
-func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers dto.EmailClassificationRequest, eventRecord *models.EmailEvent) *dto.EmailClassificationResponse {
+func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers dto.EmailClassificationRequest, eventRecord *models.EmailEvent) dto.EmailClassificationResponse {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailClassificationService.classifyEmail")
 	defer spans.Finish()
 
-	resp := &dto.EmailClassificationResponse{
+	resp := dto.EmailClassificationResponse{
 		EmailID: headers.EmailID,
 	}
 
@@ -28,7 +28,7 @@ func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers 
 		resp.Classification = enum.EmailBounceNotification
 		resp.Details = reason
 		eventRecord.Classification = resp.Classification
-		return nil
+		return resp
 	}
 
 	isAutoresponder, reason := isAutoresponder(&headers)
@@ -36,7 +36,7 @@ func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers 
 		resp.Classification = enum.EmailAutoResponder
 		resp.Details = reason
 		eventRecord.Classification = resp.Classification
-		return nil
+		return resp
 	}
 
 	isBulkEmail, reason := isBulkEmail(&headers)
@@ -44,14 +44,14 @@ func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers 
 		resp.Classification = enum.EmailBulk
 		resp.Details = reason
 		eventRecord.Classification = resp.Classification
-		return nil
+		return resp
 	}
 
 	isInternal := isInternalEmail(&headers)
 	if isInternal {
 		resp.Classification = enum.EmailInternal
 		eventRecord.Classification = resp.Classification
-		return nil
+		return resp
 	}
 
 	isSensitive, reason := isSensitiveSubject(headers.Subject)
@@ -59,14 +59,14 @@ func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers 
 		resp.Classification = enum.EmailSensitive
 		resp.Details = reason
 		eventRecord.Classification = resp.Classification
-		return nil
+		return resp
 	}
 
 	// todo add spam check + email warmer check (if required)
 
 	resp.Classification = enum.EmailOK
 	eventRecord.Classification = resp.Classification
-	return nil
+	return resp
 }
 
 func isSensitiveSubject(subject string) (bool, string) {

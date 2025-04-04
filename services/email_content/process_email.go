@@ -60,7 +60,7 @@ func (s *EmailContentService) processEmail(ctx context.Context, event dto.EmailS
 
 	switch classificationResp.Classification {
 	case enum.EmailOK:
-		s.processEmailContent(ctx, classificationReq, envelope, eventRecord)
+		s.processEmailContent(ctx, classificationReq, envelope, eventRecord, event.MailboxID)
 		if eventRecord.ErrorMessage != "" {
 			return
 		}
@@ -77,7 +77,7 @@ func (s *EmailContentService) processEmail(ctx context.Context, event dto.EmailS
 	return
 }
 
-func (s *EmailContentService) processEmailContent(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope, eventRecord *models.EmailEvent) error {
+func (s *EmailContentService) processEmailContent(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope, eventRecord *models.EmailEvent, mailboxID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmailContent")
 	defer spans.Finish()
 
@@ -117,7 +117,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	var threadErr error
 	go func() {
 		defer wg.Done()
-		threadResult, threadErr = s.attachToThread(ctx, headers.EmailID, envelope)
+		threadResult, threadErr = s.attachToThread(ctx, headers, envelope, mailboxID)
 		if threadErr != nil {
 			spans.TraceError(threadErr)
 			errs = multierr.Append(errs, threadErr)
@@ -311,7 +311,7 @@ func (s *EmailContentService) processAttachments(ctx context.Context, emailID st
 	return s.sendEmailAttchmentRequest(ctx, attachmentRequest)
 }
 
-func (s *EmailContentService) attachToThread(ctx context.Context, emailID string, envelope *enmime.Envelope) (*dto.AttachToThreadResponse, error) {
+func (s *EmailContentService) attachToThread(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*dto.AttachToThreadResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
@@ -324,14 +324,45 @@ func (s *EmailContentService) attachToThread(ctx context.Context, emailID string
 		}
 	}
 
+	sentAt, receivedAt, err := parseEmailTimestamps(envelope)
+	if err != nil {
+		spans.TraceError(err)
+	}
+
 	req := dto.AttachToThreadRequest{
-		EmailID:    emailID,
-		MessageID:  utils.NormalizeMessageID(envelope.GetHeader("Message-ID")),
-		InReplyTo:  utils.NormalizeMessageID(envelope.GetHeader("In-Reply-To")),
-		References: references,
+		EmailID:         headers.EmailID,
+		MailboxID:       mailboxID,
+		MessageID:       utils.NormalizeMessageID(envelope.GetHeader("Message-ID")),
+		ReplyTo:         headers.ReplyTo.Email,
+		References:      references,
+		Subject:         headers.Subject,
+		AllParticipants: getAllParticipants(headers),
+		EmailSentAt:     sentAt,
+		EmailReceivedAt: receivedAt,
 	}
 
 	return s.sendAttachToThreadRequest(ctx, req)
+}
+
+func getAllParticipants(headers *dto.EmailClassificationRequest) []string {
+	// Use a map to track unique email addresses
+	uniqueEmails := make(map[string]struct{})
+
+	// Add the sender email
+	uniqueEmails[headers.From.Email] = struct{}{}
+
+	// Add all recipient emails
+	for _, email := range headers.AllRecipients() {
+		uniqueEmails[email] = struct{}{}
+	}
+
+	// Convert the map keys back to a slice
+	result := make([]string, 0, len(uniqueEmails))
+	for email := range uniqueEmails {
+		result = append(result, email)
+	}
+
+	return result
 }
 
 // Generic method to send requests to services
@@ -481,13 +512,15 @@ func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope 
 
 func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*dto.AttachmentMetadata, error) {
 	// Get or create object store (bucket)
-	objStore, err := s.natsConn.JS.ObjectStore("EMAIL_ATTACHMENTS")
+	objStore, err := s.natsConn.JS.ObjectStore(enum.NATSBucketEmailAttachment.String())
 	if err != nil {
 		// If bucket doesn't exist, create it
 		if err == nats.ErrBucketNotFound {
 			objStore, err = s.natsConn.JS.CreateObjectStore(&nats.ObjectStoreConfig{
-				Bucket:      "EMAIL_ATTACHMENTS",
+				Bucket:      enum.NATSBucketEmailAttachment.String(),
 				Description: "Email attachments storage",
+				TTL:         24 * time.Hour,
+				Replicas:    1,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create object store: %w", err)

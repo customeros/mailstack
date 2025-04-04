@@ -56,7 +56,6 @@ func (s *emailService) createNewEmailThreadForEmail(ctx context.Context, email *
 		Subject:        email.Subject,
 		Participants:   []string{}, // TODO FIX THIS
 		LastMessageID:  email.MessageID,
-		HasAttachments: email.HasAttachment,
 		FirstMessageAt: utils.NowPtr(),
 		LastMessageAt:  utils.NowPtr(),
 	}
