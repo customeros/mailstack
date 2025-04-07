@@ -7,19 +7,19 @@ import (
 	"github.com/nats-io/nats.go"
 	"go.uber.org/multierr"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
-func (s *EmailAttachmentService) processAttachments(ctx context.Context, request dto.ProcessAttachmentRequest) dto.ProcessAttachmentResponse {
+func (s *EmailAttachmentService) processAttachments(ctx context.Context, request *pb.ProcessAttachmentRequest) *pb.ProcessAttachmentResponse {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAttachmentService.processAttachments")
 	defer spans.Finish()
 	spans.LogObjectAsJson("request", request)
 
-	response := dto.ProcessAttachmentResponse{
-		EmailID: request.EmailID,
+	response := &pb.ProcessAttachmentResponse{
+		EmailId: request.EmailId,
 	}
 
 	if len(request.Attachments) == 0 {
@@ -29,12 +29,12 @@ func (s *EmailAttachmentService) processAttachments(ctx context.Context, request
 
 	var errs error
 	for _, attachment := range request.Attachments {
-		fileID, err := s.processAttachment(ctx, attachment, request.EmailID)
+		fileID, err := s.processAttachment(ctx, attachment, request.EmailId)
 		if err != nil {
 			spans.TraceError(err)
 			errs = multierr.Append(errs, err)
 		}
-		response.AttachmentIDs = append(response.AttachmentIDs, fileID)
+		response.AttachmentIds = append(response.AttachmentIds, fileID)
 	}
 	if errs != nil {
 		response.ErrorMessage = errs.Error()
@@ -43,10 +43,13 @@ func (s *EmailAttachmentService) processAttachments(ctx context.Context, request
 	return response
 }
 
-func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachment dto.AttachmentMetadata, emailID string) (string, error) {
+func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachment *pb.AttachmentMetadata, emailID string) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAttachmentService.processAttachment")
 	defer spans.Finish()
-	spans.LogObjectAsJson("attachment", attachment)
+
+	if attachment == nil {
+		return "", nil
+	}
 
 	bucket, err := s.natsConn.JS.ObjectStore(enum.NATSBucketEmailAttachment.String())
 	if err != nil {
@@ -62,9 +65,9 @@ func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachme
 
 	attachmentRecord := &models.EmailAttachment{
 		Filename:    attachment.Filename,
-		Size:        attachment.Size,
+		Size:        int(attachment.Size),
 		ContentType: attachment.ContentType,
-		ContentID:   attachment.ContentID,
+		ContentID:   attachment.ContentId,
 		IsInline:    attachment.IsInline,
 	}
 

@@ -14,13 +14,16 @@ const (
 	EventEmailInboundAttachments             EmailEvent = "emails.inbound.attachments"
 	EventEmailInboundThread                  EmailEvent = "emails.inbound.thread"
 	EventEmailInboundCompleted               EmailEvent = "emails.inbound.completed"
-	EventEmailInboundError                   EmailEvent = "emails.inbound.error"
 
 	EventEmailOutboundScheduled EmailEvent = "emails.outbound.scheduled"
 	EventEmailOutboundRequested EmailEvent = "emails.outbound.requested"
 	EventEmailOutboundAssembled EmailEvent = "emails.outbound.assembled"
 	EventEmailOutboundStored    EmailEvent = "emails.outbound.stored"
 	EventEmailOutboundSent      EmailEvent = "emails.outbound.sent"
+
+	EventEmailErrorInbound  EmailEvent = "emails.errors.inbound"
+	EventEmailErrorOutbound EmailEvent = "emails.errors.outbound"
+	EventEmailErrorLogger   EmailEvent = "emails.errors.logger"
 
 	EventEmailTrackingClick EmailEvent = "emails.tracking.click"
 )

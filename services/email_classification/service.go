@@ -2,35 +2,34 @@ package email_classification
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/nats-io/nats.go"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 type EmailClassificationService struct {
-	natsConn           *nats_internal.NATSConnections
-	repositories       *repository.Repositories
-	eventLoggerService interfaces.EventLoggerService
-	subscriptions      []*nats.Subscription
+	natsConn      *nats_internal.NATSConnections
+	repositories  *repository.Repositories
+	subscriptions []*nats.Subscription
 }
 
 func NewEmailClassificationService(
 	natsConn *nats_internal.NATSConnections,
 	repositories *repository.Repositories,
-	eventLoggerService interfaces.EventLoggerService,
 ) interfaces.EmailProcessor {
 	return &EmailClassificationService{
-		natsConn:           natsConn,
-		repositories:       repositories,
-		eventLoggerService: eventLoggerService,
-		subscriptions:      make([]*nats.Subscription, 0),
+		natsConn:      natsConn,
+		repositories:  repositories,
+		subscriptions: make([]*nats.Subscription, 0),
 	}
 }
 
@@ -40,47 +39,29 @@ var SUBSCRIBED_SUBJECT = enum.EventEmailInboundClassify.String()
 func (s *EmailClassificationService) Start(ctx context.Context) error {
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
-		// Process the incoming request
-		var request dto.EmailClassificationRequest
+		spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAnalysisService.Start")
+		defer spans.Finish()
 
-		event := s.eventLoggerService.NewEmailEventRecord(ctx)
-		event.Event = request.EventType()
+		resp := &pb.EmailClassificationResponse{}
 
-		err := json.Unmarshal(msg.Data, &request)
-		if err != nil {
+		request := &pb.EmailClassificationRequest{}
+		err := proto.Unmarshal(msg.Data, request)
+		if err != nil || request == nil {
 			errMsg := "Failed to parse request"
-			resp := dto.EmailClassificationResponse{
-				ErrorMessage: errMsg,
-			}
-			responseData, _ := json.Marshal(resp)
-			msg.Respond(responseData)
-
-			event.ErrorMessage = errMsg
-			s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+			resp.ErrorMessage = errMsg
+			s.sendResponse(ctx, msg, resp)
+			spans.TraceError(err)
 			return
 		}
-		event.EmailID = request.EmailID
-
-		// Store original event in R2
-		payloadKey, err := s.eventLoggerService.StoreEmailEventInR2(ctx, event.ID, msg.Data)
-		if err != nil {
-			err = fmt.Errorf("Failed to store event in R2: %v", err)
-			event.ErrorMessage = err.Error()
-			s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
-			return
-		}
-		event.PayloadKey = payloadKey
 
 		// Process the request
-		response := s.classifyEmail(ctx, request, event)
-		if response.ErrorMessage != "" {
-			event.ErrorMessage = response.ErrorMessage
+		resp = s.classifyEmail(ctx, request)
+		if resp == nil {
+			spans.TraceError(errors.New("empty response"))
+			return
 		}
 
-		// Marshal and send response
-		responseData, _ := json.Marshal(response)
-		msg.Respond(responseData)
-		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+		s.sendResponse(ctx, msg, resp)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create subscription: %w", err)
@@ -106,4 +87,17 @@ func (s *EmailClassificationService) Close() error {
 		s.natsConn.Close()
 	}
 	return nil
+}
+
+func (s *EmailClassificationService) sendResponse(ctx context.Context, req *nats.Msg, resp *pb.EmailClassificationResponse) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailClassificationService.sendResponse")
+	defer spans.Finish()
+
+	respMessage, err := proto.Marshal(resp)
+	if err != nil {
+		spans.TraceError(err)
+		return
+	}
+	req.Respond(respMessage)
+	return
 }

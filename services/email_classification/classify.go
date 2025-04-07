@@ -8,64 +8,59 @@ import (
 	"github.com/customeros/mailsherpa/domaincheck"
 	"github.com/customeros/mailsherpa/mailvalidate"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
-	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/proto/helpers"
+	pb_mappers "github.com/customeros/mailstack/proto/mappers"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
-func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers dto.EmailClassificationRequest, eventRecord *models.EmailEvent) dto.EmailClassificationResponse {
+func (s *EmailClassificationService) classifyEmail(ctx context.Context, headers *pb.EmailClassificationRequest) *pb.EmailClassificationResponse {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailClassificationService.classifyEmail")
 	defer spans.Finish()
 
-	resp := dto.EmailClassificationResponse{
-		EmailID: headers.EmailID,
+	resp := &pb.EmailClassificationResponse{
+		EmailId: headers.EmailId,
 	}
 
-	isBounceNotification, reason := isBounceNotification(&headers)
+	isBounceNotification, reason := isBounceNotification(headers)
 	if isBounceNotification {
-		resp.Classification = enum.EmailBounceNotification
+		resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailBounceNotification)
 		resp.Details = reason
-		eventRecord.Classification = resp.Classification
 		return resp
 	}
 
-	isAutoresponder, reason := isAutoresponder(&headers)
+	isAutoresponder, reason := isAutoresponder(headers)
 	if isAutoresponder {
-		resp.Classification = enum.EmailAutoResponder
+		resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailAutoResponder)
 		resp.Details = reason
-		eventRecord.Classification = resp.Classification
 		return resp
 	}
 
-	isBulkEmail, reason := isBulkEmail(&headers)
+	isBulkEmail, reason := isBulkEmail(headers)
 	if isBulkEmail {
-		resp.Classification = enum.EmailBulk
+		resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailBulk)
 		resp.Details = reason
-		eventRecord.Classification = resp.Classification
 		return resp
 	}
 
-	isInternal := isInternalEmail(&headers)
+	isInternal := isInternalEmail(headers)
 	if isInternal {
-		resp.Classification = enum.EmailInternal
-		eventRecord.Classification = resp.Classification
+		resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailInternal)
 		return resp
 	}
 
 	isSensitive, reason := isSensitiveSubject(headers.Subject)
 	if isSensitive {
-		resp.Classification = enum.EmailSensitive
+		resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailSensitive)
 		resp.Details = reason
-		eventRecord.Classification = resp.Classification
 		return resp
 	}
 
 	// todo add spam check + email warmer check (if required)
 
-	resp.Classification = enum.EmailOK
-	eventRecord.Classification = resp.Classification
+	resp.Classification = pb_mappers.EmailClassificationToPb(enum.EmailOK)
 	return resp
 }
 
@@ -151,13 +146,13 @@ func isSensitiveSubject(subject string) (bool, string) {
 	return false, ""
 }
 
-func isInternalEmail(email *dto.EmailClassificationRequest) bool {
+func isInternalEmail(email *pb.EmailClassificationRequest) bool {
 	senderValidation := mailvalidate.ValidateEmailSyntax(email.From.Email)
 	if !senderValidation.IsValid || senderValidation.IsFreeAccount || senderValidation.Domain == "" {
 		return false
 	}
 
-	allRecipients := email.AllRecipients()
+	allRecipients := helpers.AllRecipients(email)
 
 	if len(allRecipients) == 0 {
 		return false
@@ -167,7 +162,7 @@ func isInternalEmail(email *dto.EmailClassificationRequest) bool {
 		recipientValidation := mailvalidate.ValidateEmailSyntax(recipient)
 
 		// Skip empty domains (malformed addresses)
-		if recipientValidation.Domain == "" {
+		if recipientValidation.Domain == "" || !recipientValidation.IsValid {
 			continue
 		}
 
@@ -180,7 +175,7 @@ func isInternalEmail(email *dto.EmailClassificationRequest) bool {
 	return true
 }
 
-func isBulkEmail(headers *dto.EmailClassificationRequest) (bool, string) {
+func isBulkEmail(headers *pb.EmailClassificationRequest) (bool, string) {
 	matchReplyTo := false
 	if headers.ReplyTo.Email == headers.From.Email {
 		matchReplyTo = true
@@ -236,7 +231,7 @@ func mailsherpaChecks(from string) (failedCheck bool, reason string) {
 	return false, ""
 }
 
-func isAutoresponder(headers *dto.EmailClassificationRequest) (bool, string) {
+func isAutoresponder(headers *pb.EmailClassificationRequest) (bool, string) {
 	switch {
 	case headers.XAutoReply != "":
 		return true, "X-AUTOREPLY header present"
@@ -251,7 +246,7 @@ func isAutoresponder(headers *dto.EmailClassificationRequest) (bool, string) {
 	}
 }
 
-func isBounceNotification(headers *dto.EmailClassificationRequest) (bool, string) {
+func isBounceNotification(headers *pb.EmailClassificationRequest) (bool, string) {
 	switch {
 	case len(headers.XFailedRecipients) > 0:
 		return true, "X-FAILED-RECIPIENTS header present"

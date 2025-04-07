@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Request message for attachment processing
+message ProcessAttachmentRequest {
+  string email_id = 1;
+  repeated AttachmentMetadata attachments = 2;
+}
+
+// Response message for attachment processing
+message ProcessAttachmentResponse {
+  string email_id = 1;
+  bool has_attachment = 2;
+  repeated string attachment_ids = 3;
+  string error_message = 4;
+}
+
+// Metadata for an email attachment
+message AttachmentMetadata {
+  string filename = 1;
+  string content_type = 2;
+  string content_id = 3;
+  int32 size = 4;
+  bool is_inline = 5;
+  string storage_key = 6;
+  string object_info = 7;
+}

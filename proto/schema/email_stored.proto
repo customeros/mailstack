@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Message for a stored email notification
+message EmailStored {
+  string email_id = 1;
+  string eml_key = 2;
+  string mailbox_id = 3;
+}

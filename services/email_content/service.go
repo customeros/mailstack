@@ -2,40 +2,38 @@ package email_content
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 type EmailContentService struct {
-	natsConn           *nats_internal.NATSConnections
-	repositories       *repository.Repositories
-	eventLoggerService interfaces.EventLoggerService
-	emlStorage         interfaces.StorageService
+	natsConn     *nats_internal.NATSConnections
+	repositories *repository.Repositories
+	emlStorage   interfaces.StorageService
 }
 
 func NewEmailContentService(
 	natsConn *nats_internal.NATSConnections,
 	repositories *repository.Repositories,
-	eventLoggerService interfaces.EventLoggerService,
 	emlStorage interfaces.StorageService,
 ) interfaces.EmailProcessor {
 	return &EmailContentService{
-		natsConn:           natsConn,
-		repositories:       repositories,
-		eventLoggerService: eventLoggerService,
-		emlStorage:         emlStorage,
+		natsConn:     natsConn,
+		repositories: repositories,
+		emlStorage:   emlStorage,
 	}
 }
 
@@ -131,49 +129,22 @@ func (s *EmailContentService) processMessage(ctx context.Context, msg *nats.Msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processMessage")
 	defer spans.Finish()
 
-	var rawMessage dto.EmailStored
-
-	event := s.eventLoggerService.NewEmailEventRecord(ctx)
-	event.Event = rawMessage.EventType()
-	if event.ErrorMessage != "" {
-		msg.Ack() // Ack malformed messages to avoid redelivery
-		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
-		return
-	}
-
-	// Parse the raw message
-	if err := json.Unmarshal(msg.Data, &rawMessage); err != nil {
-		err = fmt.Errorf("Failed to unmarshal inbound.email.received.imap: %v", err)
-		msg.Ack() // Ack malformed messages to avoid redelivery
-		event.ErrorMessage = err.Error()
-		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+	message := &pb.EmailStored{}
+	err := proto.Unmarshal(msg.Data, message)
+	if err != nil || message == nil {
+		err := errors.New("Failed to parse request")
 		spans.TraceError(err)
-		return
-	}
-	event.EmailID = rawMessage.ID
-	event.MailboxID = rawMessage.MailboxID
-
-	// Store original event in R2
-	payloadKey, err := s.eventLoggerService.StoreEmailEventInR2(ctx, event.ID, msg.Data)
-	if err != nil {
-		err = fmt.Errorf("Failed to store event in R2: %v", err)
-		event.ErrorMessage = err.Error()
-		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
 		s.handleProcessingError(ctx, msg, err)
-		spans.TraceError(err)
 		return
 	}
-	event.PayloadKey = payloadKey
 
 	// Process the email
-	s.processEmail(ctx, rawMessage, event)
-	s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
-
-	if event.ErrorMessage != "" {
-		s.handleProcessingError(ctx, msg, err)
-		if !strings.Contains(event.ErrorMessage, "skipping") {
+	err = s.processEmail(ctx, message)
+	if err != nil {
+		if !strings.Contains(err.Error(), "skipping") {
 			spans.TraceError(err)
 		}
+		s.handleProcessingError(ctx, msg, err)
 		return
 	}
 
@@ -192,7 +163,7 @@ func (s *EmailContentService) handleProcessingError(ctx context.Context, msg *na
 	} else {
 		// Max retries reached, acknowledge but publish to dead letter
 		msg.Ack()
-		s.publishError(ctx, msg.Data, err)
+		s.publishError(ctx, msg, err)
 	}
 }
 

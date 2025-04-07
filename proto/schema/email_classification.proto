@@ -4,36 +4,19 @@ package mailstack;
 
 option go_package = "github.com/customeros/mailstack/proto/pb";
 
-// Service definition
-service EmailClassificationService {
-  rpc ClassifyEmail(EmailClassificationRequest)
-      returns (EmailClassificationResponse) {}
-}
+import "schema/email_address.proto";
 
 // Enum for email classification types
 enum EmailClassification {
-  CLASSIFICATION_UNKNOWN = 0;
-  CLASSIFICATION_INBOUND = 1;
-  CLASSIFICATION_OUTBOUND = 2;
-  CLASSIFICATION_BOUNCE = 3;
-  CLASSIFICATION_AUTO_REPLY = 4;
-  CLASSIFICATION_SPAM = 5;
-  // Add other classification types as needed
-}
-
-// Enum for email event types
-enum EmailEvent {
-  EVENT_UNKNOWN = 0;
-  EVENT_EMAIL_INBOUND_CLASSIFY = 1;
-  // Add other event types as needed
-}
-
-// EmailAddress message represents an email address with additional details
-message EmailAddress {
-  string name = 1;
-  string email = 2;
-  string user = 3;
-  string domain = 4;
+  EMAIL_CLASSIFICATION_UNKNOWN = 0;
+  EMAIL_AUTORESPONDER = 1;
+  EMAIL_BULK = 2;
+  EMAIL_INTERNAL = 3;
+  EMAIL_OK = 4;
+  EMAIL_SENSITIVE = 5;
+  EMAIL_SPAM = 6;
+  EMAIL_WARMER = 7;
+  EMAIL_BOUNCE = 8;
 }
 
 // Request message for email classification

@@ -10,21 +10,20 @@ import (
 
 // EmailEvent represents the main email events table
 type EmailEvent struct {
-	ID             string                   `gorm:"column:id;type:varchar(50);primaryKey;not null" json:"id"`
-	Event          enum.EmailEvent          `gorm:"column:event;type:varchar(50);index;not null" json:"event"`
-	Service        enum.MailstackService    `gorm:"column:service;type:varchar(50);index;not null" json:"service"`
-	Timestamp      time.Time                `gorm:"not null;index"`
-	Tenant         string                   `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
-	User           string                   `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
-	EmailID        string                   `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
-	MailboxID      string                   `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
-	MessageID      string                   `gorm:"column:message_id;type:text;not null;uniqueIndex"`
-	ThreadID       string                   `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
-	Classification enum.EmailClassification `gorm:"column:classification;type:varchar(255)" json:"classification"`
-	Direction      enum.EmailDirection      `gorm:"column:direction;type:text;not null" json:"direction"`
-	PayloadKey     string                   `gorm:"column:payload_key;type:varchar(255)" json:"payloadKey"`
-	Success        bool                     `gorm:"column:success;type:boolean" json:"success"`
-	ErrorMessage   string                   `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
+	ID           string                `gorm:"column:id;type:varchar(50);primaryKey;not null" json:"id"`
+	Event        enum.EmailEvent       `gorm:"column:event;type:varchar(50);index;not null" json:"event"`
+	Publisher    enum.MailstackService `gorm:"column:publisher;type:varchar(50);index;not null" json:"publisher"`
+	Timestamp    time.Time             `gorm:"not null;index"`
+	Tenant       string                `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
+	User         string                `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
+	EmailID      string                `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
+	MailboxID    string                `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
+	MessageID    string                `gorm:"column:message_id;type:text;not null;index"` // Changed from uniqueIndex to index
+	ThreadID     string                `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
+	Direction    enum.EmailDirection   `gorm:"column:direction;type:text;not null" json:"direction"`
+	Payload      []byte                `gorm:"column:payload;type:bytea" json:"-"`
+	HasError     bool                  `gorm:"column:has_error;type:boolean" json:"hasError"`
+	ErrorMessage string                `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
 }
 
 // TableName overrides the table name
@@ -61,15 +60,14 @@ func SetupTimescaleDB(db *gorm.DB) error {
 		SELECT
 			time_bucket('1 day', timestamp) AS day,
 			tenant,
-			service,
+			publisher,
 			event,
 			mailbox_id,
 			direction,
-            classification,
-			success,
+			has_error,
 			count(*) AS email_count
 		FROM email_events
-		GROUP BY day, tenant, service, event, mailbox_id, direction, classification, success
+		GROUP BY day, tenant, publisher, event, mailbox_id, direction, has_error
 	`).Error; err != nil {
 		return err
 	}
@@ -87,8 +85,8 @@ func SetupTimescaleDB(db *gorm.DB) error {
 
 	// Create additional indexes for common query patterns
 	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_email_events_success_timestamp ON email_events (success, timestamp DESC);
-		CREATE INDEX IF NOT EXISTS idx_email_events_service_event ON email_events (service, event);
+		CREATE INDEX IF NOT EXISTS idx_email_events_has_error_timestamp ON email_events (has_error, timestamp DESC);
+		CREATE INDEX IF NOT EXISTS idx_email_events_publisher_event ON email_events (publisher, event);
 	`).Error; err != nil {
 		return err
 	}

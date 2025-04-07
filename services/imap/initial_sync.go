@@ -12,11 +12,10 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 
-	"github.com/customeros/mailstack/dto"
-	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 // performInitialSync orchestrates the initial sync of messages with resumption support
@@ -291,15 +290,14 @@ func (s *IMAPService) processMessages(
 					}
 				}()
 
-				event := dto.EmailReceivedIMAP{
-					Source:      enum.EmailImportIMAP,
-					MailboxID:   mailboxID,
+				event := &pb.EmailReceivedIMAP{
+					MailboxId:   mailboxID,
 					Folder:      folderName,
 					InitialSync: true,
 					ImapSeqNum:  msg.SeqNum,
-					ImapUID:     msg.Uid,
+					ImapUid:     msg.Uid,
 				}
-				s.publishNewEmailEvent(eventCtx, &event)
+				s.publishNewEmailEvent(eventCtx, event)
 			}()
 		}(msg)
 	}

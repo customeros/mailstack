@@ -1,6 +1,11 @@
 package services
 
 import (
+	"context"
+	"fmt"
+
+	"go.uber.org/multierr"
+
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/logger"
@@ -10,9 +15,11 @@ import (
 	"github.com/customeros/mailstack/services/domain"
 	"github.com/customeros/mailstack/services/email"
 	email_analysis "github.com/customeros/mailstack/services/email_anaylsis"
+	"github.com/customeros/mailstack/services/email_attachment"
 	"github.com/customeros/mailstack/services/email_classification"
 	"github.com/customeros/mailstack/services/email_content"
 	"github.com/customeros/mailstack/services/email_storage"
+	"github.com/customeros/mailstack/services/email_thread"
 	"github.com/customeros/mailstack/services/event_logger"
 	"github.com/customeros/mailstack/services/imap"
 	"github.com/customeros/mailstack/services/mailbox"
@@ -26,10 +33,12 @@ type Services struct {
 	CloudflareService          interfaces.CloudflareService
 	EmailService               interfaces.EmailService
 	EmailAnaylsisService       interfaces.EmailProcessor
+	EmailAttachmentService     interfaces.EmailProcessor
 	EmailClassificationService interfaces.EmailProcessor
 	EmailContentService        interfaces.EmailProcessor
 	EmailStorageService        interfaces.EmailProcessor
-	EventLoggerService         *event_logger.EventLoggerService
+	EmailThreadingService      interfaces.EmailProcessor
+	EventLoggerService         interfaces.EmailProcessor
 	IMAPService                interfaces.IMAPService
 	MailboxService             interfaces.MailboxService
 	NamecheapService           interfaces.NamecheapService
@@ -39,7 +48,7 @@ type Services struct {
 	DomainService     interfaces.DomainService
 }
 
-func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, repos *repository.Repositories, cfg *config.Config) (*Services, error) {
+func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, repos *repository.Repositories, cfg *config.Config) *Services {
 	emlStorage := storage.NewR2StorageService(
 		cfg.R2StorageConfig.AccountID,
 		cfg.R2StorageConfig.AccessKeyID,
@@ -61,7 +70,6 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
 	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
 	imapImpl := imap.NewIMAPService(natsConn, repos)
-	eventLogger := event_logger.NewEventLoggerService(repos, eventsStorage)
 
 	services := Services{
 		CloudflareService: cloudflareImpl,
@@ -70,11 +78,13 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 			cfg.CustomerOSAPIConfig,
 			natsConn,
 			repos,
-			eventLogger,
 		),
-		EmailClassificationService: email_classification.NewEmailClassificationService(natsConn, repos, eventLogger),
-		EmailContentService:        email_content.NewEmailContentService(natsConn, repos, eventLogger, emlStorage),
-		EmailStorageService:        email_storage.NewEmailStorageService(natsConn, repos, eventLogger, imapImpl, emlStorage),
+		EmailAttachmentService:     email_attachment.NewEmailAttachmentService(natsConn, repos),
+		EmailClassificationService: email_classification.NewEmailClassificationService(natsConn, repos),
+		EmailContentService:        email_content.NewEmailContentService(natsConn, repos, emlStorage),
+		EmailStorageService:        email_storage.NewEmailStorageService(natsConn, repos, imapImpl, emlStorage),
+		EmailThreadingService:      email_thread.NewEmailThreadingService(natsConn, repos),
+		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos, eventsStorage),
 		IMAPService:                imapImpl,
 		MailboxService:             mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
 		NamecheapService:           namecheapImpl,
@@ -84,5 +94,55 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		DomainService:     domain.NewDomainService(repos, cloudflareImpl, namecheapImpl, mailboxOldImpl, opensrsImpl),
 	}
 
-	return &services, nil
+	return &services
+}
+
+// Improved Start method with better error handling
+func (s *Services) Start(ctx context.Context) error {
+	services := []struct {
+		name    string
+		starter func(context.Context) error
+	}{
+		{"IMAP", s.IMAPService.Start},
+		{"Email Analysis", s.EmailAnaylsisService.Start},
+		{"Email Attachment", s.EmailAttachmentService.Start},
+		{"Email Classification", s.EmailClassificationService.Start},
+		{"Email Content", s.EmailContentService.Start},
+		{"Email Storage", s.EmailStorageService.Start},
+		{"Email Threading", s.EmailThreadingService.Start},
+		{"Event Logger", s.EventLoggerService.Start},
+	}
+
+	for _, svc := range services {
+		if err := svc.starter(ctx); err != nil {
+			return fmt.Errorf("failed to start %s service: %w", svc.name, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Services) Stop(ctx context.Context) error {
+	services := []struct {
+		name    string
+		stopper func(context.Context) error
+	}{
+		{"IMAP", s.IMAPService.Start},
+		{"Email Analysis", s.EmailAnaylsisService.Start},
+		{"Email Attachment", s.EmailAttachmentService.Start},
+		{"Email Classification", s.EmailClassificationService.Start},
+		{"Email Content", s.EmailContentService.Start},
+		{"Email Storage", s.EmailStorageService.Start},
+		{"Email Threading", s.EmailThreadingService.Start},
+		{"Event Logger", s.EventLoggerService.Start},
+	}
+
+	var errs error
+	for _, svc := range services {
+		if err := svc.stopper(ctx); err != nil {
+			errs = multierr.Append(errs, fmt.Errorf("failed to stop %s service: %w", svc.name, err))
+		}
+	}
+
+	return errs
 }

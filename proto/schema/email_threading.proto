@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package mailstack;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Request message for attaching an email to a thread
+message AttachToThreadRequest {
+  string email_id = 1;
+  string mailbox_id = 2;
+  string message_id = 3;
+  string reply_to = 4;
+  repeated string references = 5;
+  string subject = 6;
+  repeated string all_participants = 7;
+  google.protobuf.Timestamp email_sent_at = 8;
+  google.protobuf.Timestamp email_received_at = 9;
+}
+
+// Response message for thread attachment operation
+message AttachToThreadResponse {
+  string email_id = 1;
+  string message_id = 2;
+  string thread_id = 3;
+  string error_message = 4;
+}

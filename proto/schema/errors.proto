@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package mailstack;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+enum ServiceName {
+  SERVICE_UNKNOWN = 0;
+  MAILSTACK_IMAP_SERVICE = 1;
+  MAILSTACK_STORAGE_SERVICE = 2;
+  MAILSTACK_CLASSIFICATION_SERVICE = 3;
+  MAILSTACK_ANALYSIS_SERVICE = 4;
+  MAILSTACK_ATTACHMENT_SERVICE = 5;
+  MAILSTACK_THREADING_SERVICE = 6;
+  MAILSTACK_CONTENT_SERVICE = 7;
+  MAILSTACK_EVENT_LOGGER_SERVICE = 8;
+}
+
+// ErrorEvent message for publishing error information
+message ErrorEvent {
+  google.protobuf.Timestamp timestamp = 1;
+  string subject = 2;
+  string email_id = 3;
+  string error_message = 4;
+  bytes raw_data = 5;
+  ServiceName publisher = 6;
+}

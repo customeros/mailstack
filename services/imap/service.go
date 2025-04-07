@@ -3,7 +3,6 @@ package imap
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -14,8 +13,8 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/pkg/errors"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
@@ -23,6 +22,7 @@ import (
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 type IMAPService struct {
@@ -774,15 +774,14 @@ func (s *IMAPService) fetchNewMessages(
 		}
 
 		// Process the message
-		event := dto.EmailReceivedIMAP{
-			Source:      enum.EmailImportIMAP,
-			MailboxID:   mailboxID,
+		event := &pb.EmailReceivedIMAP{
+			MailboxId:   mailboxID,
 			Folder:      folderName,
 			ImapSeqNum:  msg.SeqNum,
-			ImapUID:     msg.Uid,
+			ImapUid:     msg.Uid,
 			InitialSync: false,
 		}
-		err := s.publishNewEmailEvent(ctx, &event)
+		err := s.publishNewEmailEvent(ctx, event)
 		if err != nil {
 			spans.TraceError(err)
 			return err
@@ -821,11 +820,11 @@ func (s *IMAPService) fetchNewMessages(
 	return nil
 }
 
-func (s *IMAPService) publishNewEmailEvent(ctx context.Context, event *dto.EmailReceivedIMAP) error {
+func (s *IMAPService) publishNewEmailEvent(ctx context.Context, event *pb.EmailReceivedIMAP) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.publishNewEmailEvent")
 	defer spans.Finish()
-	// Convert to JSON
-	data, err := json.Marshal(event)
+
+	data, err := proto.Marshal(event)
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to marshal stored email: %w", err)
@@ -916,15 +915,14 @@ func (s *IMAPService) syncNewMessagesSince(
 		}
 
 		// Process the message
-		event := dto.EmailReceivedIMAP{
-			Source:      enum.EmailImportIMAP,
-			MailboxID:   mailboxID,
+		event := &pb.EmailReceivedIMAP{
+			MailboxId:   mailboxID,
 			Folder:      folderName,
 			ImapSeqNum:  msg.SeqNum,
-			ImapUID:     msg.Uid,
+			ImapUid:     msg.Uid,
 			InitialSync: false,
 		}
-		err := s.publishNewEmailEvent(ctx, &event)
+		err := s.publishNewEmailEvent(ctx, event)
 		if err != nil {
 			spans.TraceError(err)
 			return err
