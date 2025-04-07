@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Service definition
+service EmailClassificationService {
+  rpc ClassifyEmail(EmailClassificationRequest)
+      returns (EmailClassificationResponse) {}
+}
+
+// Enum for email classification types
+enum EmailClassification {
+  CLASSIFICATION_UNKNOWN = 0;
+  CLASSIFICATION_INBOUND = 1;
+  CLASSIFICATION_OUTBOUND = 2;
+  CLASSIFICATION_BOUNCE = 3;
+  CLASSIFICATION_AUTO_REPLY = 4;
+  CLASSIFICATION_SPAM = 5;
+  // Add other classification types as needed
+}
+
+// Enum for email event types
+enum EmailEvent {
+  EVENT_UNKNOWN = 0;
+  EVENT_EMAIL_INBOUND_CLASSIFY = 1;
+  // Add other event types as needed
+}
+
+// EmailAddress message represents an email address with additional details
+message EmailAddress {
+  string name = 1;
+  string email = 2;
+  string user = 3;
+  string domain = 4;
+}
+
+// Request message for email classification
+message EmailClassificationRequest {
+  string email_id = 1;
+  string subject = 2;
+  EmailAddress from = 3;
+  repeated EmailAddress to = 4;
+  repeated EmailAddress cc = 5;
+  repeated EmailAddress bcc = 6;
+  EmailAddress reply_to = 7;
+  string return_path = 8;
+  string unsubscribe = 9;
+  string precedence = 10;
+  string sender = 11;
+  string x_auto_reply = 12;
+  string x_auto_response = 13;
+  string x_loop = 14;
+  string x_failed_recipients = 15;
+  string content_description = 16;
+  string feedback_id = 17;
+  string forwarded_for = 18;
+  string dkim = 19;
+  string spf = 20;
+  string dmarc = 21;
+  string list_unsubscribe = 22;
+  string auto_submitted = 23;
+}
+
+// Response message for email classification
+message EmailClassificationResponse {
+  string email_id = 1;
+  EmailClassification classification = 2;
+  string details = 3;
+  string error_message = 4;
+}
