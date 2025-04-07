@@ -11,6 +11,7 @@ import (
 
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/internal/utils"
 	pb_mappers "github.com/customeros/mailstack/proto/mappers"
 	"github.com/customeros/mailstack/proto/pb"
 )
@@ -20,15 +21,20 @@ func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *pb.
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.publishStoredEmail")
 	defer spans.Finish()
 
-	// Convert to JSON
 	data, err := proto.Marshal(email)
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to marshal stored email: %w", err)
 	}
 
+	// Create message with headers
+	msg := nats.NewMsg(enum.EventEmailInboundStored.String())
+	msg.Data = data
+	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
+	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+
 	// Publish to the stored subject
-	_, err = s.natsConn.JS.Publish(enum.EventEmailInboundStored.String(), data)
+	_, err = s.natsConn.JS.PublishMsg(msg)
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to publish stored email: %w", err)
@@ -57,9 +63,16 @@ func (s *EmailStorageService) publishError(ctx context.Context, msg *nats.Msg, e
 		return
 	}
 
-	_, pubErr := s.natsConn.JS.Publish(enum.EventEmailErrorInbound.String(), data)
-	if pubErr != nil {
-		spans.TraceError(pubErr)
-		log.Printf("Failed to publish error event: %v", pubErr)
+	// Create message with headers
+	newMsg := nats.NewMsg(enum.EventEmailInboundStored.String())
+	newMsg.Data = data
+	newMsg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
+	newMsg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+
+	// Publish to the stored subject
+	_, err = s.natsConn.JS.PublishMsg(newMsg)
+	if err != nil {
+		spans.TraceError(err)
+		return
 	}
 }

@@ -176,21 +176,42 @@ func isInternalEmail(email *pb.EmailClassificationRequest) bool {
 }
 
 func isBulkEmail(headers *pb.EmailClassificationRequest) (bool, string) {
+	// First check if headers is nil
+	if headers == nil {
+		return false, "No headers provided"
+	}
+
+	// Initialize variables safely
+	fromEmail := ""
+	fromDomain := ""
+	replyToEmail := ""
+
+	// Safely access From fields
+	if headers.From != nil {
+		fromEmail = headers.From.Email
+		fromDomain = headers.From.Domain
+	}
+
+	// Safely access ReplyTo fields
+	if headers.ReplyTo != nil {
+		replyToEmail = headers.ReplyTo.Email
+	}
+
+	// Now use these variables instead of direct access
 	matchReplyTo := false
-	if headers.ReplyTo.Email == headers.From.Email {
+	if replyToEmail != "" && fromEmail != "" && replyToEmail == fromEmail {
 		matchReplyTo = true
 	}
 
 	if headers.ForwardedFor == "" {
 		switch {
-		case (headers.ReplyTo.Email != "" && !matchReplyTo):
+		case (replyToEmail != "" && !matchReplyTo):
 			return true, "REPLY-TO != FROM"
 		case headers.ReturnPath != "" && headers.ReturnPath == "":
 			return true, "RETURN-PATH header is empty"
-		case headers.ReturnPath != "" && strings.Index(headers.ReturnPath, headers.From.Email) == -1:
-			sendingDomain := headers.From.Domain
+		case headers.ReturnPath != "" && fromEmail != "" && strings.Index(headers.ReturnPath, fromEmail) == -1:
 			returnPathDomain := utils.ExtractDomainFromEmail(headers.ReturnPath)
-			if sendingDomain != returnPathDomain {
+			if fromDomain != returnPathDomain {
 				return true, "RETURN-PATH != FROM"
 			}
 		default:
@@ -202,10 +223,13 @@ func isBulkEmail(headers *pb.EmailClassificationRequest) (bool, string) {
 		return true, "UNSUBSCRIBE header present"
 	case strings.EqualFold(headers.Precedence, "bulk"):
 		return true, "PRECEDENCE: BULK header present"
-	case headers.Sender != "" && headers.Sender != headers.From.Email:
+	case headers.Sender != "" && fromEmail != "" && headers.Sender != fromEmail:
 		return true, "SENDER != FROM"
 	default:
-		return mailsherpaChecks(headers.From.Email)
+		if fromEmail != "" {
+			return mailsherpaChecks(fromEmail)
+		}
+		return false, ""
 	}
 }
 

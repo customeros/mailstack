@@ -14,6 +14,7 @@ import (
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/proto/pb"
 )
 
@@ -43,6 +44,7 @@ var SUBSCRIBED_SUBJECT = enum.EventEmailInboundAnalysis.String()
 func (s *EmailAnalysisService) Start(ctx context.Context) error {
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
+		ctx = utils.WithCustomContextFromNats(ctx, msg)
 		spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAnalysisService.Start")
 		defer spans.Finish()
 
@@ -61,6 +63,7 @@ func (s *EmailAnalysisService) Start(ctx context.Context) error {
 		resp = s.processRequestForStructuredBody(ctx, request)
 		if resp == nil {
 			spans.TraceError(errors.New("empty response"))
+			return
 		}
 
 		s.sendResponse(ctx, msg, resp)

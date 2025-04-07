@@ -64,22 +64,29 @@ func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 
 	// validate context
 	var err error
+	var errorMessage string
+
 	tenant := utils.GetTenantFromContext(ctx)
 	userID := utils.GetUserIdFromContext(ctx)
+
 	if tenant == "" {
 		err = mailstack_errors.ErrTenantMissing
 		spans.TraceError(err)
+		errorMessage = err.Error()
 	}
+
 	if userID == "" {
 		err = mailstack_errors.ErrUserIdMissing
 		spans.TraceError(err)
+		errorMessage = err.Error()
 	}
+
 	return &models.EmailEvent{
 		ID:           utils.GenerateNanoIDWithPrefix("event", 21),
 		Timestamp:    utils.Now(),
 		Tenant:       tenant,
 		User:         userID,
-		ErrorMessage: err.Error(),
+		ErrorMessage: errorMessage, // Use the string variable instead of err.Error()
 	}
 }
 
@@ -88,6 +95,7 @@ func (s *EventLoggerService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
+		DeliverGroup:  QUEUE_GROUP,
 		AckPolicy:     nats.AckExplicitPolicy,
 		AckWait:       ACK_WAIT,
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
@@ -101,7 +109,7 @@ func (s *EventLoggerService) Start(ctx context.Context) error {
 	// Create pull subscription
 	sub, err := s.natsConn.JS.PullSubscribe(
 		SUBSCRIBED_SUBJECT,
-		QUEUE_GROUP,
+		CONSUMER_NAME,
 		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
 	)
 	if err != nil {
@@ -156,6 +164,7 @@ func (s *EventLoggerService) handleFetchError(err error) {
 
 // processMessage processes a single email message
 func (s *EventLoggerService) processMessage(ctx context.Context, msg *nats.Msg) {
+	ctx = utils.WithCustomContextFromNats(ctx, msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processMessage")
 	defer spans.Finish()
 

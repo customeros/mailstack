@@ -16,6 +16,7 @@ import (
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/proto/pb"
 )
 
@@ -47,7 +48,7 @@ const (
 	CONSUMER_NAME         = "email-content-consumer"
 	ACK_WAIT              = 30 * time.Second
 	MAX_DELIVERY_ATTEMPTS = 5
-	MAX_ACK_PENDING       = 100
+	MAX_ACK_PENDING       = 1000
 	FETCH_BATCH_SIZE      = 50
 	MAX_FETCH_WAIT        = 500 * time.Millisecond
 	ERR_BACKOFF           = 100 * time.Millisecond
@@ -58,6 +59,7 @@ func (s *EmailContentService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
+		DeliverGroup:  QUEUE_GROUP,
 		AckPolicy:     nats.AckExplicitPolicy,
 		AckWait:       ACK_WAIT,
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
@@ -71,7 +73,7 @@ func (s *EmailContentService) Start(ctx context.Context) error {
 	// Create pull subscription
 	sub, err := s.natsConn.JS.PullSubscribe(
 		SUBSCRIBED_SUBJECT,
-		QUEUE_GROUP,
+		CONSUMER_NAME,
 		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
 	)
 	if err != nil {
@@ -126,13 +128,14 @@ func (s *EmailContentService) handleFetchError(err error) {
 
 // processMessage processes a single email message
 func (s *EmailContentService) processMessage(ctx context.Context, msg *nats.Msg) {
+	ctx = utils.WithCustomContextFromNats(ctx, msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processMessage")
 	defer spans.Finish()
 
 	message := &pb.EmailStored{}
 	err := proto.Unmarshal(msg.Data, message)
 	if err != nil || message == nil {
-		err := errors.New("Failed to parse request")
+		err := errors.New("Failed to parse message")
 		spans.TraceError(err)
 		s.handleProcessingError(ctx, msg, err)
 		return

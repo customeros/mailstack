@@ -84,22 +84,17 @@ func InitNats(config *config.NATSConfig, environment string) (*NATSConnections, 
 }
 
 func setupNATSStreams(js nats.JetStreamContext, replicas int) error {
-	return setupWorkQueueStream(js, EMAIL_STREAM, []string{
-		"emails.inbound.>",
-		"emails.outbound.>",
-		"emails.tracking.>",
-		"emails.errors.>",
-	}, replicas)
+	return setupInterstPolicyStream(js, EMAIL_STREAM, []string{"emails.>"}, replicas)
 }
 
-func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {
+func setupInterstPolicyStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {
 	streamInfo, err := js.StreamInfo(streamName)
 	if err != nil {
 		// Stream doesn't exist, create it
 		_, err = js.AddStream(&nats.StreamConfig{
 			Name:      streamName,
 			Subjects:  subjects,
-			Retention: nats.WorkQueuePolicy,
+			Retention: nats.InterestPolicy,
 			Storage:   nats.FileStorage,
 			Replicas:  replicas,
 			MaxAge:    168 * time.Hour,
