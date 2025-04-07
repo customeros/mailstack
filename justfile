@@ -12,6 +12,16 @@ gen-api:
 
 generate: gen-api
 
+gen-proto:
+    find ./proto -name "*.proto" -type f -exec \
+    protoc \
+    --proto_path=./proto \
+    --go_out=./proto/pb \
+    --go_opt=module=github.com/customeros/mailstack/proto/pb \
+    --go-grpc_out=./proto/pb \
+    --go-grpc_opt=module=github.com/customeros/mailstack/proto/pb \
+    {} \;
+
 migrate:
     go run main.go migrate
 
