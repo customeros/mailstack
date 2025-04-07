@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/customeros/mailstack/internal/telemetry"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
@@ -18,7 +19,6 @@ import (
 	"github.com/customeros/mailstack/api/rest/handlers"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/repository"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
 )
 
@@ -32,8 +32,8 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	}
 
 	// Add recovery middlewares
-	r.Use(gin.Recovery())                                         // Gin's built-in recovery
-	r.Use(tracing.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
+	r.Use(gin.Recovery())                                           // Gin's built-in recovery
+	r.Use(telemetry.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
 
 	// setup handlers
 	apiHandlers := handlers.InitHandlers(repos, cfg, s)
