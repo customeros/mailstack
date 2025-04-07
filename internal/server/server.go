@@ -24,7 +24,6 @@ import (
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/services"
 )
 
@@ -45,7 +44,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 	appLogger.InitLogger()
 
 	// Initialize Jaeger tracing
-	tracer, closer, err := tracing.NewJaegerTracer(cfg.Tracing, appLogger)
+	tracer, closer, err := telemetry.NewJaegerTracer(cfg.Tracing, appLogger)
 	if err != nil {
 		log.Fatalf("Could not initialize jaeger tracer: %s", err.Error())
 	}

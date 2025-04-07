@@ -8,13 +8,12 @@ import (
 
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/telemetry"
-	"github.com/customeros/mailstack/internal/tracing"
 )
 
 type Config struct {
 	AppConfig               *AppConfig
 	Logger                  *logger.Config
-	Tracing                 *tracing.JaegerConfig
+	Tracing                 *telemetry.JaegerConfig
 	NATSConfig              *NATSConfig
 	OpenTelemetry           *telemetry.OpenTelemetryConfig
 	MailstackDatabaseConfig *MailstackDatabaseConfig
@@ -31,7 +30,7 @@ func InitConfig() (*Config, error) {
 	config := &Config{
 		AppConfig:               &AppConfig{},
 		Logger:                  &logger.Config{},
-		Tracing:                 &tracing.JaegerConfig{},
+		Tracing:                 &telemetry.JaegerConfig{},
 		NATSConfig:              &NATSConfig{},
 		OpenTelemetry:           &telemetry.OpenTelemetryConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},

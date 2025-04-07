@@ -9,7 +9,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/customeros/mailstack/internal/telemetry"
-	"github.com/customeros/mailstack/internal/tracing"
 )
 
 // TracingMiddleware creates a new span for each request and adds common tags
@@ -19,7 +18,7 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 		existingCtx := c.Request.Context()
 
 		// Start Jaeger span using existing utility with parent context
-		jaegerCtx, jaegerSpan := tracing.StartHttpServerTracerSpanWithHeader(
+		jaegerCtx, jaegerSpan := telemetry.StartHttpServerTracerSpanWithHeader(
 			existingCtx,
 			c.Request.Method+" "+c.FullPath(),
 			c.Request.Header,
@@ -47,7 +46,7 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 		telemetry.TagComponentREST(spans)
 
 		// Set default span tags (tenant, user-id, user-email)
-		tracing.SetDefaultSpanTags(jaegerCtx, jaegerSpan)
+		telemetry.SetDefaultSpanTags(jaegerCtx, jaegerSpan)
 		telemetry.SetDefaultServiceSpanAttributes(jaegerCtx, otelSpan)
 
 		// Add entity ID if present in URL params

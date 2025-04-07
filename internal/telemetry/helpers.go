@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/customeros/mailstack/internal/logger"
-	"github.com/customeros/mailstack/internal/tracing"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -37,6 +36,13 @@ const (
 	ComponentService    = "service"
 	ComponentListener   = "listener"
 	ComponentCronJob    = "cron"
+)
+
+const (
+	SpanTagTenant    = "tenant"
+	SpanTagUserId    = "user.id"
+	SpanTagUserEmail = "user.email"
+	SpanTagEntityId  = "entity.id"
 )
 
 const (
@@ -78,10 +84,10 @@ func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (
 
 	jaegerSpan.SetTag("service.name", "mailstack")
 	if tenant := utils.GetTenantFromContext(ctx); tenant != "" {
-		jaegerSpan.SetTag("tenant", tenant)
+		jaegerSpan.SetTag(SpanTagTenant, tenant)
 	}
 	if userID := utils.GetUserIdFromContext(ctx); userID != "" {
-		jaegerSpan.SetTag("user_id", userID)
+		jaegerSpan.SetTag(SpanTagUserId, userID)
 	}
 
 	// Start OpenTelemetry span
@@ -99,10 +105,10 @@ func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (
 		attribute.String("service.name", "mailstack"),
 	)
 	if tenant := utils.GetTenantFromContext(ctx); tenant != "" {
-		otelSpan.SetAttributes(attribute.String("tenant", tenant))
+		otelSpan.SetAttributes(attribute.String(SpanTagTenant, tenant))
 	}
 	if userID := utils.GetUserIdFromContext(ctx); userID != "" {
-		otelSpan.SetAttributes(attribute.String("user_id", userID))
+		otelSpan.SetAttributes(attribute.String(SpanTagUserId, userID))
 	}
 
 	// Store both spans in the context
@@ -402,10 +408,10 @@ func (s *Spans) TagEntity(entityId string) {
 		return
 	}
 	if s.Jaeger != nil {
-		tracing.TagEntity(s.Jaeger, entityId)
+		s.Jaeger.SetTag(SpanTagEntityId, entityId)
 	}
 	if s.OTel != nil {
-		s.OTel.SetAttributes(attribute.String("entity.id", entityId))
+		s.OTel.SetAttributes(attribute.String(SpanTagEntityId, entityId))
 	}
 }
 
@@ -517,7 +523,7 @@ func (s *Spans) LogObjectAsJson(key string, obj interface{}) {
 
 	// Log to Jaeger
 	if s.Jaeger != nil {
-		tracing.LogObjectAsJson(s.Jaeger, key, obj)
+		LogObjectAsJson(s.Jaeger, key, obj)
 	}
 
 	// Log to OpenTelemetry
@@ -657,7 +663,7 @@ func (s *Spans) TraceError(err error) {
 
 	// Trace error in Jaeger
 	if s.Jaeger != nil {
-		tracing.TraceErr(s.Jaeger, err)
+		TraceErr(s.Jaeger, err)
 	}
 
 	// Trace error in OpenTelemetry
@@ -719,7 +725,7 @@ func GetDefaultServiceSpanAttributes(ctx context.Context) []attribute.KeyValue {
 	}
 
 	if tenant := utils.GetTenantFromContext(ctx); tenant != "" {
-		attrs = append(attrs, attribute.String("tenant", tenant))
+		attrs = append(attrs, attribute.String(SpanTagTenant, tenant))
 	}
 	if userID := utils.GetUserIdFromContext(ctx); userID != "" {
 		attrs = append(attrs, attribute.String("user_id", userID))
