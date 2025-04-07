@@ -71,6 +71,7 @@ func (s *EmailStorageService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
+		DeliverGroup:  QUEUE_GROUP,
 		AckPolicy:     nats.AckExplicitPolicy,
 		AckWait:       ACK_WAIT,
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
@@ -84,7 +85,7 @@ func (s *EmailStorageService) Start(ctx context.Context) error {
 	// Create pull subscription
 	sub, err := s.natsConn.JS.PullSubscribe(
 		SUBSCRIBED_SUBJECT,
-		QUEUE_GROUP,
+		CONSUMER_NAME,
 		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
 	)
 	if err != nil {
@@ -139,6 +140,7 @@ func (s *EmailStorageService) handleFetchError(err error) {
 
 // processMessage processes a single email message
 func (s *EmailStorageService) processMessage(ctx context.Context, msg *nats.Msg) {
+	ctx = utils.WithCustomContextFromNats(ctx, msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.processMessage")
 	defer spans.Finish()
 

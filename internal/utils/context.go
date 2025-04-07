@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
 
 	er "github.com/customeros/mailstack/internal/errors"
 )
@@ -72,6 +73,19 @@ func WithCustomContextFromGinRequest(c *gin.Context) context.Context {
 		RequestID: c.GetHeader("X-Request-Id"),
 	}
 	return WithCustomContext(c.Request.Context(), customContext)
+}
+
+func WithCustomContextFromNats(ctx context.Context, msg *nats.Msg) context.Context {
+	if msg.Header == nil {
+		return ctx
+	}
+
+	// Create custom context from message headers
+	customContext := &CustomContext{
+		Tenant: msg.Header.Get("X-Tenant"),
+		UserId: msg.Header.Get("X-UserId"),
+	}
+	return WithCustomContext(ctx, customContext)
 }
 
 func GetContext(ctx context.Context) *CustomContext {

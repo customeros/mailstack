@@ -12,6 +12,7 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/nats-io/nats.go"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
@@ -66,6 +67,7 @@ func (s *IMAPService) Start(ctx context.Context) error {
 		// Create a mailbox-specific context with tenant information
 		// but don't create a span here since we're passing to a goroutine
 		mailboxCtx := utils.SetTenantInContext(ctx, config.Tenant)
+		mailboxCtx = utils.SetUserIdInContext(mailboxCtx, config.UserID)
 
 		log.Printf("Starting mailbox: %s (%s)", id, config.ImapUsername)
 		go s.runSingleMailbox(mailboxCtx, id, config)
@@ -286,11 +288,6 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 	defer spans.Finish()
 	spans.TagString("mailbox_id", mailboxID)
 	spans.LogObjectAsJson("mailbox", config)
-
-	// set tenant in context from mailbox if missing
-	if utils.GetTenantFromContext(ctx) == "" {
-		ctx = utils.SetTenantInContext(ctx, config.Tenant)
-	}
 
 	s.wg.Add(1)
 	defer s.wg.Done()
@@ -830,8 +827,14 @@ func (s *IMAPService) publishNewEmailEvent(ctx context.Context, event *pb.EmailR
 		return fmt.Errorf("failed to marshal stored email: %w", err)
 	}
 
+	// Create message with headers
+	msg := nats.NewMsg(enum.EventEmailInboundReceivedIMAP.String())
+	msg.Data = data
+	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
+	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+
 	// Publish to the stored subject
-	_, err = s.natsConn.JS.Publish(enum.EventEmailInboundReceivedIMAP.String(), data)
+	_, err = s.natsConn.JS.PublishMsg(msg)
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to publish stored email: %w", err)

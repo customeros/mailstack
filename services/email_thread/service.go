@@ -13,6 +13,7 @@ import (
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/internal/utils"
 	"github.com/customeros/mailstack/proto/pb"
 )
 
@@ -39,6 +40,7 @@ var SUBSCRIBED_SUBJECT = enum.EventEmailInboundThread.String()
 func (s *EmailThreadingService) Start(ctx context.Context) error {
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
+		ctx = utils.WithCustomContextFromNats(ctx, msg)
 		spans, ctx := telemetry.StartServiceSpan(ctx, "EmailThreadingService.Start")
 		defer spans.Finish()
 

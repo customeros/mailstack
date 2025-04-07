@@ -200,11 +200,11 @@ func (s *EmailContentService) getEmailClassification(ctx context.Context, emailI
 	request := &pb.EmailClassificationRequest{
 		EmailId:            emailID,
 		Subject:            envelope.GetHeader("Subject"),
-		From:               from[0],
+		From:               getFirstOrEmpty(from),
 		To:                 to,
 		Cc:                 cc,
 		Bcc:                bcc,
-		ReplyTo:            replyto[0],
+		ReplyTo:            getFirstOrEmpty(replyto),
 		ReturnPath:         envelope.GetHeader("Return-Path"),
 		Unsubscribe:        envelope.GetHeader("Unsubscribe"),
 		Precedence:         envelope.GetHeader("Precedence"),
@@ -595,4 +595,11 @@ func getEmailsAsSlice(emailAddress []*pb.EmailAddress) []string {
 		}
 	}
 	return results
+}
+
+func getFirstOrEmpty(addresses []*pb.EmailAddress) *pb.EmailAddress {
+	if len(addresses) > 0 {
+		return addresses[0]
+	}
+	return nil
 }
