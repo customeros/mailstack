@@ -3,7 +3,6 @@ package email_content
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -15,24 +14,26 @@ import (
 	"github.com/jhillyerd/enmime"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/multierr"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/internal/enum"
-	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/proto/helpers"
+	pb_mappers "github.com/customeros/mailstack/proto/mappers"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
-func (s *EmailContentService) processEmail(ctx context.Context, event dto.EmailStored, eventRecord *models.EmailEvent) {
+func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailStored) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmail")
 	defer spans.Finish()
 
 	// Get eml from storage
-	eml, err := s.emlStorage.Download(ctx, event.EMLKey)
+	eml, err := s.emlStorage.Download(ctx, event.EmlKey)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 
 	// Process eml into structured envelope
@@ -40,44 +41,39 @@ func (s *EmailContentService) processEmail(ctx context.Context, event dto.EmailS
 	envelope, err := enmime.ReadEnvelope(reader)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 
-	classificationReq, classificationResp, err := s.getEmailClassification(ctx, event.ID, envelope)
+	classificationReq, classificationResp, err := s.getEmailClassification(ctx, event.EmailId, envelope)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 	if classificationResp == nil {
 		err = errors.New("Unable to classify email")
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
-	eventRecord.Classification = classificationResp.Classification
 
-	switch classificationResp.Classification {
+	classification := pb_mappers.PbToEmailClassification(classificationResp.Classification)
+
+	switch classification {
 	case enum.EmailOK:
-		s.processEmailContent(ctx, classificationReq, envelope, eventRecord, event.MailboxID)
-		if eventRecord.ErrorMessage != "" {
-			return
-		}
+		err := s.processEmailContent(ctx, classificationReq, envelope, event.MailboxId)
+		return err
 	case enum.EmailBounceNotification:
 		// TODO publish bounce notification
+		return nil
 	case enum.EmailAutoResponder:
 		// TODO publish autoresponder notification
+		return nil
 	default:
 		// skip
+		return nil
 	}
-
-	// Mark processing as successful
-	eventRecord.Success = true
-	return
 }
 
-func (s *EmailContentService) processEmailContent(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope, eventRecord *models.EmailEvent, mailboxID string) error {
+func (s *EmailContentService) processEmailContent(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmailContent")
 	defer spans.Finish()
 
@@ -87,7 +83,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	wg.Add(3)
 
 	// Process body
-	var bodyResult *dto.AnalyzeEmailResponse
+	var bodyResult *pb.AnalyzeEmailResponse
 	var bodyErr error
 	go func() {
 		defer wg.Done()
@@ -101,11 +97,11 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	}()
 
 	// Process attachments
-	var attachmentResult *dto.ProcessAttachmentResponse
+	var attachmentResult *pb.ProcessAttachmentResponse
 	var attachmentErr error
 	go func() {
 		defer wg.Done()
-		attachmentResult, attachmentErr = s.processAttachments(ctx, headers.EmailID, envelope)
+		attachmentResult, attachmentErr = s.processAttachments(ctx, headers.EmailId, envelope)
 		if attachmentErr != nil {
 			spans.TraceError(attachmentErr)
 			errs = multierr.Append(errs, attachmentErr)
@@ -113,7 +109,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	}()
 
 	// Attach message to thread
-	var threadResult *dto.AttachToThreadResponse
+	var threadResult *pb.AttachToThreadResponse
 	var threadErr error
 	go func() {
 		defer wg.Done()
@@ -136,8 +132,8 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 
 	// get current email record and append results
 	updates := map[string]interface{}{
-		"message_id":     threadResult.MessageID,
-		"thread_id":      threadResult.ThreadID,
+		"message_id":     threadResult.MessageId,
+		"thread_id":      threadResult.ThreadId,
 		"subject":        headers.Subject,
 		"clean_subject":  utils.NormalizeSubject(headers.Subject),
 		"from_address":   headers.From.Email,
@@ -148,7 +144,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 		"to_addresses":   getEmailsAsSlice(headers.To),
 		"cc_addresses":   getEmailsAsSlice(headers.Cc),
 		"bcc_addresses":  getEmailsAsSlice(headers.Bcc),
-		"attachment_ids": attachmentResult.AttachmentIDs,
+		"attachment_ids": attachmentResult.AttachmentIds,
 		"body_text":      envelope.Text,
 		"body_markdown":  bodyResult.MessageBodyMarkdown,
 		"has_attachment": attachmentResult.HasAttachment,
@@ -157,19 +153,15 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 		"sent_at":        sentAt,
 		"received_at":    receivedAt,
 	}
-	err = s.repositories.EmailLogRepository.UpdateEmailLog(ctx, headers.EmailID, updates)
+	err = s.repositories.EmailLogRepository.UpdateEmailLog(ctx, headers.EmailId, updates)
 	if err != nil {
 		spans.TraceError(err)
 		errs = multierr.Append(errs, err)
 	}
 
-	// update eventRecord for timescale logging
-	eventRecord.MessageID = threadResult.MessageID
-	eventRecord.ThreadID = threadResult.ThreadID
-
 	// publish completed message
-	err = s.publishCompleted(ctx, &dto.InboundEmailProcessingCompleted{
-		EmailID: headers.EmailID,
+	err = s.publishCompleted(ctx, &pb.InboundEmailProcessingCompleted{
+		EmailId: headers.EmailId,
 	})
 	if err != nil {
 		spans.TraceError(err)
@@ -179,7 +171,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	return errs
 }
 
-func (s *EmailContentService) getEmailClassification(ctx context.Context, emailID string, envelope *enmime.Envelope) (*dto.EmailClassificationRequest, *dto.EmailClassificationResponse, error) {
+func (s *EmailContentService) getEmailClassification(ctx context.Context, emailID string, envelope *enmime.Envelope) (*pb.EmailClassificationRequest, *pb.EmailClassificationResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_headers")
 	defer spans.Finish()
 
@@ -205,8 +197,8 @@ func (s *EmailContentService) getEmailClassification(ctx context.Context, emailI
 	}
 
 	// Create request payload with email headers
-	request := dto.EmailClassificationRequest{
-		EmailID:            emailID,
+	request := &pb.EmailClassificationRequest{
+		EmailId:            emailID,
 		Subject:            envelope.GetHeader("Subject"),
 		From:               from[0],
 		To:                 to,
@@ -222,22 +214,22 @@ func (s *EmailContentService) getEmailClassification(ctx context.Context, emailI
 		XLoop:              envelope.GetHeader("X-Loop"),
 		XFailedRecipients:  envelope.GetHeader("X-Failed-Recipients"),
 		ContentDescription: envelope.GetHeader("Content-Description"),
-		FeedbackID:         envelope.GetHeader("Feedback-ID"),
+		FeedbackId:         envelope.GetHeader("Feedback-ID"),
 		ForwardedFor:       envelope.GetHeader("Forwarded-for"),
-		DKIM:               envelope.GetHeader("DKIM"),
-		SPF:                envelope.GetHeader("spf"),
-		DMARC:              envelope.GetHeader("DMARC"),
+		Dkim:               envelope.GetHeader("DKIM"),
+		Spf:                envelope.GetHeader("spf"),
+		Dmarc:              envelope.GetHeader("DMARC"),
 		ListUnsubscribe:    envelope.GetHeader("List-unsubscribe"),
 		AutoSubmitted:      envelope.GetHeader("Auto-submitted"),
 	}
 
 	resp, err := s.sendClassificationRequest(ctx, request)
 
-	return &request, resp, err
+	return request, resp, err
 }
 
 // ParseEmailAddresses extracts structured email addresses from an enmime envelope
-func parseEmailAddresses(header string, envelope *enmime.Envelope) ([]dto.EmailAddress, error) {
+func parseEmailAddresses(header string, envelope *enmime.Envelope) ([]*pb.EmailAddress, error) {
 	value := envelope.GetHeader(header)
 	if value == "" {
 		return nil, nil
@@ -250,12 +242,12 @@ func parseEmailAddresses(header string, envelope *enmime.Envelope) ([]dto.EmailA
 	}
 
 	// Convert to our EmailAddress struct
-	parsed := make([]dto.EmailAddress, 0, len(addresses))
+	parsed := make([]*pb.EmailAddress, 0, len(addresses))
 	for _, addr := range addresses {
 
 		verification := mailvalidate.ValidateEmailSyntax(addr.Address)
 		if verification.IsValid {
-			parsed = append(parsed, dto.EmailAddress{
+			parsed = append(parsed, &pb.EmailAddress{
 				Name:   addr.Name,
 				Email:  verification.CleanEmail,
 				User:   verification.User,
@@ -267,30 +259,30 @@ func parseEmailAddresses(header string, envelope *enmime.Envelope) ([]dto.EmailA
 	return parsed, nil
 }
 
-func (s *EmailContentService) processBody(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope) (*dto.AnalyzeEmailResponse, error) {
+func (s *EmailContentService) processBody(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope) (*pb.AnalyzeEmailResponse, error) {
 	bodySpan, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processBody")
 	defer bodySpan.Finish()
 
 	// Create request payload with email body content
-	bodyRequest := dto.AnalyzeEmailRequest{
-		EmailID:       headers.EmailID,
+	bodyRequest := &pb.AnalyzeEmailRequest{
+		EmailId:       headers.EmailId,
 		From:          headers.From,
 		To:            headers.To,
 		EmailBodyText: envelope.Text,
-		EmailBodyHTML: envelope.HTML,
+		EmailBodyHtml: envelope.HTML,
 	}
 
 	return s.sendEmailAnalysisRequest(ctx, bodyRequest)
 }
 
-func (s *EmailContentService) processAttachments(ctx context.Context, emailID string, envelope *enmime.Envelope) (*dto.ProcessAttachmentResponse, error) {
+func (s *EmailContentService) processAttachments(ctx context.Context, emailID string, envelope *enmime.Envelope) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
 	// return early if no attachments
 	if len(envelope.Attachments) == 0 && len(envelope.Inlines) == 0 {
-		return &dto.ProcessAttachmentResponse{
-			EmailID:       emailID,
+		return &pb.ProcessAttachmentResponse{
+			EmailId:       emailID,
 			HasAttachment: false,
 		}, nil
 	}
@@ -303,15 +295,15 @@ func (s *EmailContentService) processAttachments(ctx context.Context, emailID st
 	}
 
 	// Create request payload
-	attachmentRequest := dto.ProcessAttachmentRequest{
-		EmailID:     emailID,
+	attachmentRequest := &pb.ProcessAttachmentRequest{
+		EmailId:     emailID,
 		Attachments: attachments,
 	}
 
 	return s.sendEmailAttchmentRequest(ctx, attachmentRequest)
 }
 
-func (s *EmailContentService) attachToThread(ctx context.Context, headers *dto.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*dto.AttachToThreadResponse, error) {
+func (s *EmailContentService) attachToThread(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*pb.AttachToThreadResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
@@ -329,10 +321,10 @@ func (s *EmailContentService) attachToThread(ctx context.Context, headers *dto.E
 		spans.TraceError(err)
 	}
 
-	req := dto.AttachToThreadRequest{
-		EmailID:         headers.EmailID,
-		MailboxID:       mailboxID,
-		MessageID:       utils.NormalizeMessageID(envelope.GetHeader("Message-ID")),
+	req := &pb.AttachToThreadRequest{
+		EmailId:         headers.EmailId,
+		MailboxId:       mailboxID,
+		MessageId:       utils.NormalizeMessageID(envelope.GetHeader("Message-ID")),
 		ReplyTo:         headers.ReplyTo.Email,
 		References:      references,
 		Subject:         headers.Subject,
@@ -344,7 +336,7 @@ func (s *EmailContentService) attachToThread(ctx context.Context, headers *dto.E
 	return s.sendAttachToThreadRequest(ctx, req)
 }
 
-func getAllParticipants(headers *dto.EmailClassificationRequest) []string {
+func getAllParticipants(headers *pb.EmailClassificationRequest) []string {
 	// Use a map to track unique email addresses
 	uniqueEmails := make(map[string]struct{})
 
@@ -352,7 +344,8 @@ func getAllParticipants(headers *dto.EmailClassificationRequest) []string {
 	uniqueEmails[headers.From.Email] = struct{}{}
 
 	// Add all recipient emails
-	for _, email := range headers.AllRecipients() {
+	allRecipients := helpers.AllRecipients(headers)
+	for _, email := range allRecipients {
 		uniqueEmails[email] = struct{}{}
 	}
 
@@ -366,12 +359,12 @@ func getAllParticipants(headers *dto.EmailClassificationRequest) []string {
 }
 
 // Generic method to send requests to services
-func (s *EmailContentService) sendClassificationRequest(ctx context.Context, request dto.EmailClassificationRequest) (*dto.EmailClassificationResponse, error) {
+func (s *EmailContentService) sendClassificationRequest(ctx context.Context, request *pb.EmailClassificationRequest) (*pb.EmailClassificationResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendClassificationRequest")
 	defer spans.Finish()
 
 	// Marshal request to JSON
-	reqData, err := json.Marshal(request)
+	reqData, err := proto.Marshal(request)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -385,21 +378,21 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 	}
 
 	// Unmarshal response
-	var response dto.EmailClassificationResponse
-	if err := json.Unmarshal(msg.Data, &response); err != nil {
+	response := &pb.EmailClassificationResponse{}
+	if err := proto.Unmarshal(msg.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
 
-	return &response, nil
+	return response, nil
 }
 
-func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, request dto.AnalyzeEmailRequest) (*dto.AnalyzeEmailResponse, error) {
+func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, request *pb.AnalyzeEmailRequest) (*pb.AnalyzeEmailResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendEmailAnalysisRequest")
 	defer spans.Finish()
 
 	// Marshal request to JSON
-	reqData, err := json.Marshal(request)
+	reqData, err := proto.Marshal(request)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -413,21 +406,21 @@ func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 	}
 
 	// Unmarshal response
-	var response dto.AnalyzeEmailResponse
-	if err := json.Unmarshal(msg.Data, &response); err != nil {
+	response := &pb.AnalyzeEmailResponse{}
+	if err := proto.Unmarshal(msg.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
 
-	return &response, nil
+	return response, nil
 }
 
-func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, request dto.ProcessAttachmentRequest) (*dto.ProcessAttachmentResponse, error) {
+func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, request *pb.ProcessAttachmentRequest) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendEmailAttachmentRequest")
 	defer spans.Finish()
 
 	// Marshal request to JSON
-	reqData, err := json.Marshal(request)
+	reqData, err := proto.Marshal(request)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -441,21 +434,21 @@ func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, req
 	}
 
 	// Unmarshal response
-	var response dto.ProcessAttachmentResponse
-	if err := json.Unmarshal(msg.Data, &response); err != nil {
+	response := &pb.ProcessAttachmentResponse{}
+	if err := proto.Unmarshal(msg.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
 
-	return &response, nil
+	return response, nil
 }
 
-func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, request dto.AttachToThreadRequest) (*dto.AttachToThreadResponse, error) {
+func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, request *pb.AttachToThreadRequest) (*pb.AttachToThreadResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendAttachToThreadRequest")
 	defer spans.Finish()
 
 	// Marshal request to JSON
-	reqData, err := json.Marshal(request)
+	reqData, err := proto.Marshal(request)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -469,21 +462,21 @@ func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, req
 	}
 
 	// Unmarshal response
-	var response dto.AttachToThreadResponse
-	if err := json.Unmarshal(msg.Data, &response); err != nil {
+	response := &pb.AttachToThreadResponse{}
+	if err := proto.Unmarshal(msg.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
 
-	return &response, nil
+	return response, nil
 }
 
 // Helper to build attachment list
-func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope *enmime.Envelope, emailID string) ([]dto.AttachmentMetadata, error) {
+func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope *enmime.Envelope, emailID string) ([]*pb.AttachmentMetadata, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.buildAttachmentList")
 	defer spans.Finish()
 
-	attachments := make([]dto.AttachmentMetadata, 0, len(envelope.Attachments)+len(envelope.Inlines))
+	attachments := make([]*pb.AttachmentMetadata, 0, len(envelope.Attachments)+len(envelope.Inlines))
 
 	// Process regular attachments
 	for _, att := range envelope.Attachments {
@@ -492,7 +485,7 @@ func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope 
 			spans.TraceError(err)
 		}
 		if attMetadata != nil {
-			attachments = append(attachments, *attMetadata)
+			attachments = append(attachments, attMetadata)
 		}
 	}
 
@@ -503,14 +496,14 @@ func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope 
 			spans.TraceError(err)
 		}
 		if attMetadata != nil {
-			attachments = append(attachments, *attMetadata)
+			attachments = append(attachments, attMetadata)
 		}
 	}
 
 	return attachments, nil
 }
 
-func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*dto.AttachmentMetadata, error) {
+func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*pb.AttachmentMetadata, error) {
 	// Get or create object store (bucket)
 	objStore, err := s.natsConn.JS.ObjectStore(enum.NATSBucketEmailAttachment.String())
 	if err != nil {
@@ -551,11 +544,11 @@ func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID strin
 	}
 
 	// Add metadata without the content
-	return &dto.AttachmentMetadata{
+	return &pb.AttachmentMetadata{
 		Filename:    attachment.FileName,
 		ContentType: attachment.ContentType,
-		ContentID:   attachment.ContentID,
-		Size:        len(attachment.Content),
+		ContentId:   attachment.ContentID,
+		Size:        int32(len(attachment.Content)),
 		IsInline:    isInline,
 		StorageKey:  objectName,
 		ObjectInfo:  info.Name,
@@ -563,14 +556,14 @@ func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID strin
 }
 
 // parseEmailTimestamps extracts and parses the sent and received timestamps from an email
-func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *time.Time, err error) {
+func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *timestamppb.Timestamp, err error) {
 	// Parse the Date header for sentAt
 	dateHeader := envelope.GetHeader("Date")
 	if dateHeader != "" {
 		// The mail.ParseDate function handles the RFC822/RFC1123 format used in emails
 		parsedSentAt, err := mail.ParseDate(dateHeader)
 		if err == nil {
-			sentAt = &parsedSentAt
+			sentAt = timestamppb.New(parsedSentAt)
 		}
 	}
 
@@ -586,7 +579,7 @@ func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *time.T
 			dateStr := strings.TrimSpace(dateParts[len(dateParts)-1])
 			parsedReceivedAt, err := mail.ParseDate(dateStr)
 			if err == nil {
-				receivedAt = &parsedReceivedAt
+				receivedAt = timestamppb.New(parsedReceivedAt)
 			}
 		}
 	}
@@ -594,7 +587,7 @@ func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *time.T
 	return sentAt, receivedAt, nil
 }
 
-func getEmailsAsSlice(emailAddress []dto.EmailAddress) []string {
+func getEmailsAsSlice(emailAddress []*pb.EmailAddress) []string {
 	results := make([]string, 0, len(emailAddress))
 	for _, emailAddr := range emailAddress {
 		if emailAddr.Email != "" {

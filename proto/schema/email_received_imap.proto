@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Message for an email received via IMAP
+message EmailReceivedIMAP {
+  bool initial_sync = 1;
+  string mailbox_id = 2;
+  string folder = 3;
+  uint32 imap_uid = 4;
+  uint32 imap_seq_num = 5;
+}

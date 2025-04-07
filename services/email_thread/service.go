@@ -2,39 +2,34 @@ package email_thread
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/nats-io/nats.go"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/customeros/mailstack/dto"
 	"github.com/customeros/mailstack/interfaces"
-	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/enum"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
+	"github.com/customeros/mailstack/internal/telemetry"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 type EmailThreadingService struct {
-	config             *config.CustomerOSAPIConfig
-	natsConn           *nats_internal.NATSConnections
-	repositories       *repository.Repositories
-	eventLoggerService interfaces.EventLoggerService
-	subscriptions      []*nats.Subscription
+	natsConn      *nats_internal.NATSConnections
+	repositories  *repository.Repositories
+	subscriptions []*nats.Subscription
 }
 
 func NewEmailThreadingService(
-	config *config.CustomerOSAPIConfig,
 	natsConn *nats_internal.NATSConnections,
 	repositories *repository.Repositories,
-	eventLoggerService interfaces.EventLoggerService,
 ) interfaces.EmailProcessor {
 	return &EmailThreadingService{
-		config:             config,
-		natsConn:           natsConn,
-		repositories:       repositories,
-		eventLoggerService: eventLoggerService,
-		subscriptions:      make([]*nats.Subscription, 0),
+		natsConn:      natsConn,
+		repositories:  repositories,
+		subscriptions: make([]*nats.Subscription, 0),
 	}
 }
 
@@ -44,47 +39,29 @@ var SUBSCRIBED_SUBJECT = enum.EventEmailInboundThread.String()
 func (s *EmailThreadingService) Start(ctx context.Context) error {
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
-		// Process the incoming request
-		var request dto.AttachToThreadRequest
+		spans, ctx := telemetry.StartServiceSpan(ctx, "EmailThreadingService.Start")
+		defer spans.Finish()
 
-		event := s.eventLoggerService.NewEmailEventRecord(ctx)
-		event.Event = request.EventType()
+		resp := &pb.AttachToThreadResponse{}
 
-		err := json.Unmarshal(msg.Data, &request)
-		if err != nil {
+		request := &pb.AttachToThreadRequest{}
+		err := proto.Unmarshal(msg.Data, request)
+		if err != nil || request == nil {
 			errMsg := "Failed to parse request"
-			resp := dto.AttachToThreadResponse{
-				ErrorMessage: errMsg,
-			}
-			responseData, _ := json.Marshal(resp)
-			msg.Respond(responseData)
-
-			event.ErrorMessage = errMsg
-			s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+			resp.ErrorMessage = errMsg
+			s.sendResponse(ctx, msg, resp)
+			spans.TraceError(err)
 			return
 		}
-		event.EmailID = request.EmailID
-
-		// Store original event in R2
-		payloadKey, err := s.eventLoggerService.StoreEmailEventInR2(ctx, event.ID, msg.Data)
-		if err != nil {
-			err = fmt.Errorf("Failed to store event in R2: %v", err)
-			event.ErrorMessage = err.Error()
-			s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
-			return
-		}
-		event.PayloadKey = payloadKey
 
 		// Process the request
 		response := s.attachToThread(ctx, request)
-		if response.ErrorMessage != "" {
-			event.ErrorMessage = response.ErrorMessage
+		if response == nil {
+			spans.TraceError(errors.New("empty response"))
+			return
 		}
 
-		// Marshal and send response
-		responseData, _ := json.Marshal(response)
-		msg.Respond(responseData)
-		s.eventLoggerService.LogEmailEventToTimescale(ctx, event)
+		s.sendResponse(ctx, msg, response)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create subscription: %w", err)
@@ -110,4 +87,17 @@ func (s *EmailThreadingService) Close() error {
 		s.natsConn.Close()
 	}
 	return nil
+}
+
+func (s *EmailThreadingService) sendResponse(ctx context.Context, req *nats.Msg, resp *pb.AttachToThreadResponse) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailThreadingService.sendResponse")
+	defer spans.Finish()
+
+	respMessage, err := proto.Marshal(resp)
+	if err != nil {
+		spans.TraceError(err)
+		return
+	}
+	req.Respond(respMessage)
+	return
 }

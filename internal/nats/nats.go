@@ -84,8 +84,12 @@ func InitNats(config *config.NATSConfig, environment string) (*NATSConnections, 
 }
 
 func setupNATSStreams(js nats.JetStreamContext, replicas int) error {
-	// Fix typo in "outbound"
-	return setupWorkQueueStream(js, EMAIL_STREAM, []string{"emails.inbound.>", "emails.outbound.>", "emails.tracking.>"}, replicas)
+	return setupWorkQueueStream(js, EMAIL_STREAM, []string{
+		"emails.inbound.>",
+		"emails.outbound.>",
+		"emails.tracking.>",
+		"emails.errors.>",
+	}, replicas)
 }
 
 func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {

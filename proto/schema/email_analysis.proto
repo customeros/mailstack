@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+import "schema/email_address.proto";
+
+// Request message for email analysis
+message AnalyzeEmailRequest {
+  string email_id = 1;
+  EmailAddress from = 2;
+  repeated EmailAddress to = 3;
+  string email_body_text = 4;
+  string email_body_html = 5;
+}
+
+// Response message for email analysis
+message AnalyzeEmailResponse {
+  string email_id = 1;
+  bool has_signature = 2;
+  string message_body_markdown = 3;
+  EmailSignature signature = 4;
+  string error_message = 5;
+}
+
+// EmailSignature represents the complete email signature
+message EmailSignature {
+  EmailSignatureCompanyInfo company_info = 1;
+  EmailSignatureContactInfo contact_info = 2;
+}
+
+// EmailSignatureCompanyInfo contains company information
+message EmailSignatureCompanyInfo {
+  EmailSignatureAddress address = 1;
+  string domain = 2;
+  string github = 3;
+  string instagram = 4;
+  string linkedin = 5;
+  string twitter = 6;
+  string website = 7;
+  string youtube = 8;
+}
+
+// EmailSignatureContactInfo contains the contact information of a person
+message EmailSignatureContactInfo {
+  string calendar_link = 1;
+  string company = 2;
+  string email = 3;
+  string github = 4;
+  string job_title = 5;
+  string linkedin = 6;
+  string mobile = 7;
+  string name = 8;
+  string phone = 9;
+}
+
+// EmailSignatureAddress contains address information
+message EmailSignatureAddress {
+  string city = 1;
+  string country = 2;
+  string postal_code = 3;
+  string region = 4;
+  string street = 5;
+}

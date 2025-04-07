@@ -69,10 +69,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 	}
 
 	// Initialize services
-	svcs, err := services.InitServices(natsConn, appLogger, repos, cfg)
-	if err != nil {
-		return nil, err
-	}
+	svcs := services.InitServices(natsConn, appLogger, repos, cfg)
 
 	// Initialize Gin
 	gin.SetMode(gin.ReleaseMode)
@@ -143,17 +140,15 @@ func (s *Server) Run() error {
 
 	// Initialize server components
 	if err := s.Initialize(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to initialize server: %w", err)
 	}
 
-	// Start the IMAP service with panic recovery
-	log.Println("Starting IMAP service...")
-	s.wrapGoroutine("imap_service", func() {
-		if err := s.services.IMAPService.Start(ctx); err != nil {
-			log.Printf("❌ IMAP service error: %v", err)
-		}
-	})
-	log.Println("✅ IMAP service started successfully")
+	// Starting services
+	log.Println("Starting services...")
+	if err := s.services.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start services: %w", err)
+	}
+	log.Println("✅ Services started successfully")
 
 	// Start HTTP server in a goroutine with panic recovery
 	go s.wrapGoroutine("http_server", func() {
@@ -186,7 +181,9 @@ func (s *Server) waitForShutdown() error {
 	// Shut down HTTP server
 	log.Println("Shutting down HTTP server...")
 	if s.tracerCloser != nil {
-		s.tracerCloser.Close()
+		if err := s.tracerCloser.Close(); err != nil {
+			log.Printf("⚠️ Tracer close error: %v", err)
+		}
 	}
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
@@ -195,24 +192,12 @@ func (s *Server) waitForShutdown() error {
 		log.Println("✅ HTTP server shut down successfully")
 	}
 
-	// Stop IMAP service with timeout and panic recovery
-	log.Println("Stopping IMAP service...")
-	stopDone := make(chan struct{})
-	go s.wrapGoroutine("imap_service_shutdown", func() {
-		defer close(stopDone)
-		if err := s.services.IMAPService.Stop(); err != nil {
-			log.Printf("❌ IMAP service shutdown error: %v", err)
-		} else {
-			log.Println("✅ IMAP service stopped successfully")
-		}
-	})
-
-	// Wait for IMAP service to stop with timeout
-	select {
-	case <-stopDone:
-		log.Println("IMAP service stopped gracefully")
-	case <-time.After(10 * time.Second):
-		log.Println("⚠️ IMAP service stop timed out, forcing exit")
+	// Stop services
+	log.Println("Stopping services...")
+	if err := s.services.Stop(shutdownCtx); err != nil {
+		log.Printf("⚠️ Services shutdown error: %v", err)
+	} else {
+		log.Println("✅ Services stopped successfully")
 	}
 
 	// Close NATS connection

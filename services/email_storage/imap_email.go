@@ -9,72 +9,65 @@ import (
 
 	"github.com/emersion/go-imap"
 
-	"github.com/customeros/mailstack/dto"
 	mailstack_errors "github.com/customeros/mailstack/internal/errors"
-	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
+	"github.com/customeros/mailstack/proto/pb"
 )
 
 // HandleRawEmail processes a single raw email message
-func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event dto.EmailReceivedIMAP, eventRecord *models.EmailEvent) {
+func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event *pb.EmailReceivedIMAP) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.handleRawEmail")
 	defer spans.Finish()
 	spans.LogObjectAsJson("emailEvent", event)
 
 	email := s.NewEmailLog()
 
-	email.EmailHash = utils.GenerateIMAPHash(event.MailboxID, event.Folder, event.ImapUID)
+	email.EmailHash = utils.GenerateIMAPHash(event.MailboxId, event.Folder, event.ImapUid)
 
 	emailExists, err := s.repositories.EmailLogRepository.IsDuplicateByHash(ctx, email.EmailHash)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 	if emailExists {
-		eventRecord.ErrorMessage = mailstack_errors.ErrEmailAlreadyProcessed.Error()
-		return
+		return nil
 	}
 
 	// get message from imap server
-	msg, err := s.imapService.GetMessageByUID(ctx, event.MailboxID, event.Folder, event.ImapUID)
+	msg, err := s.imapService.GetMessageByUID(ctx, event.MailboxId, event.Folder, event.ImapUid)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 
 	// save message as .eml
 	bucketKey, err := s.SaveIMAPMessageAsEML(ctx, msg, email.ID)
 	if err != nil {
 		spans.TraceError(err)
-		eventRecord.ErrorMessage = err.Error()
-		return
+		return err
 	}
 	email.EMLKey = bucketKey
 
 	// log email
 	err = s.repositories.EmailLogRepository.Create(ctx, email)
 	if err != nil {
-		eventRecord.ErrorMessage = err.Error()
 		spans.TraceError(err)
-		return
+		return err
 	}
 
 	// Publish to next stage
-	err = s.publishStoredEmail(ctx, &dto.EmailStored{
-		ID:        email.ID,
-		EMLKey:    email.EMLKey,
-		MailboxID: event.MailboxID,
+	err = s.publishStoredEmail(ctx, &pb.EmailStored{
+		EmailId:   email.ID,
+		EmlKey:    email.EMLKey,
+		MailboxId: event.MailboxId,
 	})
 	if err != nil {
-		eventRecord.ErrorMessage = err.Error()
 		spans.TraceError(err)
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func (s *EmailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {

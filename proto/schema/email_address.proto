@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Email address structure
+message EmailAddress {
+  string name = 1;
+  string email = 2;
+  string user = 3;
+  string domain = 4;
+}

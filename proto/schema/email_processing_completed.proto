@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Message to indicate that inbound email processing has been completed
+message InboundEmailProcessingCompleted { string email_id = 1; }
