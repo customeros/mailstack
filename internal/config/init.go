@@ -17,7 +17,7 @@ type Config struct {
 	NATSConfig              *NATSConfig
 	OpenTelemetry           *telemetry.OpenTelemetryConfig
 	MailstackDatabaseConfig *MailstackDatabaseConfig
-	TimescaleDBConfig       *TimescaleDBConfig
+	DataWarehouseConfig     *DataWarehouseConfig
 	CustomerOSAPIConfig     *CustomerOSAPIConfig
 	R2StorageConfig         *R2StorageConfig
 	DomainConfig            *DomainConfig
@@ -34,7 +34,7 @@ func InitConfig() (*Config, error) {
 		NATSConfig:              &NATSConfig{},
 		OpenTelemetry:           &telemetry.OpenTelemetryConfig{},
 		MailstackDatabaseConfig: &MailstackDatabaseConfig{},
-		TimescaleDBConfig:       &TimescaleDBConfig{},
+		DataWarehouseConfig:     &DataWarehouseConfig{},
 		CustomerOSAPIConfig:     &CustomerOSAPIConfig{},
 		R2StorageConfig:         &R2StorageConfig{},
 		DomainConfig:            &DomainConfig{},

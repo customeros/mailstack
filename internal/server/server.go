@@ -38,7 +38,7 @@ type Server struct {
 	repositories *repository.Repositories
 }
 
-func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (*Server, error) {
+func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (*Server, error) {
 	// Initialize logger
 	appLogger := logger.NewAppLogger(cfg.Logger)
 	appLogger.InitLogger()
@@ -57,7 +57,7 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, timescaleDB *gorm.DB) (
 	}
 
 	// Initialize repositories
-	repos := repository.InitRepositories(mailstackDB, timescaleDB, cfg.R2StorageConfig)
+	repos := repository.InitRepositories(mailstackDB, warehouseDB, cfg.R2StorageConfig)
 	if err != nil {
 		return nil, err
 	}
