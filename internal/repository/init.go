@@ -77,15 +77,15 @@ func MigrateMailstackDB(dbConfig *config.MailstackDatabaseConfig, mailstackDB *g
 	return err
 }
 
-func MigrateTimescaleDB(dbConfig *config.TimescaleDBConfig, timescaleDB *gorm.DB) error {
-	db, err := timescaleDB.DB()
+func MigrateDataWarehouse(dbConfig *config.DataWarehouseConfig, warehouseDB *gorm.DB) error {
+	db, err := warehouseDB.DB()
 	if err != nil {
 		return err
 	}
 
 	db.SetMaxOpenConns(5)
 
-	err = timescaleDB.AutoMigrate(
+	err = warehouseDB.AutoMigrate(
 		&models.EmailEvent{},
 		&models.EmailLog{},
 	)

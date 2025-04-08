@@ -48,16 +48,16 @@ func main() {
 		log.Fatalf("Mailstack database initialization failed: %v", err)
 	}
 
-	timescaleDB, err := database.InitMailstackTimescaleDB(&database.DatabaseConfig{
-		DBName:          cfg.TimescaleDBConfig.DBName,
-		Host:            cfg.TimescaleDBConfig.Host,
-		Port:            cfg.TimescaleDBConfig.Port,
-		User:            cfg.TimescaleDBConfig.User,
-		Password:        cfg.TimescaleDBConfig.Password,
-		MaxConn:         cfg.TimescaleDBConfig.MaxConn,
-		MaxIdleConn:     cfg.TimescaleDBConfig.MaxIdleConn,
-		ConnMaxLifetime: cfg.TimescaleDBConfig.ConnMaxLifetime,
-		LogLevel:        cfg.TimescaleDBConfig.LogLevel,
+	warehouseDB, err := database.InitDataWarehouse(&database.DatabaseConfig{
+		DBName:          cfg.DataWarehouseConfig.DBName,
+		Host:            cfg.DataWarehouseConfig.Host,
+		Port:            cfg.DataWarehouseConfig.Port,
+		User:            cfg.DataWarehouseConfig.User,
+		Password:        cfg.DataWarehouseConfig.Password,
+		MaxConn:         cfg.DataWarehouseConfig.MaxConn,
+		MaxIdleConn:     cfg.DataWarehouseConfig.MaxIdleConn,
+		ConnMaxLifetime: cfg.DataWarehouseConfig.ConnMaxLifetime,
+		LogLevel:        cfg.DataWarehouseConfig.LogLevel,
 	})
 	if err != nil {
 		log.Fatalf("Openline database initialization failed: %v", err)
@@ -84,18 +84,18 @@ func main() {
 		}
 		log.Println("Mailstack database migration completed successfully")
 
-		// Run ClickHouse migrations
-		err = repository.MigrateTimescaleDB(cfg.TimescaleDBConfig, timescaleDB)
+		// Run DataWarehouse migrations
+		err = repository.MigrateDataWarehouse(cfg.DataWarehouseConfig, warehouseDB)
 		if err != nil {
-			log.Fatalf("Clickhouse database migration failed: %v", err)
+			log.Fatalf("Warehouse database migration failed: %v", err)
 		}
-		log.Println("Clickhouse database migration completed successfully")
+		log.Println("Warehouse database migration completed successfully")
 
 	case "server":
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 		log.Println("MailStack starting up...")
 
-		srv, err := server.NewServer(cfg, mailstackDB, timescaleDB)
+		srv, err := server.NewServer(cfg, mailstackDB, warehouseDB)
 		if err != nil {
 			log.Fatalf("Server setup failed: %v", err)
 		}

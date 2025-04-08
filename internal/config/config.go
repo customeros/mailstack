@@ -27,16 +27,16 @@ type MailstackDatabaseConfig struct {
 	LogLevel        string `env:"MAILSTACK_POSTGRES_LOG_LEVEL" envDefault:"WARN"`
 }
 
-type TimescaleDBConfig struct {
-	Host            string `env:"TIMESCALE_DB_HOST,required"`
-	Port            string `env:"TIMESCALE_DB_PORT,required"`
-	User            string `env:"TIMESCALE_DB_USER,required"`
-	DBName          string `env:"TIMESCALE_DB_NAME,required"`
-	Password        string `env:"TIMESCALE_DB_PASSWORD,required"`
-	MaxConn         int    `env:"TIMESCALE_DB_MAX_CONN"`
-	MaxIdleConn     int    `env:"TIMESCALE_DB_MAX_IDLE_CONN"`
-	ConnMaxLifetime int    `env:"TIMESCALE_DB_CONN_MAX_LIFETIME"`
-	LogLevel        string `env:"TIMESCALE_DB_LOG_LEVEL" envDefault:"WARN"`
+type DataWarehouseConfig struct {
+	Host            string `env:"WAREHOUSE_DB_HOST,required"`
+	Port            string `env:"WAREHOUSE_DB_PORT,required"`
+	User            string `env:"WAREHOUSE_DB_USER,required"`
+	DBName          string `env:"WAREHOUSE_DB_NAME,required"`
+	Password        string `env:"WAREHOUSE_DB_PASSWORD,required"`
+	MaxConn         int    `env:"WAREHOUSE_DB_MAX_CONN"`
+	MaxIdleConn     int    `env:"WAREHOUSE_DB_MAX_IDLE_CONN"`
+	ConnMaxLifetime int    `env:"WAREHOUSE_DB_CONN_MAX_LIFETIME"`
+	LogLevel        string `env:"WAREHOUSE_DB_LOG_LEVEL" envDefault:"WARN"`
 }
 
 type R2StorageConfig struct {

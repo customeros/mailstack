@@ -24,7 +24,7 @@ func InitOpenlineDatabase(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	return db, nil
 }
 
-func InitMailstackTimescaleDB(dbConfig *DatabaseConfig) (*gorm.DB, error) {
+func InitDataWarehouse(dbConfig *DatabaseConfig) (*gorm.DB, error) {
 	db, err := NewConnection(dbConfig)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
