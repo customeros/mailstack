@@ -38,6 +38,33 @@ func (s *EventLoggerService) processErrorMessage(ctx context.Context, msg *nats.
 	return
 }
 
+func (s *EventLoggerService) processSkipInboundProcessing(ctx context.Context, msg *nats.Msg) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processReceivedIMAPMessage")
+	defer spans.Finish()
+
+	message := &pb.SkipInboundProcessing{}
+	err := proto.Unmarshal(msg.Data, message)
+	if err != nil {
+		spans.TraceError(err)
+		return
+	}
+
+	event := s.NewEmailEventRecord(ctx)
+	event.Event = enum.EventEmailInboundClassifiedSkip
+	event.Publisher = enum.MailstackContentService
+	event.Direction = enum.EmailDirectionInbound
+	event.Payload = msg.Data
+	event.EmailID = message.EmailId
+	event.MailboxID = message.MailboxId
+	event.Classification = pb_mappers.PbToEmailClassification(message.Classification)
+
+	err = s.repositories.EmailEventRepository.Create(ctx, event)
+	if err != nil {
+		spans.TraceError(err)
+	}
+	return
+}
+
 func (s *EventLoggerService) processReceivedIMAPMessage(ctx context.Context, msg *nats.Msg) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processReceivedIMAPMessage")
 	defer spans.Finish()

@@ -134,12 +134,6 @@ func (s *SMTPClient) validateEmail(ctx context.Context, email *models.EmailLog) 
 		return err
 	}
 
-	if email.BodyText == "" && email.BodyHtml == "" {
-		err := fmt.Errorf("email must have either text or HTML content")
-		spans.TraceError(err)
-		return err
-	}
-
 	if email.Subject == "" {
 		err := fmt.Errorf("email must have a subject")
 		spans.TraceError(err)
@@ -226,22 +220,8 @@ func (s *SMTPClient) buildMultipartMessageWithStructure(ctx context.Context, ema
 	writeHeaders(headers, buffer)
 
 	// Add text part if available
-	if email.BodyText != "" {
-		if err := addTextPart(ctx, writer, email.BodyText); err != nil {
-			return err
-		}
-		parts = append(parts, createPartMetadata("text/plain", len(email.BodyText), ""))
-		hasTextPart = true
-	}
 
 	// Add HTML part if available
-	if email.BodyHtml != "" {
-		if err := addHtmlPart(ctx, writer, email.BodyHtml); err != nil {
-			return err
-		}
-		parts = append(parts, createPartMetadata("text/html", len(email.BodyHtml), ""))
-		hasHtmlPart = true
-	}
 
 	// Add attachments if any
 	if attachments != nil && len(attachments) > 0 {
@@ -274,14 +254,12 @@ func (s *SMTPClient) buildPlainTextMessageWithStructure(ctx context.Context, ema
 	bodyStructure["charset"] = "UTF-8"
 	bodyStructure["hasTextPart"] = true
 	bodyStructure["hasHtmlPart"] = false
-	bodyStructure["size"] = len(email.BodyText)
 
 	// Write headers to buffer
 	writeHeaders(headers, buffer)
 
 	// Write body
-	_, err := buffer.WriteString(email.BodyText)
-	return err
+	return nil
 }
 
 // initializeBodyStructure creates the base body structure object

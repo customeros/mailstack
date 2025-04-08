@@ -31,6 +31,7 @@ func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 		return err
 	}
 	if emailExists {
+		// TODO either publish a skip notification or FIX import so no dups
 		return nil
 	}
 

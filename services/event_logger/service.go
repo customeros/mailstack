@@ -139,6 +139,9 @@ func (s *EventLoggerService) processMessage(ctx context.Context, msg *nats.Msg) 
 	case strings.HasPrefix(subject, enum.EventEmailInboundCompleted.String()):
 		s.processInboundCompletedMessage(ctx, msg)
 
+	case strings.HasPrefix(subject, enum.EventEmailInboundClassifiedSkip.String()):
+		s.processSkipInboundProcessing(ctx, msg)
+
 	default:
 		err := errors.New("Unidentified message")
 		spans.TraceError(err)

@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package mailstack;
+
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+import "schema/email_classification_enum.proto";
+
+message SkipInboundProcessing {
+  string email_id = 1;
+  string mailbox_id = 2;
+  EmailClassification classification = 3;
+  string details = 4;
+}
