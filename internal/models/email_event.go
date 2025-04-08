@@ -10,20 +10,20 @@ import (
 
 // EmailEvent represents the main email events table
 type EmailEvent struct {
-	ID           string                `gorm:"column:id;type:varchar(50);primaryKey;not null" json:"id"`
-	Event        enum.EmailEvent       `gorm:"column:event;type:varchar(50);index;not null" json:"event"`
-	Publisher    enum.MailstackService `gorm:"column:publisher;type:varchar(50);index;not null" json:"publisher"`
-	Timestamp    time.Time             `gorm:"not null;index"`
-	Tenant       string                `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
-	User         string                `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
-	EmailID      string                `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
-	MailboxID    string                `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
-	MessageID    string                `gorm:"column:message_id;type:text;not null;index"` // Changed from uniqueIndex to index
-	ThreadID     string                `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
-	Direction    enum.EmailDirection   `gorm:"column:direction;type:text;not null" json:"direction"`
-	Payload      []byte                `gorm:"column:payload;type:bytea" json:"-"`
-	HasError     bool                  `gorm:"column:has_error;type:boolean" json:"hasError"`
-	ErrorMessage string                `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
+	ID             string                   `gorm:"column:id;type:varchar(50);primaryKey;not null" json:"id"`
+	Event          enum.EmailEvent          `gorm:"column:event;type:varchar(50);index;not null" json:"event"`
+	Publisher      enum.MailstackService    `gorm:"column:publisher;type:varchar(50);index;not null" json:"publisher"`
+	Timestamp      time.Time                `gorm:"not null;index"`
+	Tenant         string                   `gorm:"column:tenant;type:varchar(50);index;not null" json:"tenant"`
+	User           string                   `gorm:"column:user;type:varchar(50);index;not null" json:"user"`
+	EmailID        string                   `gorm:"column:email_id;type:varchar(50);index;not null" json:"emailId"`
+	MailboxID      string                   `gorm:"column:mailbox_id;type:varchar(50);index;not null" json:"mailboxId"`
+	ThreadID       string                   `gorm:"column:thread_id;type:varchar(255);index" json:"threadId"`
+	Direction      enum.EmailDirection      `gorm:"column:direction;type:text;not null" json:"direction"`
+	Classification enum.EmailClassification `gorm:"column:classification;type:text"`
+	Payload        []byte                   `gorm:"column:payload;type:bytea" json:"-"`
+	HasError       bool                     `gorm:"column:has_error;type:boolean" json:"hasError"`
+	ErrorMessage   string                   `gorm:"column:error_message;type:varchar(255)" json:"errorMessage"`
 }
 
 // TableName overrides the table name

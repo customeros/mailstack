@@ -12,10 +12,10 @@ import (
 
 	"github.com/customeros/mailsherpa/mailvalidate"
 	"github.com/jhillyerd/enmime"
+	"github.com/lib/pq"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/telemetry"
@@ -24,6 +24,8 @@ import (
 	pb_mappers "github.com/customeros/mailstack/proto/mappers"
 	"github.com/customeros/mailstack/proto/pb"
 )
+
+const REQUEST_TIMEOUT = 60 * time.Second
 
 func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailStored) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmail")
@@ -44,7 +46,7 @@ func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailS
 		return err
 	}
 
-	classificationReq, classificationResp, err := s.getEmailClassification(ctx, event.EmailId, envelope)
+	classificationReq, classificationResp, err := s.getEmailClassification(ctx, event.EmailId, event.MailboxId, envelope)
 	if err != nil {
 		spans.TraceError(err)
 		return err
@@ -101,7 +103,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	var attachmentErr error
 	go func() {
 		defer wg.Done()
-		attachmentResult, attachmentErr = s.processAttachments(ctx, headers.EmailId, envelope)
+		attachmentResult, attachmentErr = s.processAttachments(ctx, headers.EmailId, headers.MailboxId, envelope)
 		if attachmentErr != nil {
 			spans.TraceError(attachmentErr)
 			errs = multierr.Append(errs, attachmentErr)
@@ -130,20 +132,32 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 		errs = multierr.Append(errs, err)
 	}
 
+	replyToEmail := ""
+	if headers.ReplyTo != nil {
+		replyToEmail = headers.ReplyTo.Email
+	}
+	var fromAddress, fromName, fromUser, fromDomain string
+	if headers.From != nil {
+		fromAddress = headers.From.Email
+		fromName = headers.From.Name
+		fromUser = headers.From.User
+		fromDomain = headers.From.Domain
+	}
+
 	// get current email record and append results
 	updates := map[string]interface{}{
 		"message_id":     threadResult.MessageId,
 		"thread_id":      threadResult.ThreadId,
 		"subject":        headers.Subject,
 		"clean_subject":  utils.NormalizeSubject(headers.Subject),
-		"from_address":   headers.From.Email,
-		"from_name":      headers.From.Name,
-		"from_user":      headers.From.User,
-		"from_domain":    headers.From.Domain,
-		"reply_to":       headers.ReplyTo.Email,
-		"to_addresses":   getEmailsAsSlice(headers.To),
-		"cc_addresses":   getEmailsAsSlice(headers.Cc),
-		"bcc_addresses":  getEmailsAsSlice(headers.Bcc),
+		"from_address":   fromAddress,
+		"from_name":      fromName,
+		"from_user":      fromUser,
+		"from_domain":    fromDomain,
+		"reply_to":       replyToEmail,
+		"to_addresses":   pq.StringArray(getEmailsAsSlice(headers.To)),
+		"cc_addresses":   pq.StringArray(getEmailsAsSlice(headers.Cc)),
+		"bcc_addresses":  pq.StringArray(getEmailsAsSlice(headers.Bcc)),
 		"attachment_ids": attachmentResult.AttachmentIds,
 		"body_text":      envelope.Text,
 		"body_markdown":  bodyResult.MessageBodyMarkdown,
@@ -161,7 +175,10 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 
 	// publish completed message
 	err = s.publishCompleted(ctx, &pb.InboundEmailProcessingCompleted{
-		EmailId: headers.EmailId,
+		EmailId:        headers.EmailId,
+		MailboxId:      headers.MailboxId,
+		Classification: pb_mappers.EmailClassificationToPb(enum.EmailOK),
+		ThreadId:       threadResult.ThreadId,
 	})
 	if err != nil {
 		spans.TraceError(err)
@@ -171,7 +188,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	return errs
 }
 
-func (s *EmailContentService) getEmailClassification(ctx context.Context, emailID string, envelope *enmime.Envelope) (*pb.EmailClassificationRequest, *pb.EmailClassificationResponse, error) {
+func (s *EmailContentService) getEmailClassification(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.EmailClassificationRequest, *pb.EmailClassificationResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_headers")
 	defer spans.Finish()
 
@@ -199,6 +216,7 @@ func (s *EmailContentService) getEmailClassification(ctx context.Context, emailI
 	// Create request payload with email headers
 	request := &pb.EmailClassificationRequest{
 		EmailId:            emailID,
+		MailboxId:          mailboxID,
 		Subject:            envelope.GetHeader("Subject"),
 		From:               getFirstOrEmpty(from),
 		To:                 to,
@@ -265,17 +283,19 @@ func (s *EmailContentService) processBody(ctx context.Context, headers *pb.Email
 
 	// Create request payload with email body content
 	bodyRequest := &pb.AnalyzeEmailRequest{
-		EmailId:       headers.EmailId,
-		From:          headers.From,
-		To:            headers.To,
-		EmailBodyText: envelope.Text,
-		EmailBodyHtml: envelope.HTML,
+		EmailId:        headers.EmailId,
+		MailboxId:      headers.MailboxId,
+		From:           headers.From,
+		To:             headers.To,
+		EmailBodyText:  envelope.Text,
+		EmailBodyHtml:  envelope.HTML,
+		Classification: pb_mappers.EmailClassificationToPb(enum.EmailOK),
 	}
 
 	return s.sendEmailAnalysisRequest(ctx, bodyRequest)
 }
 
-func (s *EmailContentService) processAttachments(ctx context.Context, emailID string, envelope *enmime.Envelope) (*pb.ProcessAttachmentResponse, error) {
+func (s *EmailContentService) processAttachments(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
@@ -296,8 +316,10 @@ func (s *EmailContentService) processAttachments(ctx context.Context, emailID st
 
 	// Create request payload
 	attachmentRequest := &pb.ProcessAttachmentRequest{
-		EmailId:     emailID,
-		Attachments: attachments,
+		EmailId:        emailID,
+		MailboxId:      mailboxID,
+		Classification: pb_mappers.EmailClassificationToPb(enum.EmailOK),
+		Attachments:    attachments,
 	}
 
 	return s.sendEmailAttchmentRequest(ctx, attachmentRequest)
@@ -321,16 +343,22 @@ func (s *EmailContentService) attachToThread(ctx context.Context, headers *pb.Em
 		spans.TraceError(err)
 	}
 
+	replyToEmail := ""
+	if headers.ReplyTo != nil {
+		replyToEmail = headers.ReplyTo.Email
+	}
+
 	req := &pb.AttachToThreadRequest{
 		EmailId:         headers.EmailId,
 		MailboxId:       mailboxID,
 		MessageId:       utils.NormalizeMessageID(envelope.GetHeader("Message-ID")),
-		ReplyTo:         headers.ReplyTo.Email,
+		Classification:  pb_mappers.EmailClassificationToPb(enum.EmailOK),
+		ReplyTo:         replyToEmail,
 		References:      references,
 		Subject:         headers.Subject,
 		AllParticipants: getAllParticipants(headers),
-		EmailSentAt:     sentAt,
-		EmailReceivedAt: receivedAt,
+		EmailSentAt:     utils.TimePointerToProto(sentAt),
+		EmailReceivedAt: utils.TimePointerToProto(receivedAt),
 	}
 
 	return s.sendAttachToThreadRequest(ctx, req)
@@ -363,7 +391,7 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendClassificationRequest")
 	defer spans.Finish()
 
-	// Marshal request to JSON
+	// Marshal request to protobuf
 	reqData, err := proto.Marshal(request)
 	if err != nil {
 		spans.TraceError(err)
@@ -371,7 +399,14 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 	}
 
 	// Send request to service
-	msg, err := s.natsConn.Conn.Request(enum.EventEmailInboundClassify.String(), reqData, 10*time.Second)
+	msg := nats.NewMsg(enum.EventEmailInboundClassify.String())
+	msg.Header = nats.Header{
+		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
+		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+	}
+	msg.Data = reqData
+
+	resp, err := s.natsConn.Conn.RequestMsg(msg, REQUEST_TIMEOUT/3)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -379,7 +414,7 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 
 	// Unmarshal response
 	response := &pb.EmailClassificationResponse{}
-	if err := proto.Unmarshal(msg.Data, response); err != nil {
+	if err := proto.Unmarshal(resp.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
@@ -399,7 +434,14 @@ func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 	}
 
 	// Send request to service
-	msg, err := s.natsConn.Conn.Request(enum.EventEmailInboundAnalysis.String(), reqData, 60*time.Second)
+	msg := nats.NewMsg(enum.EventEmailInboundAnalysis.String())
+	msg.Header = nats.Header{
+		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
+		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+	}
+	msg.Data = reqData
+
+	resp, err := s.natsConn.Conn.RequestMsg(msg, REQUEST_TIMEOUT)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -407,7 +449,7 @@ func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 
 	// Unmarshal response
 	response := &pb.AnalyzeEmailResponse{}
-	if err := proto.Unmarshal(msg.Data, response); err != nil {
+	if err := proto.Unmarshal(resp.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
@@ -427,7 +469,14 @@ func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, req
 	}
 
 	// Send request to service
-	msg, err := s.natsConn.Conn.Request(enum.EventEmailInboundAttachments.String(), reqData, 60*time.Second)
+	msg := nats.NewMsg(enum.EventEmailInboundAttachments.String())
+	msg.Header = nats.Header{
+		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
+		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+	}
+	msg.Data = reqData
+
+	resp, err := s.natsConn.Conn.RequestMsg(msg, REQUEST_TIMEOUT)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -435,7 +484,7 @@ func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, req
 
 	// Unmarshal response
 	response := &pb.ProcessAttachmentResponse{}
-	if err := proto.Unmarshal(msg.Data, response); err != nil {
+	if err := proto.Unmarshal(resp.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
@@ -455,7 +504,14 @@ func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, req
 	}
 
 	// Send request to service
-	msg, err := s.natsConn.Conn.Request(enum.EventEmailInboundThread.String(), reqData, 60*time.Second)
+	msg := nats.NewMsg(enum.EventEmailInboundThread.String())
+	msg.Header = nats.Header{
+		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
+		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+	}
+	msg.Data = reqData
+
+	resp, err := s.natsConn.Conn.RequestMsg(msg, REQUEST_TIMEOUT/2)
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err
@@ -463,7 +519,7 @@ func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, req
 
 	// Unmarshal response
 	response := &pb.AttachToThreadResponse{}
-	if err := proto.Unmarshal(msg.Data, response); err != nil {
+	if err := proto.Unmarshal(resp.Data, response); err != nil {
 		spans.TraceError(err)
 		return nil, err
 	}
@@ -504,22 +560,25 @@ func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope 
 }
 
 func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*pb.AttachmentMetadata, error) {
-	// Get or create object store (bucket)
-	objStore, err := s.natsConn.JS.ObjectStore(enum.NATSBucketEmailAttachment.String())
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.cacheAttachment")
+	defer spans.Finish()
+
+	bucketName := enum.NATSBucketEmailAttachment.String()
+
+	// Try to get the object store first
+	objStore, err := s.natsConn.JS.ObjectStore(bucketName)
 	if err != nil {
-		// If bucket doesn't exist, create it
-		if err == nats.ErrBucketNotFound {
-			objStore, err = s.natsConn.JS.CreateObjectStore(&nats.ObjectStoreConfig{
-				Bucket:      enum.NATSBucketEmailAttachment.String(),
-				Description: "Email attachments storage",
-				TTL:         24 * time.Hour,
-				Replicas:    1,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create object store: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("failed to access object store: %w", err)
+		spans.TraceError(fmt.Errorf("Error accessing object store %s: %v", bucketName, err))
+
+		// Try to create the object store explicitly
+		objStore, err = s.natsConn.JS.CreateObjectStore(&nats.ObjectStoreConfig{
+			Bucket:      bucketName,
+			Description: "Email attachments storage",
+			TTL:         24 * time.Hour,
+			Replicas:    1,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create object store: %w", err)
 		}
 	}
 
@@ -556,14 +615,14 @@ func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID strin
 }
 
 // parseEmailTimestamps extracts and parses the sent and received timestamps from an email
-func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *timestamppb.Timestamp, err error) {
+func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *time.Time, err error) {
 	// Parse the Date header for sentAt
 	dateHeader := envelope.GetHeader("Date")
 	if dateHeader != "" {
 		// The mail.ParseDate function handles the RFC822/RFC1123 format used in emails
 		parsedSentAt, err := mail.ParseDate(dateHeader)
 		if err == nil {
-			sentAt = timestamppb.New(parsedSentAt)
+			sentAt = &parsedSentAt
 		}
 	}
 
@@ -579,7 +638,7 @@ func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *timest
 			dateStr := strings.TrimSpace(dateParts[len(dateParts)-1])
 			parsedReceivedAt, err := mail.ParseDate(dateStr)
 			if err == nil {
-				receivedAt = timestamppb.New(parsedReceivedAt)
+				receivedAt = &parsedReceivedAt
 			}
 		}
 	}
@@ -588,9 +647,12 @@ func parseEmailTimestamps(envelope *enmime.Envelope) (sentAt, receivedAt *timest
 }
 
 func getEmailsAsSlice(emailAddress []*pb.EmailAddress) []string {
+	if emailAddress == nil {
+		return []string{}
+	}
 	results := make([]string, 0, len(emailAddress))
 	for _, emailAddr := range emailAddress {
-		if emailAddr.Email != "" {
+		if emailAddr.Email != "" && !utils.IsStringInSlice(emailAddr.Email, results) {
 			results = append(results, emailAddr.Email)
 		}
 	}

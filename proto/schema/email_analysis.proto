@@ -5,6 +5,7 @@ package mailstack;
 option go_package = "github.com/customeros/mailstack/proto/pb";
 
 import "schema/email_address.proto";
+import "schema/email_classification_enum.proto";
 
 // Request message for email analysis
 message AnalyzeEmailRequest {
@@ -13,6 +14,8 @@ message AnalyzeEmailRequest {
   repeated EmailAddress to = 3;
   string email_body_text = 4;
   string email_body_html = 5;
+  string mailbox_id = 6;
+  EmailClassification classification = 7;
 }
 
 // Response message for email analysis

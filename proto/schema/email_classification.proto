@@ -5,19 +5,7 @@ package mailstack;
 option go_package = "github.com/customeros/mailstack/proto/pb";
 
 import "schema/email_address.proto";
-
-// Enum for email classification types
-enum EmailClassification {
-  EMAIL_CLASSIFICATION_UNKNOWN = 0;
-  EMAIL_AUTORESPONDER = 1;
-  EMAIL_BULK = 2;
-  EMAIL_INTERNAL = 3;
-  EMAIL_OK = 4;
-  EMAIL_SENSITIVE = 5;
-  EMAIL_SPAM = 6;
-  EMAIL_WARMER = 7;
-  EMAIL_BOUNCE = 8;
-}
+import "schema/email_classification_enum.proto";
 
 // Request message for email classification
 message EmailClassificationRequest {
@@ -44,6 +32,7 @@ message EmailClassificationRequest {
   string dmarc = 21;
   string list_unsubscribe = 22;
   string auto_submitted = 23;
+  string mailbox_id = 24;
 }
 
 // Response message for email classification

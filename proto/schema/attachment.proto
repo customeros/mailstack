@@ -4,10 +4,14 @@ package mailstack;
 
 option go_package = "github.com/customeros/mailstack/proto/pb";
 
+import "schema/email_classification_enum.proto";
+
 // Request message for attachment processing
 message ProcessAttachmentRequest {
   string email_id = 1;
-  repeated AttachmentMetadata attachments = 2;
+  string mailbox_id = 2;
+  EmailClassification classification = 3;
+  repeated AttachmentMetadata attachments = 4;
 }
 
 // Response message for attachment processing

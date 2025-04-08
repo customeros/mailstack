@@ -670,9 +670,8 @@ func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailb
 				if err.Error() == "imap: connection closed" ||
 					strings.Contains(err.Error(), "i/o timeout") ||
 					strings.Contains(err.Error(), "connection reset") {
-					err = fmt.Errorf("connection lost: %w", err)
-					spans.TraceError(err)
-					return err
+					spans.LogKV("connectionStatus", "lost")
+					return nil
 				}
 
 				continue

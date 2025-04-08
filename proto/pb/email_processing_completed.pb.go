@@ -23,10 +23,13 @@ const (
 
 // Message to indicate that inbound email processing has been completed
 type InboundEmailProcessingCompleted struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EmailId       string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EmailId        string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
+	MailboxId      string                 `protobuf:"bytes,2,opt,name=mailbox_id,json=mailboxId,proto3" json:"mailbox_id,omitempty"`
+	Classification EmailClassification    `protobuf:"varint,3,opt,name=classification,proto3,enum=mailstack.EmailClassification" json:"classification,omitempty"`
+	ThreadId       string                 `protobuf:"bytes,4,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *InboundEmailProcessingCompleted) Reset() {
@@ -66,13 +69,38 @@ func (x *InboundEmailProcessingCompleted) GetEmailId() string {
 	return ""
 }
 
+func (x *InboundEmailProcessingCompleted) GetMailboxId() string {
+	if x != nil {
+		return x.MailboxId
+	}
+	return ""
+}
+
+func (x *InboundEmailProcessingCompleted) GetClassification() EmailClassification {
+	if x != nil {
+		return x.Classification
+	}
+	return EmailClassification_EMAIL_CLASSIFICATION_UNKNOWN
+}
+
+func (x *InboundEmailProcessingCompleted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
 var File_schema_email_processing_completed_proto protoreflect.FileDescriptor
 
 const file_schema_email_processing_completed_proto_rawDesc = "" +
 	"\n" +
-	"'schema/email_processing_completed.proto\x12\tmailstack\"<\n" +
+	"'schema/email_processing_completed.proto\x12\tmailstack\x1a&schema/email_classification_enum.proto\"\xc0\x01\n" +
 	"\x1fInboundEmailProcessingCompleted\x12\x19\n" +
-	"\bemail_id\x18\x01 \x01(\tR\aemailIdB*Z(github.com/customeros/mailstack/proto/pbb\x06proto3"
+	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12\x1d\n" +
+	"\n" +
+	"mailbox_id\x18\x02 \x01(\tR\tmailboxId\x12F\n" +
+	"\x0eclassification\x18\x03 \x01(\x0e2\x1e.mailstack.EmailClassificationR\x0eclassification\x12\x1b\n" +
+	"\tthread_id\x18\x04 \x01(\tR\bthreadIdB*Z(github.com/customeros/mailstack/proto/pbb\x06proto3"
 
 var (
 	file_schema_email_processing_completed_proto_rawDescOnce sync.Once
@@ -89,13 +117,15 @@ func file_schema_email_processing_completed_proto_rawDescGZIP() []byte {
 var file_schema_email_processing_completed_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_schema_email_processing_completed_proto_goTypes = []any{
 	(*InboundEmailProcessingCompleted)(nil), // 0: mailstack.InboundEmailProcessingCompleted
+	(EmailClassification)(0),                // 1: mailstack.EmailClassification
 }
 var file_schema_email_processing_completed_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: mailstack.InboundEmailProcessingCompleted.classification:type_name -> mailstack.EmailClassification
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_schema_email_processing_completed_proto_init() }
@@ -103,6 +133,7 @@ func file_schema_email_processing_completed_proto_init() {
 	if File_schema_email_processing_completed_proto != nil {
 		return
 	}
+	file_schema_email_classification_enum_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
