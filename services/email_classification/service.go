@@ -100,6 +100,11 @@ func (s *EmailClassificationService) sendResponse(ctx context.Context, req *nats
 		spans.TraceError(err)
 		return
 	}
-	req.Respond(respMessage)
+	err = req.Respond(respMessage)
+	if err != nil {
+		spans.TraceError(err)
+		return
+
+	}
 	return
 }

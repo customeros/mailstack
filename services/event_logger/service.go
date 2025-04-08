@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/proto"
@@ -44,20 +43,6 @@ func NewEventLoggerService(
 
 var SUBSCRIBED_SUBJECT = "emails.>"
 
-const (
-	// queue group
-	QUEUE_GROUP = "email-logger-service"
-
-	// consumer config
-	CONSUMER_NAME         = "email-logger-consumer"
-	ACK_WAIT              = 30 * time.Second
-	MAX_DELIVERY_ATTEMPTS = 5
-	MAX_ACK_PENDING       = 100
-	FETCH_BATCH_SIZE      = 50
-	MAX_FETCH_WAIT        = 500 * time.Millisecond
-	ERR_BACKOFF           = 100 * time.Millisecond
-)
-
 func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.EmailEvent {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "eventLoggerService.NewEmailEventRecord")
 	defer spans.Finish()
@@ -92,74 +77,19 @@ func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 
 // Start begins listening for raw email events and processing them
 func (s *EventLoggerService) Start(ctx context.Context) error {
-	// Create durable consumer for processing emails
-	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
-		Durable:       CONSUMER_NAME,
-		DeliverGroup:  QUEUE_GROUP,
-		AckPolicy:     nats.AckExplicitPolicy,
-		AckWait:       ACK_WAIT,
-		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
-		FilterSubject: SUBSCRIBED_SUBJECT,
-		MaxAckPending: MAX_ACK_PENDING,
+	// Subscribe to all standard request/reply messages
+	_, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
+		spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.setupNonPersistedSubscriptions")
+		defer spans.Finish()
+
+		s.processMessage(ctx, msg)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create consumer: %w", err)
+		return fmt.Errorf("failed to create standard subscription: %w", err)
 	}
 
-	// Create pull subscription
-	sub, err := s.natsConn.JS.PullSubscribe(
-		SUBSCRIBED_SUBJECT,
-		CONSUMER_NAME,
-		nats.Bind(nats_internal.EMAIL_STREAM, CONSUMER_NAME),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create subscription: %w", err)
-	}
-
-	// Start processing
-	go s.processEvent(ctx, sub)
-
+	log.Println("Email Logger Service started standard NATS subscriptions")
 	return nil
-}
-
-// processRawEmailEvents continuously processes raw email events
-func (s *EventLoggerService) processEvent(ctx context.Context, sub *nats.Subscription) {
-	log.Println("Email Logger Service started")
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Email Logger Service shutting down")
-			return
-		default:
-			s.processBatch(ctx, sub)
-		}
-	}
-}
-
-// processBatch fetches and processes a batch of messages
-func (s *EventLoggerService) processBatch(ctx context.Context, sub *nats.Subscription) {
-	// Fetch messages batch
-	msgs, err := sub.Fetch(FETCH_BATCH_SIZE, nats.MaxWait(MAX_FETCH_WAIT))
-	if err != nil {
-		s.handleFetchError(err)
-		return
-	}
-
-	for _, msg := range msgs {
-		msgCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		s.processMessage(msgCtx, msg)
-		cancel()
-	}
-}
-
-// handleFetchError handles errors that occur during message fetching
-func (s *EventLoggerService) handleFetchError(err error) {
-	if err == nats.ErrTimeout {
-		// No messages available, this is normal
-		return
-	}
-	log.Printf("Fetch error: %v", err)
-	time.Sleep(ERR_BACKOFF) // Small backoff on error
 }
 
 // processMessage processes a single email message
@@ -174,7 +104,6 @@ func (s *EventLoggerService) processMessage(ctx context.Context, msg *nats.Msg) 
 	// Check if it's an error message
 	if strings.HasPrefix(subject, "emails.errors.") {
 		s.processErrorMessage(ctx, msg)
-		msg.Ack()
 		return
 	}
 
@@ -215,23 +144,7 @@ func (s *EventLoggerService) processMessage(ctx context.Context, msg *nats.Msg) 
 		spans.TraceError(err)
 	}
 
-	msg.Ack()
 	return
-}
-
-// handleProcessingError deals with errors during email processing
-func (s *EventLoggerService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
-	metadata, _ := msg.Metadata()
-
-	// Check if we should retry
-	if metadata.NumDelivered <= uint64(MAX_DELIVERY_ATTEMPTS) {
-		// Negative acknowledgment triggers redelivery
-		msg.Nak()
-	} else {
-		// Max retries reached, acknowledge but publish to dead letter
-		msg.Ack()
-		s.publishError(ctx, msg, err)
-	}
 }
 
 // Close gracefully shuts down the service

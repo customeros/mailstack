@@ -9,6 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/enum"
 )
 
 type NATSConnections struct {
@@ -84,17 +85,23 @@ func InitNats(config *config.NATSConfig, environment string) (*NATSConnections, 
 }
 
 func setupNATSStreams(js nats.JetStreamContext, replicas int) error {
-	return setupInterstPolicyStream(js, EMAIL_STREAM, []string{"emails.>"}, replicas)
+	persistedSubjects := []string{
+		enum.EventEmailInboundReceivedIMAP.String(),
+		enum.EventEmailInboundStored.String(),
+		enum.EventEmailInboundCompleted.String(),
+		"emails.errors.>",
+	}
+	return setupWorkQueueStream(js, EMAIL_STREAM, persistedSubjects, replicas)
 }
 
-func setupInterstPolicyStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {
+func setupWorkQueueStream(js nats.JetStreamContext, streamName string, subjects []string, replicas int) error {
 	streamInfo, err := js.StreamInfo(streamName)
 	if err != nil {
 		// Stream doesn't exist, create it
 		_, err = js.AddStream(&nats.StreamConfig{
 			Name:      streamName,
 			Subjects:  subjects,
-			Retention: nats.InterestPolicy,
+			Retention: nats.WorkQueuePolicy,
 			Storage:   nats.FileStorage,
 			Replicas:  replicas,
 			MaxAge:    168 * time.Hour,

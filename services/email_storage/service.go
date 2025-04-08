@@ -77,6 +77,7 @@ func (s *EmailStorageService) Start(ctx context.Context) error {
 		MaxDeliver:    MAX_DELIVERY_ATTEMPTS,
 		FilterSubject: SUBSCRIBED_SUBJECT,
 		MaxAckPending: MAX_ACK_PENDING,
+		DeliverPolicy: nats.DeliverAllPolicy,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create consumer: %w", err)
