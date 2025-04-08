@@ -57,14 +57,6 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		false,
 	)
 
-	eventsStorage := storage.NewR2StorageService(
-		cfg.R2StorageConfig.AccountID,
-		cfg.R2StorageConfig.AccessKeyID,
-		cfg.R2StorageConfig.AccessKeySecret,
-		cfg.AppConfig.EventsStorageBucket,
-		false,
-	)
-
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
@@ -84,7 +76,7 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		EmailContentService:        email_content.NewEmailContentService(natsConn, repos, emlStorage),
 		EmailStorageService:        email_storage.NewEmailStorageService(natsConn, repos, imapImpl, emlStorage),
 		EmailThreadingService:      email_thread.NewEmailThreadingService(natsConn, repos),
-		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos, eventsStorage),
+		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos),
 		IMAPService:                imapImpl,
 		MailboxService:             mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
 		NamecheapService:           namecheapImpl,

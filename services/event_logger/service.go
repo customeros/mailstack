@@ -24,20 +24,17 @@ import (
 )
 
 type EventLoggerService struct {
-	natsConn      *nats_internal.NATSConnections
-	repositories  *repository.Repositories
-	eventsStorage interfaces.StorageService
+	natsConn     *nats_internal.NATSConnections
+	repositories *repository.Repositories
 }
 
 func NewEventLoggerService(
 	natsConn *nats_internal.NATSConnections,
 	repos *repository.Repositories,
-	eventsStorage interfaces.StorageService,
 ) interfaces.EmailProcessor {
 	return &EventLoggerService{
-		natsConn:      natsConn,
-		repositories:  repos,
-		eventsStorage: eventsStorage,
+		natsConn:     natsConn,
+		repositories: repos,
 	}
 }
 

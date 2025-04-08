@@ -1,12 +1,11 @@
 package config
 
 type AppConfig struct {
-	Environment         string `env:"ENVIRONMENT,required" envDefault:"dev"`
-	APIPort             string `env:"PORT,required" envDefault:"12222"`
-	APIKey              string `env:"API_KEY,required"`
-	TrackingPublicUrl   string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`
-	EMLStorageBucket    string `env:"EML_STORAGE_BUCKET" envDefault:"emails-test"`
-	EventsStorageBucket string `env:"EVENTS_STORAGE_BUCKET" envDefailt:"events-test"`
+	Environment       string `env:"ENVIRONMENT,required" envDefault:"dev"`
+	APIPort           string `env:"PORT,required" envDefault:"12222"`
+	APIKey            string `env:"API_KEY,required"`
+	TrackingPublicUrl string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`
+	EMLStorageBucket  string `env:"EML_STORAGE_BUCKET" envDefault:"emails-test"`
 }
 
 type NATSConfig struct {

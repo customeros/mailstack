@@ -31,6 +31,3 @@ run:
 tidy:
     go mod tidy
 
-trace:
-    open "http://localhost:16686"
-
