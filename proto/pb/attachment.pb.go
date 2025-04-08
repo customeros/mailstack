@@ -23,11 +23,13 @@ const (
 
 // Request message for attachment processing
 type ProcessAttachmentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EmailId       string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
-	Attachments   []*AttachmentMetadata  `protobuf:"bytes,2,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EmailId        string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
+	MailboxId      string                 `protobuf:"bytes,2,opt,name=mailbox_id,json=mailboxId,proto3" json:"mailbox_id,omitempty"`
+	Classification EmailClassification    `protobuf:"varint,3,opt,name=classification,proto3,enum=mailstack.EmailClassification" json:"classification,omitempty"`
+	Attachments    []*AttachmentMetadata  `protobuf:"bytes,4,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProcessAttachmentRequest) Reset() {
@@ -65,6 +67,20 @@ func (x *ProcessAttachmentRequest) GetEmailId() string {
 		return x.EmailId
 	}
 	return ""
+}
+
+func (x *ProcessAttachmentRequest) GetMailboxId() string {
+	if x != nil {
+		return x.MailboxId
+	}
+	return ""
+}
+
+func (x *ProcessAttachmentRequest) GetClassification() EmailClassification {
+	if x != nil {
+		return x.Classification
+	}
+	return EmailClassification_EMAIL_CLASSIFICATION_UNKNOWN
 }
 
 func (x *ProcessAttachmentRequest) GetAttachments() []*AttachmentMetadata {
@@ -240,10 +256,13 @@ var File_schema_attachment_proto protoreflect.FileDescriptor
 
 const file_schema_attachment_proto_rawDesc = "" +
 	"\n" +
-	"\x17schema/attachment.proto\x12\tmailstack\"v\n" +
+	"\x17schema/attachment.proto\x12\tmailstack\x1a&schema/email_classification_enum.proto\"\xdd\x01\n" +
 	"\x18ProcessAttachmentRequest\x12\x19\n" +
-	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12?\n" +
-	"\vattachments\x18\x02 \x03(\v2\x1d.mailstack.AttachmentMetadataR\vattachments\"\xa9\x01\n" +
+	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12\x1d\n" +
+	"\n" +
+	"mailbox_id\x18\x02 \x01(\tR\tmailboxId\x12F\n" +
+	"\x0eclassification\x18\x03 \x01(\x0e2\x1e.mailstack.EmailClassificationR\x0eclassification\x12?\n" +
+	"\vattachments\x18\x04 \x03(\v2\x1d.mailstack.AttachmentMetadataR\vattachments\"\xa9\x01\n" +
 	"\x19ProcessAttachmentResponse\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12%\n" +
 	"\x0ehas_attachment\x18\x02 \x01(\bR\rhasAttachment\x12%\n" +
@@ -278,14 +297,16 @@ var file_schema_attachment_proto_goTypes = []any{
 	(*ProcessAttachmentRequest)(nil),  // 0: mailstack.ProcessAttachmentRequest
 	(*ProcessAttachmentResponse)(nil), // 1: mailstack.ProcessAttachmentResponse
 	(*AttachmentMetadata)(nil),        // 2: mailstack.AttachmentMetadata
+	(EmailClassification)(0),          // 3: mailstack.EmailClassification
 }
 var file_schema_attachment_proto_depIdxs = []int32{
-	2, // 0: mailstack.ProcessAttachmentRequest.attachments:type_name -> mailstack.AttachmentMetadata
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: mailstack.ProcessAttachmentRequest.classification:type_name -> mailstack.EmailClassification
+	2, // 1: mailstack.ProcessAttachmentRequest.attachments:type_name -> mailstack.AttachmentMetadata
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_schema_attachment_proto_init() }
@@ -293,6 +314,7 @@ func file_schema_attachment_proto_init() {
 	if File_schema_attachment_proto != nil {
 		return
 	}
+	file_schema_email_classification_enum_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

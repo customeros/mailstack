@@ -21,74 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Enum for email classification types
-type EmailClassification int32
-
-const (
-	EmailClassification_EMAIL_CLASSIFICATION_UNKNOWN EmailClassification = 0
-	EmailClassification_EMAIL_AUTORESPONDER          EmailClassification = 1
-	EmailClassification_EMAIL_BULK                   EmailClassification = 2
-	EmailClassification_EMAIL_INTERNAL               EmailClassification = 3
-	EmailClassification_EMAIL_OK                     EmailClassification = 4
-	EmailClassification_EMAIL_SENSITIVE              EmailClassification = 5
-	EmailClassification_EMAIL_SPAM                   EmailClassification = 6
-	EmailClassification_EMAIL_WARMER                 EmailClassification = 7
-	EmailClassification_EMAIL_BOUNCE                 EmailClassification = 8
-)
-
-// Enum value maps for EmailClassification.
-var (
-	EmailClassification_name = map[int32]string{
-		0: "EMAIL_CLASSIFICATION_UNKNOWN",
-		1: "EMAIL_AUTORESPONDER",
-		2: "EMAIL_BULK",
-		3: "EMAIL_INTERNAL",
-		4: "EMAIL_OK",
-		5: "EMAIL_SENSITIVE",
-		6: "EMAIL_SPAM",
-		7: "EMAIL_WARMER",
-		8: "EMAIL_BOUNCE",
-	}
-	EmailClassification_value = map[string]int32{
-		"EMAIL_CLASSIFICATION_UNKNOWN": 0,
-		"EMAIL_AUTORESPONDER":          1,
-		"EMAIL_BULK":                   2,
-		"EMAIL_INTERNAL":               3,
-		"EMAIL_OK":                     4,
-		"EMAIL_SENSITIVE":              5,
-		"EMAIL_SPAM":                   6,
-		"EMAIL_WARMER":                 7,
-		"EMAIL_BOUNCE":                 8,
-	}
-)
-
-func (x EmailClassification) Enum() *EmailClassification {
-	p := new(EmailClassification)
-	*p = x
-	return p
-}
-
-func (x EmailClassification) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (EmailClassification) Descriptor() protoreflect.EnumDescriptor {
-	return file_schema_email_classification_proto_enumTypes[0].Descriptor()
-}
-
-func (EmailClassification) Type() protoreflect.EnumType {
-	return &file_schema_email_classification_proto_enumTypes[0]
-}
-
-func (x EmailClassification) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use EmailClassification.Descriptor instead.
-func (EmailClassification) EnumDescriptor() ([]byte, []int) {
-	return file_schema_email_classification_proto_rawDescGZIP(), []int{0}
-}
-
 // Request message for email classification
 type EmailClassificationRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -115,6 +47,7 @@ type EmailClassificationRequest struct {
 	Dmarc              string                 `protobuf:"bytes,21,opt,name=dmarc,proto3" json:"dmarc,omitempty"`
 	ListUnsubscribe    string                 `protobuf:"bytes,22,opt,name=list_unsubscribe,json=listUnsubscribe,proto3" json:"list_unsubscribe,omitempty"`
 	AutoSubmitted      string                 `protobuf:"bytes,23,opt,name=auto_submitted,json=autoSubmitted,proto3" json:"auto_submitted,omitempty"`
+	MailboxId          string                 `protobuf:"bytes,24,opt,name=mailbox_id,json=mailboxId,proto3" json:"mailbox_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -310,6 +243,13 @@ func (x *EmailClassificationRequest) GetAutoSubmitted() string {
 	return ""
 }
 
+func (x *EmailClassificationRequest) GetMailboxId() string {
+	if x != nil {
+		return x.MailboxId
+	}
+	return ""
+}
+
 // Response message for email classification
 type EmailClassificationResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -383,7 +323,7 @@ var File_schema_email_classification_proto protoreflect.FileDescriptor
 
 const file_schema_email_classification_proto_rawDesc = "" +
 	"\n" +
-	"!schema/email_classification.proto\x12\tmailstack\x1a\x1aschema/email_address.proto\"\xc0\x06\n" +
+	"!schema/email_classification.proto\x12\tmailstack\x1a\x1aschema/email_address.proto\x1a&schema/email_classification_enum.proto\"\xdf\x06\n" +
 	"\x1aEmailClassificationRequest\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12\x18\n" +
 	"\asubject\x18\x02 \x01(\tR\asubject\x12+\n" +
@@ -413,24 +353,14 @@ const file_schema_email_classification_proto_rawDesc = "" +
 	"\x03spf\x18\x14 \x01(\tR\x03spf\x12\x14\n" +
 	"\x05dmarc\x18\x15 \x01(\tR\x05dmarc\x12)\n" +
 	"\x10list_unsubscribe\x18\x16 \x01(\tR\x0flistUnsubscribe\x12%\n" +
-	"\x0eauto_submitted\x18\x17 \x01(\tR\rautoSubmitted\"\xbf\x01\n" +
+	"\x0eauto_submitted\x18\x17 \x01(\tR\rautoSubmitted\x12\x1d\n" +
+	"\n" +
+	"mailbox_id\x18\x18 \x01(\tR\tmailboxId\"\xbf\x01\n" +
 	"\x1bEmailClassificationResponse\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12F\n" +
 	"\x0eclassification\x18\x02 \x01(\x0e2\x1e.mailstack.EmailClassificationR\x0eclassification\x12\x18\n" +
 	"\adetails\x18\x03 \x01(\tR\adetails\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage*\xcb\x01\n" +
-	"\x13EmailClassification\x12 \n" +
-	"\x1cEMAIL_CLASSIFICATION_UNKNOWN\x10\x00\x12\x17\n" +
-	"\x13EMAIL_AUTORESPONDER\x10\x01\x12\x0e\n" +
-	"\n" +
-	"EMAIL_BULK\x10\x02\x12\x12\n" +
-	"\x0eEMAIL_INTERNAL\x10\x03\x12\f\n" +
-	"\bEMAIL_OK\x10\x04\x12\x13\n" +
-	"\x0fEMAIL_SENSITIVE\x10\x05\x12\x0e\n" +
-	"\n" +
-	"EMAIL_SPAM\x10\x06\x12\x10\n" +
-	"\fEMAIL_WARMER\x10\a\x12\x10\n" +
-	"\fEMAIL_BOUNCE\x10\bB*Z(github.com/customeros/mailstack/proto/pbb\x06proto3"
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessageB*Z(github.com/customeros/mailstack/proto/pbb\x06proto3"
 
 var (
 	file_schema_email_classification_proto_rawDescOnce sync.Once
@@ -444,21 +374,20 @@ func file_schema_email_classification_proto_rawDescGZIP() []byte {
 	return file_schema_email_classification_proto_rawDescData
 }
 
-var file_schema_email_classification_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_schema_email_classification_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_schema_email_classification_proto_goTypes = []any{
-	(EmailClassification)(0),            // 0: mailstack.EmailClassification
-	(*EmailClassificationRequest)(nil),  // 1: mailstack.EmailClassificationRequest
-	(*EmailClassificationResponse)(nil), // 2: mailstack.EmailClassificationResponse
-	(*EmailAddress)(nil),                // 3: mailstack.EmailAddress
+	(*EmailClassificationRequest)(nil),  // 0: mailstack.EmailClassificationRequest
+	(*EmailClassificationResponse)(nil), // 1: mailstack.EmailClassificationResponse
+	(*EmailAddress)(nil),                // 2: mailstack.EmailAddress
+	(EmailClassification)(0),            // 3: mailstack.EmailClassification
 }
 var file_schema_email_classification_proto_depIdxs = []int32{
-	3, // 0: mailstack.EmailClassificationRequest.from:type_name -> mailstack.EmailAddress
-	3, // 1: mailstack.EmailClassificationRequest.to:type_name -> mailstack.EmailAddress
-	3, // 2: mailstack.EmailClassificationRequest.cc:type_name -> mailstack.EmailAddress
-	3, // 3: mailstack.EmailClassificationRequest.bcc:type_name -> mailstack.EmailAddress
-	3, // 4: mailstack.EmailClassificationRequest.reply_to:type_name -> mailstack.EmailAddress
-	0, // 5: mailstack.EmailClassificationResponse.classification:type_name -> mailstack.EmailClassification
+	2, // 0: mailstack.EmailClassificationRequest.from:type_name -> mailstack.EmailAddress
+	2, // 1: mailstack.EmailClassificationRequest.to:type_name -> mailstack.EmailAddress
+	2, // 2: mailstack.EmailClassificationRequest.cc:type_name -> mailstack.EmailAddress
+	2, // 3: mailstack.EmailClassificationRequest.bcc:type_name -> mailstack.EmailAddress
+	2, // 4: mailstack.EmailClassificationRequest.reply_to:type_name -> mailstack.EmailAddress
+	3, // 5: mailstack.EmailClassificationResponse.classification:type_name -> mailstack.EmailClassification
 	6, // [6:6] is the sub-list for method output_type
 	6, // [6:6] is the sub-list for method input_type
 	6, // [6:6] is the sub-list for extension type_name
@@ -472,19 +401,19 @@ func file_schema_email_classification_proto_init() {
 		return
 	}
 	file_schema_email_address_proto_init()
+	file_schema_email_classification_enum_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_schema_email_classification_proto_rawDesc), len(file_schema_email_classification_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_schema_email_classification_proto_goTypes,
 		DependencyIndexes: file_schema_email_classification_proto_depIdxs,
-		EnumInfos:         file_schema_email_classification_proto_enumTypes,
 		MessageInfos:      file_schema_email_classification_proto_msgTypes,
 	}.Build()
 	File_schema_email_classification_proto = out.File

@@ -30,10 +30,10 @@ type EmailLog struct {
 	FromUser      string         `gorm:"column:from_user" json:"fromUser"`
 	FromDomain    string         `gorm:"column:from_domain" json:"fromDomain"`
 	ReplyTo       string         `gorm:"column:reply_to" json:"replyTo"`
-	ToAddresses   pq.StringArray `gorm:"column:to_addresses;type:json" json:"toAddresses"`
-	CcAddresses   pq.StringArray `gorm:"column:cc_addresses;type:json" json:"ccAddresses"`
-	BccAddresses  pq.StringArray `gorm:"column:bcc_addresses;type:json" json:"bccAddresses"`
-	AttachmentIDs pq.StringArray `gorm:"column:attachment_ids;type:json" json:"attachments"`
+	ToAddresses   pq.StringArray `gorm:"column:to_addresses;type:text[]" json:"toAddresses"`
+	CcAddresses   pq.StringArray `gorm:"column:cc_addresses;type:text[]" json:"ccAddresses"`
+	BccAddresses  pq.StringArray `gorm:"column:bcc_addresses;type:text[]" json:"bccAddresses"`
+	AttachmentIDs pq.StringArray `gorm:"column:attachment_ids;type:text[]" json:"attachments"`
 
 	// Content fields
 	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`

@@ -3,6 +3,7 @@ syntax = "proto3";
 package mailstack;
 
 import "google/protobuf/timestamp.proto";
+import "schema/email_classification_enum.proto";
 
 option go_package = "github.com/customeros/mailstack/proto/pb";
 
@@ -10,13 +11,14 @@ option go_package = "github.com/customeros/mailstack/proto/pb";
 message AttachToThreadRequest {
   string email_id = 1;
   string mailbox_id = 2;
-  string message_id = 3;
+  EmailClassification classification = 3;
   string reply_to = 4;
   repeated string references = 5;
   string subject = 6;
   repeated string all_participants = 7;
   google.protobuf.Timestamp email_sent_at = 8;
   google.protobuf.Timestamp email_received_at = 9;
+  string message_id = 10;
 }
 
 // Response message for thread attachment operation

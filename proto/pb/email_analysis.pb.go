@@ -23,14 +23,16 @@ const (
 
 // Request message for email analysis
 type AnalyzeEmailRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EmailId       string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
-	From          *EmailAddress          `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
-	To            []*EmailAddress        `protobuf:"bytes,3,rep,name=to,proto3" json:"to,omitempty"`
-	EmailBodyText string                 `protobuf:"bytes,4,opt,name=email_body_text,json=emailBodyText,proto3" json:"email_body_text,omitempty"`
-	EmailBodyHtml string                 `protobuf:"bytes,5,opt,name=email_body_html,json=emailBodyHtml,proto3" json:"email_body_html,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EmailId        string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
+	From           *EmailAddress          `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To             []*EmailAddress        `protobuf:"bytes,3,rep,name=to,proto3" json:"to,omitempty"`
+	EmailBodyText  string                 `protobuf:"bytes,4,opt,name=email_body_text,json=emailBodyText,proto3" json:"email_body_text,omitempty"`
+	EmailBodyHtml  string                 `protobuf:"bytes,5,opt,name=email_body_html,json=emailBodyHtml,proto3" json:"email_body_html,omitempty"`
+	MailboxId      string                 `protobuf:"bytes,6,opt,name=mailbox_id,json=mailboxId,proto3" json:"mailbox_id,omitempty"`
+	Classification EmailClassification    `protobuf:"varint,7,opt,name=classification,proto3,enum=mailstack.EmailClassification" json:"classification,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AnalyzeEmailRequest) Reset() {
@@ -96,6 +98,20 @@ func (x *AnalyzeEmailRequest) GetEmailBodyHtml() string {
 		return x.EmailBodyHtml
 	}
 	return ""
+}
+
+func (x *AnalyzeEmailRequest) GetMailboxId() string {
+	if x != nil {
+		return x.MailboxId
+	}
+	return ""
+}
+
+func (x *AnalyzeEmailRequest) GetClassification() EmailClassification {
+	if x != nil {
+		return x.Classification
+	}
+	return EmailClassification_EMAIL_CLASSIFICATION_UNKNOWN
 }
 
 // Response message for email analysis
@@ -519,13 +535,16 @@ var File_schema_email_analysis_proto protoreflect.FileDescriptor
 
 const file_schema_email_analysis_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/email_analysis.proto\x12\tmailstack\x1a\x1aschema/email_address.proto\"\xd6\x01\n" +
+	"\x1bschema/email_analysis.proto\x12\tmailstack\x1a\x1aschema/email_address.proto\x1a&schema/email_classification_enum.proto\"\xbd\x02\n" +
 	"\x13AnalyzeEmailRequest\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12+\n" +
 	"\x04from\x18\x02 \x01(\v2\x17.mailstack.EmailAddressR\x04from\x12'\n" +
 	"\x02to\x18\x03 \x03(\v2\x17.mailstack.EmailAddressR\x02to\x12&\n" +
 	"\x0femail_body_text\x18\x04 \x01(\tR\remailBodyText\x12&\n" +
-	"\x0femail_body_html\x18\x05 \x01(\tR\remailBodyHtml\"\xe8\x01\n" +
+	"\x0femail_body_html\x18\x05 \x01(\tR\remailBodyHtml\x12\x1d\n" +
+	"\n" +
+	"mailbox_id\x18\x06 \x01(\tR\tmailboxId\x12F\n" +
+	"\x0eclassification\x18\a \x01(\x0e2\x1e.mailstack.EmailClassificationR\x0eclassification\"\xe8\x01\n" +
 	"\x14AnalyzeEmailResponse\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12#\n" +
 	"\rhas_signature\x18\x02 \x01(\bR\fhasSignature\x122\n" +
@@ -583,19 +602,21 @@ var file_schema_email_analysis_proto_goTypes = []any{
 	(*EmailSignatureContactInfo)(nil), // 4: mailstack.EmailSignatureContactInfo
 	(*EmailSignatureAddress)(nil),     // 5: mailstack.EmailSignatureAddress
 	(*EmailAddress)(nil),              // 6: mailstack.EmailAddress
+	(EmailClassification)(0),          // 7: mailstack.EmailClassification
 }
 var file_schema_email_analysis_proto_depIdxs = []int32{
 	6, // 0: mailstack.AnalyzeEmailRequest.from:type_name -> mailstack.EmailAddress
 	6, // 1: mailstack.AnalyzeEmailRequest.to:type_name -> mailstack.EmailAddress
-	2, // 2: mailstack.AnalyzeEmailResponse.signature:type_name -> mailstack.EmailSignature
-	3, // 3: mailstack.EmailSignature.company_info:type_name -> mailstack.EmailSignatureCompanyInfo
-	4, // 4: mailstack.EmailSignature.contact_info:type_name -> mailstack.EmailSignatureContactInfo
-	5, // 5: mailstack.EmailSignatureCompanyInfo.address:type_name -> mailstack.EmailSignatureAddress
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	7, // 2: mailstack.AnalyzeEmailRequest.classification:type_name -> mailstack.EmailClassification
+	2, // 3: mailstack.AnalyzeEmailResponse.signature:type_name -> mailstack.EmailSignature
+	3, // 4: mailstack.EmailSignature.company_info:type_name -> mailstack.EmailSignatureCompanyInfo
+	4, // 5: mailstack.EmailSignature.contact_info:type_name -> mailstack.EmailSignatureContactInfo
+	5, // 6: mailstack.EmailSignatureCompanyInfo.address:type_name -> mailstack.EmailSignatureAddress
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_schema_email_analysis_proto_init() }
@@ -604,6 +625,7 @@ func file_schema_email_analysis_proto_init() {
 		return
 	}
 	file_schema_email_address_proto_init()
+	file_schema_email_classification_enum_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

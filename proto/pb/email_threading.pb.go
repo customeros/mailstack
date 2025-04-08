@@ -27,13 +27,14 @@ type AttachToThreadRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	EmailId         string                 `protobuf:"bytes,1,opt,name=email_id,json=emailId,proto3" json:"email_id,omitempty"`
 	MailboxId       string                 `protobuf:"bytes,2,opt,name=mailbox_id,json=mailboxId,proto3" json:"mailbox_id,omitempty"`
-	MessageId       string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	Classification  EmailClassification    `protobuf:"varint,3,opt,name=classification,proto3,enum=mailstack.EmailClassification" json:"classification,omitempty"`
 	ReplyTo         string                 `protobuf:"bytes,4,opt,name=reply_to,json=replyTo,proto3" json:"reply_to,omitempty"`
 	References      []string               `protobuf:"bytes,5,rep,name=references,proto3" json:"references,omitempty"`
 	Subject         string                 `protobuf:"bytes,6,opt,name=subject,proto3" json:"subject,omitempty"`
 	AllParticipants []string               `protobuf:"bytes,7,rep,name=all_participants,json=allParticipants,proto3" json:"all_participants,omitempty"`
 	EmailSentAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=email_sent_at,json=emailSentAt,proto3" json:"email_sent_at,omitempty"`
 	EmailReceivedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=email_received_at,json=emailReceivedAt,proto3" json:"email_received_at,omitempty"`
+	MessageId       string                 `protobuf:"bytes,10,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -82,11 +83,11 @@ func (x *AttachToThreadRequest) GetMailboxId() string {
 	return ""
 }
 
-func (x *AttachToThreadRequest) GetMessageId() string {
+func (x *AttachToThreadRequest) GetClassification() EmailClassification {
 	if x != nil {
-		return x.MessageId
+		return x.Classification
 	}
-	return ""
+	return EmailClassification_EMAIL_CLASSIFICATION_UNKNOWN
 }
 
 func (x *AttachToThreadRequest) GetReplyTo() string {
@@ -129,6 +130,13 @@ func (x *AttachToThreadRequest) GetEmailReceivedAt() *timestamppb.Timestamp {
 		return x.EmailReceivedAt
 	}
 	return nil
+}
+
+func (x *AttachToThreadRequest) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
 }
 
 // Response message for thread attachment operation
@@ -204,13 +212,12 @@ var File_schema_email_threading_proto protoreflect.FileDescriptor
 
 const file_schema_email_threading_proto_rawDesc = "" +
 	"\n" +
-	"\x1cschema/email_threading.proto\x12\tmailstack\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x02\n" +
+	"\x1cschema/email_threading.proto\x12\tmailstack\x1a\x1fgoogle/protobuf/timestamp.proto\x1a&schema/email_classification_enum.proto\"\xc0\x03\n" +
 	"\x15AttachToThreadRequest\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12\x1d\n" +
 	"\n" +
-	"mailbox_id\x18\x02 \x01(\tR\tmailboxId\x12\x1d\n" +
-	"\n" +
-	"message_id\x18\x03 \x01(\tR\tmessageId\x12\x19\n" +
+	"mailbox_id\x18\x02 \x01(\tR\tmailboxId\x12F\n" +
+	"\x0eclassification\x18\x03 \x01(\x0e2\x1e.mailstack.EmailClassificationR\x0eclassification\x12\x19\n" +
 	"\breply_to\x18\x04 \x01(\tR\areplyTo\x12\x1e\n" +
 	"\n" +
 	"references\x18\x05 \x03(\tR\n" +
@@ -218,7 +225,10 @@ const file_schema_email_threading_proto_rawDesc = "" +
 	"\asubject\x18\x06 \x01(\tR\asubject\x12)\n" +
 	"\x10all_participants\x18\a \x03(\tR\x0fallParticipants\x12>\n" +
 	"\remail_sent_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vemailSentAt\x12F\n" +
-	"\x11email_received_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x0femailReceivedAt\"\x94\x01\n" +
+	"\x11email_received_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x0femailReceivedAt\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\n" +
+	" \x01(\tR\tmessageId\"\x94\x01\n" +
 	"\x16AttachToThreadResponse\x12\x19\n" +
 	"\bemail_id\x18\x01 \x01(\tR\aemailId\x12\x1d\n" +
 	"\n" +
@@ -242,16 +252,18 @@ var file_schema_email_threading_proto_msgTypes = make([]protoimpl.MessageInfo, 2
 var file_schema_email_threading_proto_goTypes = []any{
 	(*AttachToThreadRequest)(nil),  // 0: mailstack.AttachToThreadRequest
 	(*AttachToThreadResponse)(nil), // 1: mailstack.AttachToThreadResponse
-	(*timestamppb.Timestamp)(nil),  // 2: google.protobuf.Timestamp
+	(EmailClassification)(0),       // 2: mailstack.EmailClassification
+	(*timestamppb.Timestamp)(nil),  // 3: google.protobuf.Timestamp
 }
 var file_schema_email_threading_proto_depIdxs = []int32{
-	2, // 0: mailstack.AttachToThreadRequest.email_sent_at:type_name -> google.protobuf.Timestamp
-	2, // 1: mailstack.AttachToThreadRequest.email_received_at:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: mailstack.AttachToThreadRequest.classification:type_name -> mailstack.EmailClassification
+	3, // 1: mailstack.AttachToThreadRequest.email_sent_at:type_name -> google.protobuf.Timestamp
+	3, // 2: mailstack.AttachToThreadRequest.email_received_at:type_name -> google.protobuf.Timestamp
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_schema_email_threading_proto_init() }
@@ -259,6 +271,7 @@ func file_schema_email_threading_proto_init() {
 	if File_schema_email_threading_proto != nil {
 		return
 	}
+	file_schema_email_classification_enum_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

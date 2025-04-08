@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -28,19 +28,28 @@ func InitOpenTelemetry(ctx context.Context, cfg *OpenTelemetryConfig) error {
 		return err
 	}
 
-	// Create the OpenTelemetry HTTP exporter
-	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(cfg.Endpoint),
-		otlptracehttp.WithInsecure(),
-		otlptracehttp.WithTimeout(time.Duration(cfg.Timeout)*time.Second),
+	// Create the OpenTelemetry gRPC exporter
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithEndpoint(cfg.Endpoint),
+		otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithTimeout(time.Duration(cfg.Timeout)*time.Second),
 	)
 	if err != nil {
 		return err
 	}
 
 	// Create a new TracerProvider with the exporter
+	bsp := sdktrace.NewBatchSpanProcessor(
+		exporter,
+		// Set batch timeout to 5 seconds
+		sdktrace.WithBatchTimeout(5*time.Second),
+		// Optional: Set max batch size
+		sdktrace.WithMaxExportBatchSize(512),
+	)
+
+	// Then use the processor with the tracer provider
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)

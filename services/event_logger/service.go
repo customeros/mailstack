@@ -71,7 +71,7 @@ func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 		Timestamp:    utils.Now(),
 		Tenant:       tenant,
 		User:         userID,
-		ErrorMessage: errorMessage, // Use the string variable instead of err.Error()
+		ErrorMessage: errorMessage,
 	}
 }
 

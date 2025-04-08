@@ -1,0 +1,16 @@
+syntax = "proto3";
+package mailstack;
+option go_package = "github.com/customeros/mailstack/proto/pb";
+
+// Enum for email classification types
+enum EmailClassification {
+  EMAIL_CLASSIFICATION_UNKNOWN = 0;
+  EMAIL_AUTORESPONDER = 1;
+  EMAIL_BULK = 2;
+  EMAIL_INTERNAL = 3;
+  EMAIL_OK = 4;
+  EMAIL_SENSITIVE = 5;
+  EMAIL_SPAM = 6;
+  EMAIL_WARMER = 7;
+  EMAIL_BOUNCE = 8;
+}

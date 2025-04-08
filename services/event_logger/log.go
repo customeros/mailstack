@@ -103,6 +103,7 @@ func (s *EventLoggerService) processClassificationMessage(ctx context.Context, m
 	event.Event = enum.EventEmailInboundClassify
 	event.Publisher = enum.MailstackContentService
 	event.EmailID = message.EmailId
+	event.MailboxID = message.MailboxId
 	event.Direction = enum.EmailDirectionInbound
 	event.Payload = msg.Data
 
@@ -128,6 +129,8 @@ func (s *EventLoggerService) processAnalysisMessage(ctx context.Context, msg *na
 	event.Event = enum.EventEmailInboundAnalysis
 	event.Publisher = enum.MailstackContentService
 	event.EmailID = message.EmailId
+	event.MailboxID = message.MailboxId
+	event.Classification = pb_mappers.PbToEmailClassification(message.Classification)
 	event.Direction = enum.EmailDirectionInbound
 	event.Payload = msg.Data
 
@@ -153,6 +156,8 @@ func (s *EventLoggerService) processAttachmentsMessage(ctx context.Context, msg 
 	event.Event = enum.EventEmailInboundAttachments
 	event.Publisher = enum.MailstackContentService
 	event.EmailID = message.EmailId
+	event.MailboxID = message.MailboxId
+	event.Classification = pb_mappers.PbToEmailClassification(message.Classification)
 	event.Direction = enum.EmailDirectionInbound
 	event.Payload = msg.Data
 
@@ -179,7 +184,7 @@ func (s *EventLoggerService) processThreadMessage(ctx context.Context, msg *nats
 	event.Publisher = enum.MailstackContentService
 	event.EmailID = message.EmailId
 	event.MailboxID = message.MailboxId
-	event.MessageID = message.MessageId
+	event.Classification = pb_mappers.PbToEmailClassification(message.Classification)
 	event.Direction = enum.EmailDirectionInbound
 	event.Payload = msg.Data
 
@@ -205,6 +210,9 @@ func (s *EventLoggerService) processInboundCompletedMessage(ctx context.Context,
 	event.Event = enum.EventEmailInboundCompleted
 	event.Publisher = enum.MailstackContentService
 	event.EmailID = message.EmailId
+	event.MailboxID = message.MailboxId
+	event.Classification = pb_mappers.PbToEmailClassification(message.Classification)
+	event.ThreadID = message.ThreadId
 	event.Direction = enum.EmailDirectionInbound
 	event.Payload = msg.Data
 
