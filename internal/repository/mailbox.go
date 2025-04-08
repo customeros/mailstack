@@ -36,7 +36,7 @@ func (r *mailboxRepository) GetAllWithFilters(ctx context.Context, provider enum
 		query = query.Where("provider = ?", provider)
 	}
 	if domain != "" {
-		query = query.Where("domain = ?", domain)
+		query = query.Where("mailbox_domain = ?", domain)
 	}
 	if userId != "" {
 		query = query.Where("user_id = ?", userId)
