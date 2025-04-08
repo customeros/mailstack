@@ -47,7 +47,13 @@ func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 		spans.TraceError(err)
 		return err
 	}
+
+	// build email record
+	email.MailboxID = event.MailboxId
 	email.EMLKey = bucketKey
+	email.MessageID = utils.NormalizeMessageID(msg.Envelope.MessageId)
+	email.Subject = msg.Envelope.Subject
+	email.CleanSubject = utils.NormalizeSubject(msg.Envelope.Subject)
 
 	// log email
 	err = s.repositories.EmailLogRepository.Create(ctx, email)
