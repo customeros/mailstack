@@ -23,7 +23,7 @@ func (s *EmailAnalysisService) processRequestForStructuredBody(ctx context.Conte
 	req := dto.AskAIForEmailRequest{
 		EmailFrom:        message.From.Name,
 		FromEmailAddress: message.From.Email,
-		ToEmailAddress:   message.To[0].Name,
+		ToEmailAddress:   message.To[0].Email,
 		EmailBodyText:    message.EmailBodyText,
 		EmailBodyHTML:    message.EmailBodyHtml,
 	}
@@ -38,7 +38,7 @@ func (s *EmailAnalysisService) processRequestForStructuredBody(ctx context.Conte
 }
 
 func (s *EmailAnalysisService) getStructuredBody(ctx context.Context, request dto.AskAIForEmailRequest) (*dto.EmailResponse, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailAnalysisService.processRequestForStructuredBody")
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailAnalysisService.getStructuredBody")
 	defer spans.Finish()
 
 	payload, err := json.Marshal(request)
@@ -47,7 +47,12 @@ func (s *EmailAnalysisService) getStructuredBody(ctx context.Context, request dt
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.config.Url+"/internal/v1/askAIForEmail", bytes.NewBuffer(payload))
+	url := s.config.Url + "/internal/v1/askAIForEmail"
+	spans.LogKV("url", url)
+	spans.LogKV("emailFrom", request.EmailFrom)
+	spans.LogKV("enailFromAddress", request.FromEmailAddress)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
 	if err != nil {
 		spans.TraceError(err)
 		return nil, err

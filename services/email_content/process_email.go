@@ -63,15 +63,53 @@ func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailS
 	case enum.EmailOK:
 		err := s.processEmailContent(ctx, classificationReq, envelope, event.MailboxId)
 		return err
-	case enum.EmailBounceNotification:
-		// TODO publish bounce notification
-		return nil
-	case enum.EmailAutoResponder:
-		// TODO publish autoresponder notification
-		return nil
+	// case enum.EmailBounceNotification:
+	// 	// TODO publish bounce notification
+	// 	return nil
+	// case enum.EmailAutoResponder:
+	// 	// TODO publish autoresponder notification
+	// 	return nil
 	default:
-		// skip
-		return nil
+		err := s.publishSkipNotification(ctx, &pb.SkipInboundProcessing{
+			EmailId:        classificationReq.EmailId,
+			MailboxId:      classificationReq.MailboxId,
+			Classification: classificationResp.Classification,
+			Details:        classificationResp.Details,
+		})
+		if err != nil {
+			spans.TraceError(err)
+		}
+
+		replyToEmail := ""
+		if classificationReq.ReplyTo != nil {
+			replyToEmail = classificationReq.ReplyTo.Email
+		}
+		var fromAddress, fromName, fromUser, fromDomain string
+		if classificationReq.From != nil {
+			fromAddress = classificationReq.From.Email
+			fromName = classificationReq.From.Name
+			fromUser = classificationReq.From.User
+			fromDomain = classificationReq.From.Domain
+		}
+
+		updates := map[string]interface{}{
+			"subject":        classificationReq.Subject,
+			"clean_subject":  utils.NormalizeSubject(classificationReq.Subject),
+			"from_address":   fromAddress,
+			"from_name":      fromName,
+			"from_user":      fromUser,
+			"from_domain":    fromDomain,
+			"reply_to":       replyToEmail,
+			"to_addresses":   pq.StringArray(getEmailsAsSlice(classificationReq.To)),
+			"cc_addresses":   pq.StringArray(getEmailsAsSlice(classificationReq.Cc)),
+			"bcc_addresses":  pq.StringArray(getEmailsAsSlice(classificationReq.Bcc)),
+			"classification": classificationResp.Classification,
+		}
+		err = s.repositories.EmailLogRepository.UpdateEmailLog(ctx, classificationReq.EmailId, updates)
+		if err != nil {
+			spans.TraceError(err)
+		}
+		return err
 	}
 }
 
@@ -144,7 +182,6 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 		fromDomain = headers.From.Domain
 	}
 
-	// get current email record and append results
 	updates := map[string]interface{}{
 		"message_id":     threadResult.MessageId,
 		"thread_id":      threadResult.ThreadId,
@@ -158,8 +195,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 		"to_addresses":   pq.StringArray(getEmailsAsSlice(headers.To)),
 		"cc_addresses":   pq.StringArray(getEmailsAsSlice(headers.Cc)),
 		"bcc_addresses":  pq.StringArray(getEmailsAsSlice(headers.Bcc)),
-		"attachment_ids": attachmentResult.AttachmentIds,
-		"body_text":      envelope.Text,
+		"attachment_ids": pq.StringArray(attachmentResult.AttachmentIds),
 		"body_markdown":  bodyResult.MessageBodyMarkdown,
 		"has_attachment": attachmentResult.HasAttachment,
 		"has_signature":  bodyResult.HasSignature,

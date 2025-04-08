@@ -104,11 +104,6 @@ func (s *emailService) validateEmail(ctx context.Context, email *models.EmailLog
 		spans.TraceError(err)
 		return err
 	}
-	if email.BodyHtml == "" && email.BodyText == "" {
-		err = ErrEmptyEmailBody
-		spans.TraceError(err)
-		return err
-	}
 
 	// validate attachments
 	if attachmentIDs != nil {

@@ -23,7 +23,7 @@ func (s *EmailContentService) publishCompleted(ctx context.Context, email *pb.In
 	data, err := proto.Marshal(email)
 	if err != nil {
 		spans.TraceError(err)
-		return fmt.Errorf("failed to marshal stored email: %w", err)
+		return fmt.Errorf("failed to marshal completed notification: %w", err)
 	}
 
 	// Create message with headers
@@ -40,6 +40,32 @@ func (s *EmailContentService) publishCompleted(ctx context.Context, email *pb.In
 	}
 
 	spans.LogKV("completed", email.EmailId)
+	return nil
+}
+
+func (s *EmailContentService) publishSkipNotification(ctx context.Context, email *pb.SkipInboundProcessing) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.publishSkipNotification")
+	defer spans.Finish()
+
+	data, err := proto.Marshal(email)
+	if err != nil {
+		spans.TraceError(err)
+		return fmt.Errorf("failed to marshal skip notification: %w", err)
+	}
+
+	// Create message with headers
+	msg := nats.NewMsg(enum.EventEmailInboundClassifiedSkip.String())
+	msg.Data = data
+	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
+	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+
+	// Publish to the stored subject
+	err = s.natsConn.Conn.PublishMsg(msg)
+	if err != nil {
+		spans.TraceError(err)
+		return fmt.Errorf("failed to publish skip notification event: %w", err)
+	}
+
 	return nil
 }
 

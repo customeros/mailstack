@@ -36,8 +36,6 @@ type EmailLog struct {
 	AttachmentIDs pq.StringArray `gorm:"column:attachment_ids;type:text[]" json:"attachments"`
 
 	// Content fields
-	BodyText      string `gorm:"column:body_text;type:text" json:"bodyText"`
-	BodyHtml      string `gorm:"column:body_html;type:text" json:"bodyHtml"`
 	BodyMarkdown  string `gorm:"column:body_markdown;type:text" json:"bodyMarkdown"`
 	HasAttachment bool   `gorm:"column:has_attachment" json:"hasAttachment"`
 	HasSignature  bool   `gorm:"column:has_signature" json:"hasSignature"`
