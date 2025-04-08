@@ -16,10 +16,13 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"gorm.io/gorm"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/customeros/mailstack/api"
 	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
+	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/logger"
 	nats_internal "github.com/customeros/mailstack/internal/nats"
 	"github.com/customeros/mailstack/internal/repository"
@@ -32,6 +35,7 @@ type Server struct {
 	logger       logger.Logger
 	tracerCloser io.Closer
 	httpServer   *http.Server
+	cronMgr      *cron.CronManager
 	router       *gin.Engine
 	natsConn     *nats_internal.NATSConnections
 	services     *services.Services
@@ -75,10 +79,57 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
+	// Try to get Kubernetes config
+	var k8sClient kubernetes.Interface
+	k8sConfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Printf("Not running in Kubernetes cluster: %v", err)
+	} else {
+		k8sClient, err = kubernetes.NewForConfig(k8sConfig)
+		if err != nil {
+			log.Printf("Failed to create kubernetes client: %v", err)
+		}
+	}
+
+	// Initialize and start cron manager
+	cronManager := cron.NewCronManager(
+		cfg,
+		appLogger,
+		k8sClient,
+		svcs.DomainService,
+		svcs.MailboxService,
+		repos,
+	)
+
+	// If running in Kubernetes, use leader election
+	if k8sClient != nil {
+		podName := os.Getenv("POD_NAME")
+		if podName == "" {
+			log.Fatal("POD_NAME environment variable not set")
+		}
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			log.Fatal("POD_NAMESPACE environment variable not set")
+		}
+
+		go func() {
+			if err := cronManager.Start(podName, namespace); err != nil {
+				log.Fatalf("Failed to start cron manager: %v", err)
+			}
+		}()
+	} else {
+		// Local development - start cron manager directly
+		log.Println("Running in local mode - starting cron manager without leader election")
+		go func() {
+			cronManager.StartCron()
+		}()
+	}
+
 	return &Server{
 		config:       cfg,
 		router:       router,
 		natsConn:     natsConn,
+		cronMgr:      cronManager,
 		services:     svcs,
 		repositories: repos,
 		tracerCloser: closer,
@@ -192,13 +243,9 @@ func (s *Server) waitForShutdown() error {
 		log.Println("✅ HTTP server shut down successfully")
 	}
 
-	// Stop services
-	log.Println("Stopping services...")
-	if err := s.services.Stop(shutdownCtx); err != nil {
-		log.Printf("⚠️ Services shutdown error: %v", err)
-	} else {
-		log.Println("✅ Services stopped successfully")
-	}
+	// Stop cron manager when server stops
+	s.cronMgr.Stop()
+	log.Println("Shutdown complete")
 
 	// Close NATS connection
 	if s.natsConn != nil {
@@ -207,17 +254,13 @@ func (s *Server) waitForShutdown() error {
 		log.Println("✅ NATS connection closed")
 	}
 
+	// Stop services
+	log.Println("Stopping services...")
+	if err := s.services.Stop(shutdownCtx); err != nil {
+		log.Printf("⚠️ Services shutdown error: %v", err)
+	} else {
+		log.Println("✅ Services stopped successfully")
+	}
+
 	return nil
-}
-
-func (s *Server) Logger() logger.Logger {
-	return s.logger
-}
-
-func (s *Server) Services() *services.Services {
-	return s.services
-}
-
-func (s *Server) Repositories() *repository.Repositories {
-	return s.repositories
 }
