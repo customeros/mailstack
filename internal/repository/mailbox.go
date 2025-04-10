@@ -67,6 +67,7 @@ func (r *mailboxRepository) GetMailboxes(ctx context.Context) ([]*models.Mailbox
 		spans.TraceError(result.Error)
 		return nil, result.Error
 	}
+	spans.LogKV("result.count", len(mailboxes))
 	return mailboxes, nil
 }
 

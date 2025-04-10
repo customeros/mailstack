@@ -169,9 +169,9 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 			podName = "local"
 		}
 		id, err := c.AddFunc(cronConfig.CronScheduleHeartbeat, func() {
-			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.heartbeat")
-			defer telemetry.FinishSpans(spans)
-			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			spans, _ := telemetry.StartCronSpan(context.Background(), "CronManager.job.heartbeat")
+			defer spans.Finish()
+			spans.LogKV("pod_name", podName)
 			cm.log.Infof("Cron heartbeat from pod: %s", podName)
 		})
 		if err != nil {
@@ -184,9 +184,9 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add mailstack reputation monitoring job
 	if cronConfig.CronScheduleMailstackReputation != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleMailstackReputation, func() {
-			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.checkMailstackDomainReputation")
-			defer telemetry.FinishSpans(spans)
-			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.job.checkMailstackDomainReputation")
+			defer spans.Finish()
+			defer telemetry.Recover(spans, cm.log)
 			jobLocks.locks[GroupMailstackDomain].Lock()
 			defer jobLocks.locks[GroupMailstackDomain].Unlock()
 			cm.checkMailstackDomainReputation(ctx)
@@ -201,9 +201,9 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add mailbox ramp up job
 	if cronConfig.CronScheduleRampUpMailboxes != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleRampUpMailboxes, func() {
-			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.rampUpMailboxes")
-			defer telemetry.FinishSpans(spans)
-			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.job.rampUpMailboxes")
+			defer spans.Finish()
+			defer telemetry.Recover(spans, cm.log)
 			jobLocks.locks[GroupMailstackMailbox].Lock()
 			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
 			cm.rampUpMailboxes(ctx)
@@ -218,9 +218,9 @@ func (cm *CronManager) registerJobs(c *cronv3.Cron) {
 	// Add configure mailboxes job
 	if cronConfig.CronScheduleConfigureMailboxes != "" {
 		id, err := c.AddFunc(cronConfig.CronScheduleConfigureMailboxes, func() {
-			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.configureMailboxes")
-			defer telemetry.FinishSpans(spans)
-			defer telemetry.RecoverAndLog(ctx, spans, cm.log)
+			spans, ctx := telemetry.StartCronSpan(context.Background(), "CronManager.job.configureMailboxes")
+			defer spans.Finish()
+			defer telemetry.Recover(spans, cm.log)
 			jobLocks.locks[GroupMailstackMailbox].Lock()
 			defer jobLocks.locks[GroupMailstackMailbox].Unlock()
 			cm.configureMailboxes(ctx)
@@ -267,10 +267,10 @@ func (cm *CronManager) checkMailstackDomainReputation(ctx context.Context) {
 }
 
 func (cm *CronManager) rampUpMailboxes(ctx context.Context) {
-	cm.log.Info("Running mailbox ramp up check")
-
 	spans, ctx := telemetry.StartCronSpan(ctx, "CronManager.rampUpMailboxes")
 	defer telemetry.FinishSpans(spans)
+
+	cm.log.Info("Running mailbox ramp up check")
 
 	// Call the mailbox service to ramp up mailboxes
 	if err := cm.mailbox.RampUpMailboxes(ctx); err != nil {
