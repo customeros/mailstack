@@ -106,7 +106,7 @@ func (s *EmailThreadingService) handleNatsMessage(ctx context.Context, msg *nats
 }
 
 func (s *EmailThreadingService) sendResponse(ctx context.Context, req *nats.Msg, resp *pb.AttachToThreadResponse) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailThreadingService.sendResponse")
+	spans, _ := telemetry.StartServiceSpan(ctx, "EmailThreadingService.sendResponse")
 	defer spans.Finish()
 
 	respMessage, err := proto.Marshal(resp)
@@ -115,5 +115,4 @@ func (s *EmailThreadingService) sendResponse(ctx context.Context, req *nats.Msg,
 		return
 	}
 	req.Respond(respMessage)
-	return
 }

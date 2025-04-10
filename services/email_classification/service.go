@@ -88,7 +88,7 @@ func (s *EmailClassificationService) handleNatsMessage(ctx context.Context, msg 
 
 	request := &pb.EmailClassificationRequest{}
 	err := proto.Unmarshal(msg.Data, request)
-	if err != nil || request == nil {
+	if err != nil {
 		errMsg := "Failed to parse request"
 		resp.ErrorMessage = errMsg
 		s.sendResponse(ctx, msg, resp)
@@ -108,7 +108,7 @@ func (s *EmailClassificationService) handleNatsMessage(ctx context.Context, msg 
 }
 
 func (s *EmailClassificationService) sendResponse(ctx context.Context, req *nats.Msg, resp *pb.EmailClassificationResponse) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailClassificationService.sendResponse")
+	spans, _ := telemetry.StartServiceSpan(ctx, "EmailClassificationService.sendResponse")
 	defer spans.Finish()
 
 	respMessage, err := proto.Marshal(resp)
@@ -119,8 +119,5 @@ func (s *EmailClassificationService) sendResponse(ctx context.Context, req *nats
 	err = req.Respond(respMessage)
 	if err != nil {
 		spans.TraceError(err)
-		return
-
 	}
-	return
 }
