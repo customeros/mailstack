@@ -221,7 +221,7 @@ func (s *IMAPService) processSingleBatch(
 		done <- c.UidFetch(seqSet, items, messages)
 	}()
 
-	messageCount := s.processMessages(ctx, c, mailboxID, folderName, messages, &wg, eventErrors)
+	messageCount := s.processMessages(ctx, mailboxID, folderName, messages, &wg, eventErrors)
 
 	// Reset IMAP timeout
 	c.Timeout = 0
@@ -246,7 +246,6 @@ func (s *IMAPService) processSingleBatch(
 // processMessages processes messages from the channel and returns the count
 func (s *IMAPService) processMessages(
 	ctx context.Context,
-	c *client.Client,
 	mailboxID, folderName string,
 	messages <-chan *imap.Message,
 	wg *sync.WaitGroup,

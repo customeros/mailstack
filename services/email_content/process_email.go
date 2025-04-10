@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/customeros/mailstack/interfaces"
 	"net/mail"
 	"strings"
 	"sync"
@@ -437,8 +438,8 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 	// Send request to service
 	msg := nats.NewMsg(enum.EventEmailInboundClassify.String())
 	msg.Header = nats.Header{
-		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
-		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+		interfaces.HEADER_TENANT: []string{utils.GetTenantFromContext(ctx)},
+		interfaces.HEADER_USERID: []string{utils.GetUserIdFromContext(ctx)},
 	}
 	msg.Data = reqData
 
@@ -472,8 +473,8 @@ func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 	// Send request to service
 	msg := nats.NewMsg(enum.EventEmailInboundAnalysis.String())
 	msg.Header = nats.Header{
-		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
-		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+		interfaces.HEADER_TENANT: []string{utils.GetTenantFromContext(ctx)},
+		interfaces.HEADER_USERID: []string{utils.GetUserIdFromContext(ctx)},
 	}
 	msg.Data = reqData
 
@@ -507,8 +508,8 @@ func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, req
 	// Send request to service
 	msg := nats.NewMsg(enum.EventEmailInboundAttachments.String())
 	msg.Header = nats.Header{
-		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
-		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+		interfaces.HEADER_TENANT: []string{utils.GetTenantFromContext(ctx)},
+		interfaces.HEADER_USERID: []string{utils.GetUserIdFromContext(ctx)},
 	}
 	msg.Data = reqData
 
@@ -542,8 +543,8 @@ func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, req
 	// Send request to service
 	msg := nats.NewMsg(enum.EventEmailInboundThread.String())
 	msg.Header = nats.Header{
-		"X-Tenant": []string{utils.GetTenantFromContext(ctx)},
-		"X-UserId": []string{utils.GetUserIdFromContext(ctx)},
+		interfaces.HEADER_TENANT: []string{utils.GetTenantFromContext(ctx)},
+		interfaces.HEADER_USERID: []string{utils.GetUserIdFromContext(ctx)},
 	}
 	msg.Data = reqData
 

@@ -9,6 +9,11 @@ import (
 	"github.com/customeros/mailstack/internal/models"
 )
 
+const (
+	HEADER_TENANT = "X-Tenant"
+	HEADER_USERID = "X-UserId"
+)
+
 type IMAPService interface {
 	Start(ctx context.Context) error
 	Stop() error
