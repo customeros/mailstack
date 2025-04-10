@@ -73,7 +73,7 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		),
 		EmailAttachmentService:     email_attachment.NewEmailAttachmentService(natsConn, repos),
 		EmailClassificationService: email_classification.NewEmailClassificationService(natsConn, repos),
-		EmailContentService:        email_content.NewEmailContentService(natsConn, repos, emlStorage),
+		EmailContentService:        email_content.NewEmailContentService(natsConn, repos, emlStorage, log),
 		EmailStorageService:        email_storage.NewEmailStorageService(natsConn, repos, imapImpl, emlStorage),
 		EmailThreadingService:      email_thread.NewEmailThreadingService(natsConn, repos),
 		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos),

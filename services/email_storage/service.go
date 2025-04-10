@@ -21,7 +21,7 @@ import (
 	"github.com/customeros/mailstack/proto/pb"
 )
 
-type EmailStorageService struct {
+type emailStorageService struct {
 	natsConn     *nats_internal.NATSConnections
 	repositories *repository.Repositories
 	imapService  interfaces.IMAPService
@@ -34,7 +34,7 @@ func NewEmailStorageService(
 	imapService interfaces.IMAPService,
 	emlStorage interfaces.StorageService,
 ) interfaces.EmailProcessor {
-	return &EmailStorageService{
+	return &emailStorageService{
 		natsConn:     natsConn,
 		repositories: repositories,
 		imapService:  imapService,
@@ -58,7 +58,7 @@ const (
 	ERR_BACKOFF           = 100 * time.Millisecond
 )
 
-func (s *EmailStorageService) NewEmailLog() *models.EmailLog {
+func (s *emailStorageService) NewEmailLog() *models.EmailLog {
 	return &models.EmailLog{
 		ID:        utils.GenerateNanoIDWithPrefix("email", 21),
 		Direction: enum.EmailDirectionInbound,
@@ -67,7 +67,7 @@ func (s *EmailStorageService) NewEmailLog() *models.EmailLog {
 }
 
 // Start begins listening for raw email events and processing them
-func (s *EmailStorageService) Start(ctx context.Context) error {
+func (s *emailStorageService) Start(ctx context.Context) error {
 	// Create durable consumer for processing emails
 	_, err := s.natsConn.JS.AddConsumer(nats_internal.EMAIL_STREAM, &nats.ConsumerConfig{
 		Durable:       CONSUMER_NAME,
@@ -100,7 +100,7 @@ func (s *EmailStorageService) Start(ctx context.Context) error {
 }
 
 // processRawEmailEvents continuously processes raw email events
-func (s *EmailStorageService) processRawEmailEvents(ctx context.Context, sub *nats.Subscription) {
+func (s *emailStorageService) processRawEmailEvents(ctx context.Context, sub *nats.Subscription) {
 	log.Println("Email Storage Service started")
 	for {
 		select {
@@ -114,7 +114,7 @@ func (s *EmailStorageService) processRawEmailEvents(ctx context.Context, sub *na
 }
 
 // processBatch fetches and processes a batch of messages
-func (s *EmailStorageService) processBatch(ctx context.Context, sub *nats.Subscription) {
+func (s *emailStorageService) processBatch(ctx context.Context, sub *nats.Subscription) {
 	// Fetch messages batch
 	msgs, err := sub.Fetch(FETCH_BATCH_SIZE, nats.MaxWait(MAX_FETCH_WAIT))
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *EmailStorageService) processBatch(ctx context.Context, sub *nats.Subscr
 }
 
 // handleFetchError handles errors that occur during message fetching
-func (s *EmailStorageService) handleFetchError(err error) {
+func (s *emailStorageService) handleFetchError(err error) {
 	if err == nats.ErrTimeout {
 		// No messages available, this is normal
 		return
@@ -140,7 +140,7 @@ func (s *EmailStorageService) handleFetchError(err error) {
 }
 
 // processMessage processes a single email message
-func (s *EmailStorageService) processMessage(ctx context.Context, msg *nats.Msg) {
+func (s *emailStorageService) processMessage(ctx context.Context, msg *nats.Msg) {
 	ctx = utils.WithCustomContextFromNats(ctx, msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.processMessage")
 	defer spans.Finish()
@@ -176,7 +176,7 @@ func (s *EmailStorageService) processMessage(ctx context.Context, msg *nats.Msg)
 }
 
 // handleProcessingError deals with errors during email processing
-func (s *EmailStorageService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
+func (s *emailStorageService) handleProcessingError(ctx context.Context, msg *nats.Msg, err error) {
 	metadata, _ := msg.Metadata()
 
 	// Check if we should retry
@@ -191,7 +191,7 @@ func (s *EmailStorageService) handleProcessingError(ctx context.Context, msg *na
 }
 
 // Close gracefully shuts down the service
-func (s *EmailStorageService) Close() error {
+func (s *emailStorageService) Close() error {
 	if s.natsConn != nil {
 		s.natsConn.Close()
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/customeros/mailstack/proto/pb"
 )
 
-func (s *EmailContentService) publishCompleted(ctx context.Context, email *pb.InboundEmailProcessingCompleted) error {
+func (s *emailContentService) publishCompleted(ctx context.Context, email *pb.InboundEmailProcessingCompleted) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.publishCompleted")
 	defer spans.Finish()
 
@@ -44,7 +44,7 @@ func (s *EmailContentService) publishCompleted(ctx context.Context, email *pb.In
 	return nil
 }
 
-func (s *EmailContentService) publishSkipNotification(ctx context.Context, email *pb.SkipInboundProcessing) error {
+func (s *emailContentService) publishSkipNotification(ctx context.Context, email *pb.SkipInboundProcessing) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.publishSkipNotification")
 	defer spans.Finish()
 
@@ -71,7 +71,7 @@ func (s *EmailContentService) publishSkipNotification(ctx context.Context, email
 }
 
 // publishError publishes an error event
-func (s *EmailContentService) publishError(ctx context.Context, msg *nats.Msg, err error) {
+func (s *emailContentService) publishError(ctx context.Context, msg *nats.Msg, err error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailContentService.publishError")
 	defer spans.Finish()
 
