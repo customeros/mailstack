@@ -3,6 +3,7 @@ package email_storage
 import (
 	"context"
 	"fmt"
+	"github.com/customeros/mailstack/interfaces"
 	"log"
 
 	"github.com/nats-io/nats.go"
@@ -30,8 +31,8 @@ func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *pb.
 	// Create message with headers
 	msg := nats.NewMsg(enum.EventEmailInboundStored.String())
 	msg.Data = data
-	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	_, err = s.natsConn.JS.PublishMsg(msg)
@@ -66,8 +67,8 @@ func (s *EmailStorageService) publishError(ctx context.Context, msg *nats.Msg, e
 	// Create message with headers
 	newMsg := nats.NewMsg(enum.EventEmailInboundStored.String())
 	newMsg.Data = data
-	newMsg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	newMsg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	newMsg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	newMsg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	_, err = s.natsConn.JS.PublishMsg(newMsg)

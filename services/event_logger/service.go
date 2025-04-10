@@ -57,9 +57,7 @@ func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 		err = mailstack_errors.ErrTenantMissing
 		spans.TraceError(err)
 		errorMessage = err.Error()
-	}
-
-	if userID == "" {
+	} else if userID == "" {
 		err = mailstack_errors.ErrUserIdMissing
 		spans.TraceError(err)
 		errorMessage = err.Error()

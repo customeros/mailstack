@@ -3,6 +3,7 @@ package email_content
 import (
 	"context"
 	"fmt"
+	"github.com/customeros/mailstack/interfaces"
 	"log"
 
 	"github.com/nats-io/nats.go"
@@ -29,8 +30,8 @@ func (s *EmailContentService) publishCompleted(ctx context.Context, email *pb.In
 	// Create message with headers
 	msg := nats.NewMsg(enum.EventEmailInboundCompleted.String())
 	msg.Data = data
-	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	_, err = s.natsConn.JS.PublishMsg(msg)
@@ -56,8 +57,8 @@ func (s *EmailContentService) publishSkipNotification(ctx context.Context, email
 	// Create message with headers
 	msg := nats.NewMsg(enum.EventEmailInboundClassifiedSkip.String())
 	msg.Data = data
-	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	err = s.natsConn.Conn.PublishMsg(msg)
@@ -91,8 +92,8 @@ func (s *EmailContentService) publishError(ctx context.Context, msg *nats.Msg, e
 
 	errMsg := nats.NewMsg(enum.EventEmailErrorInbound.String())
 	errMsg.Data = data
-	errMsg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	errMsg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	errMsg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	errMsg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	_, err = s.natsConn.JS.PublishMsg(errMsg)

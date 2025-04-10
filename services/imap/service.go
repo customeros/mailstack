@@ -129,11 +129,11 @@ func (s *IMAPService) Status() map[string]interfaces.MailboxStatus {
 }
 
 // AddMailbox adds a new mailbox configuration
-func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) error {
+func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.AddMailbox")
 	defer spans.Finish()
 
-	if config == nil {
+	if mailbox == nil {
 		err := errors.New("config is nil")
 		spans.TraceError(err)
 		return err
@@ -143,22 +143,22 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	defer s.clientsMutex.Unlock()
 
 	// Check for duplicate
-	if _, exists := s.mailboxConfigs[config.ID]; exists {
-		err := fmt.Errorf("mailbox with ID %s already exists", config.ID)
+	if _, exists := s.mailboxConfigs[mailbox.ID]; exists {
+		err := fmt.Errorf("mailbox with ID %s already exists", mailbox.ID)
 		spans.TraceError(err)
 		return err
 	}
 
-	if len(config.SyncFolders) == 0 {
+	if len(mailbox.SyncFolders) == 0 {
 		err := errors.New("sync folders is empty")
 		spans.TraceError(err)
 		return err
 	}
 
 	// Add initial entry into mailbox sync table
-	for _, folder := range config.SyncFolders {
+	for _, folder := range mailbox.SyncFolders {
 		err := s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
-			MailboxID:  config.ID,
+			MailboxID:  mailbox.ID,
 			FolderName: folder,
 			LastUID:    0,
 		})
@@ -169,11 +169,14 @@ func (s *IMAPService) AddMailbox(ctx context.Context, config *models.Mailbox) er
 	}
 
 	// Store configuration
-	s.mailboxConfigs[config.ID] = config
+	s.mailboxConfigs[mailbox.ID] = mailbox
 
 	// Start monitoring if service is running
 	if s.ctx != nil {
-		go s.runSingleMailbox(s.ctx, config.ID, config)
+		log.Printf("Starting mailbox: %s (%s)", mailbox.ID, mailbox.ImapUsername)
+		mailboxCtx := utils.SetTenantInContext(context.Background(), mailbox.Tenant)
+		mailboxCtx = utils.SetUserIdInContext(mailboxCtx, mailbox.UserID)
+		go s.runSingleMailbox(mailboxCtx, mailbox.ID, mailbox)
 	}
 
 	return nil
@@ -829,8 +832,8 @@ func (s *IMAPService) publishNewEmailEvent(ctx context.Context, event *pb.EmailR
 	// Create message with headers
 	msg := nats.NewMsg(enum.EventEmailInboundReceivedIMAP.String())
 	msg.Data = data
-	msg.Header.Set("X-Tenant", utils.GetTenantFromContext(ctx))
-	msg.Header.Set("X-UserId", utils.GetUserIdFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_TENANT, utils.GetTenantFromContext(ctx))
+	msg.Header.Set(interfaces.HEADER_USERID, utils.GetUserIdFromContext(ctx))
 
 	// Publish to the stored subject
 	_, err = s.natsConn.JS.PublishMsg(msg)
