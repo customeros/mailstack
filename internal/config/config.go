@@ -6,6 +6,7 @@ type AppConfig struct {
 	APIKey            string `env:"API_KEY,required"`
 	TrackingPublicUrl string `env:"TRACKING_PUBLIC_URL" envDefault:"https://custosmetrics.com"`
 	EMLStorageBucket  string `env:"EML_STORAGE_BUCKET" envDefault:"emails-test"`
+	CronDisable       bool   `env:"CRON_DISABLE" envDefault:"false"`
 }
 
 type NATSConfig struct {
