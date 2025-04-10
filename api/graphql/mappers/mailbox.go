@@ -20,7 +20,7 @@ func MapGormMailboxToGraph(mailbox *models.Mailbox) *graphql_model.Mailbox {
 		OutboundEnabled:        mailbox.OutboundEnabled,
 		ReplyToAddress:         &mailbox.ReplyToAddress,
 		ConnectionStatus:       mailbox.ConnectionStatus,
-		LastConnectionCheck:    *mailbox.LastConnectionCheck,
+		LastConnectionCheck:    mailbox.LastConnectionCheck,
 		ConnectionErrorMessage: &mailbox.ErrorMessage,
 	}
 }

@@ -38,33 +38,15 @@ var SUBSCRIBED_SUBJECT = enum.EventEmailInboundAttachments.String()
 
 // Start begins listening for  events
 func (s *EmailAttachmentService) Start(ctx context.Context) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAttachmentService.Start")
+	defer spans.Finish()
+
 	// Create a subscription for handling requests
 	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
-		ctx = utils.WithCustomContextFromNats(ctx, msg)
-		spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAttachmentService.Start")
-		defer spans.Finish()
-
-		resp := &pb.ProcessAttachmentResponse{}
-
-		request := &pb.ProcessAttachmentRequest{}
-		err := proto.Unmarshal(msg.Data, request)
-		if err != nil {
-			errMsg := "Failed to parse request"
-			resp.ErrorMessage = errMsg
-			s.sendResponse(ctx, msg, resp)
-			spans.TraceError(err)
-			return
-		}
-
-		resp = s.processAttachments(ctx, request)
-		if resp == nil {
-			spans.TraceError(errors.New("empty response"))
-			return
-		}
-
-		s.sendResponse(ctx, msg, resp)
+		s.handleNatsMessage(ctx, msg)
 	})
 	if err != nil {
+		spans.TraceError(err)
 		return fmt.Errorf("failed to create subscription: %w", err)
 	}
 
@@ -88,6 +70,39 @@ func (s *EmailAttachmentService) Close() error {
 		s.natsConn.Close()
 	}
 	return nil
+}
+
+func (s *EmailAttachmentService) handleNatsMessage(ctx context.Context, msg *nats.Msg) {
+	ctx = utils.WithCustomContextFromNats(ctx, msg)
+	spans, ctx := telemetry.StartListenerSpan(ctx, "EmailAttachmentService.handleNatsMessage")
+	defer spans.Finish()
+
+	if msg == nil {
+		spans.TraceError(errors.New("nil nats message"))
+		return
+	}
+	spans.TagString("nats.subject", msg.Subject)
+	spans.TagString("nats.reply", msg.Reply)
+
+	resp := &pb.ProcessAttachmentResponse{}
+
+	request := &pb.ProcessAttachmentRequest{}
+	err := proto.Unmarshal(msg.Data, request)
+	if err != nil {
+		errMsg := "Failed to parse request"
+		resp.ErrorMessage = errMsg
+		s.sendResponse(ctx, msg, resp)
+		spans.TraceError(err)
+		return
+	}
+
+	resp = s.processAttachments(ctx, request)
+	if resp == nil {
+		spans.TraceError(errors.New("empty response"))
+		return
+	}
+
+	s.sendResponse(ctx, msg, resp)
 }
 
 func (s *EmailAttachmentService) sendResponse(ctx context.Context, req *nats.Msg, resp *pb.ProcessAttachmentResponse) {

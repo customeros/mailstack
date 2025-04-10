@@ -56,7 +56,7 @@ type Mailbox {
   outboundEnabled: Boolean!
   replyToAddress: String
   connectionStatus: MailboxConnectionStatus!
-  lastConnectionCheck: Time!
+  lastConnectionCheck: Time
   connectionErrorMessage: String
 }
 
