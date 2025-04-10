@@ -29,13 +29,12 @@ const otelSpanKey contextKey = "otel_span"
 
 // Component tag constants
 const (
-	ComponentGraphQL    = "graphql"
-	ComponentPostgres   = "postgres"
-	ComponentClickhouse = "clickhouse"
-	ComponentREST       = "rest"
-	ComponentService    = "service"
-	ComponentListener   = "listener"
-	ComponentCronJob    = "cron"
+	ComponentGraphQL  = "graphql"
+	ComponentPostgres = "postgres"
+	ComponentREST     = "rest"
+	ComponentService  = "service"
+	ComponentListener = "listener"
+	ComponentCronJob  = "cron"
 )
 
 const (
@@ -71,7 +70,7 @@ func WithNewRoot() SpanOptions {
 }
 
 // Core Span Operations
-func startSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
+func StartSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
 	// Start Jaeger span
 	var jaegerSpan opentracing.Span
 	if len(opts) > 0 && opts[0].NewRoot {
@@ -144,56 +143,49 @@ func FinishSpans(spans *Spans) {
 
 // Component-specific Span Starters
 func StartCronSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentCronJob(spans)
 	SetSpanKindInternal(spans)
 	return spans, ctx
 }
 
 func StartGraphQLSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentGraphQL(spans)
 	SetSpanKindServer(spans)
 	return spans, ctx
 }
 
 func StartPostgresSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentPostgres(spans)
 	SetSpanKindDatabase(spans)
 	return spans, ctx
 }
 
-func StartClickhouseSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
-	TagComponentClickhouse(spans)
-	SetSpanKindDatabase(spans)
-	return spans, ctx
-}
-
 func StartServiceSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentService(spans)
 	SetSpanKindInternal(spans)
 	return spans, ctx
 }
 
 func StartRestSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentREST(spans)
 	SetSpanKindServer(spans)
 	return spans, ctx
 }
 
 func StartProducerSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentService(spans)
 	SetSpanKindProducer(spans)
 	return spans, ctx
 }
 
 func StartListenerSpan(ctx context.Context, operationName string, opts ...SpanOptions) (*Spans, context.Context) {
-	spans, ctx := startSpan(ctx, operationName, opts...)
+	spans, ctx := StartSpan(ctx, operationName, opts...)
 	TagComponentListener(spans)
 	SetSpanKindConsumer(spans)
 	return spans, ctx
@@ -221,18 +213,6 @@ func TagComponentPostgres(spans *Spans) {
 	}
 	if spans.OTel != nil {
 		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentPostgres))
-	}
-}
-
-func TagComponentClickhouse(spans *Spans) {
-	if spans == nil {
-		return
-	}
-	if spans.Jaeger != nil {
-		spans.Jaeger.SetTag(componentKey, ComponentClickhouse)
-	}
-	if spans.OTel != nil {
-		spans.OTel.SetAttributes(attribute.String(componentKey, ComponentClickhouse))
 	}
 }
 
@@ -541,6 +521,7 @@ func (s *Spans) LogObjectAsJson(key string, obj interface{}) {
 	}
 }
 
+// TODO not used yet, check if needed
 func LogError(ctx context.Context, err error, fields ...log.Field) {
 	// Log to Jaeger
 	jaegerSpan := opentracing.SpanFromContext(ctx)
@@ -607,6 +588,7 @@ func LogInfo(ctx context.Context, msg string, fields ...log.Field) {
 	}
 }
 
+// TODO not used yet, check if needed
 func LogDebug(ctx context.Context, msg string, fields ...log.Field) {
 	// Log to Jaeger
 	jaegerSpan := opentracing.SpanFromContext(ctx)
@@ -677,8 +659,7 @@ func (s *Spans) TraceError(err error) {
 	}
 }
 
-// Recovery
-func RecoverAndLog(ctx context.Context, spans *Spans, logger logger.Logger) {
+func Recover(spans *Spans, logger logger.Logger) {
 	if r := recover(); r != nil {
 		stack := string(debug.Stack())
 

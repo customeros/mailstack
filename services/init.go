@@ -119,14 +119,14 @@ func (s *Services) Stop(ctx context.Context) error {
 		name    string
 		stopper func(context.Context) error
 	}{
-		{"IMAP", s.IMAPService.Start},
-		{"Email Analysis", s.EmailAnaylsisService.Start},
-		{"Email Attachment", s.EmailAttachmentService.Start},
-		{"Email Classification", s.EmailClassificationService.Start},
-		{"Email Content", s.EmailContentService.Start},
-		{"Email Storage", s.EmailStorageService.Start},
-		{"Email Threading", s.EmailThreadingService.Start},
-		{"Event Logger", s.EventLoggerService.Start},
+		{"IMAP", func(ctx context.Context) error { return s.IMAPService.Stop() }},
+		{"Email Analysis", func(ctx context.Context) error { return s.EmailAnaylsisService.Close() }},
+		{"Email Attachment", func(ctx context.Context) error { return s.EmailAttachmentService.Close() }},
+		{"Email Classification", func(ctx context.Context) error { return s.EmailClassificationService.Close() }},
+		{"Email Content", func(ctx context.Context) error { return s.EmailContentService.Close() }},
+		{"Email Storage", func(ctx context.Context) error { return s.EmailStorageService.Close() }},
+		{"Email Threading", func(ctx context.Context) error { return s.EmailThreadingService.Close() }},
+		{"Event Logger", func(ctx context.Context) error { return s.EventLoggerService.Close() }},
 	}
 
 	var errs error

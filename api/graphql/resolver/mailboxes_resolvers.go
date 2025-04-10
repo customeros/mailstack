@@ -12,10 +12,9 @@ import (
 	api_errors "github.com/customeros/mailstack/api/errors"
 	"github.com/customeros/mailstack/api/graphql/graphql_model"
 	"github.com/customeros/mailstack/api/graphql/mappers"
+	internalerrors "github.com/customeros/mailstack/internal/errors"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/internal/utils"
-
-	internalerrors "github.com/customeros/mailstack/internal/errors"
 )
 
 // AddMailbox is the resolver for the addMailbox field.

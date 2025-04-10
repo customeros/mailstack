@@ -962,7 +962,7 @@ type Mailbox {
   outboundEnabled: Boolean!
   replyToAddress: String
   connectionStatus: MailboxConnectionStatus!
-  lastConnectionCheck: Time!
+  lastConnectionCheck: Time
   connectionErrorMessage: String
 }
 
@@ -3426,14 +3426,11 @@ func (ec *executionContext) _Mailbox_lastConnectionCheck(ctx context.Context, fi
 		return graphql.Null
 	}
 	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
-	res := resTmp.(time.Time)
+	res := resTmp.(*time.Time)
 	fc.Result = res
-	return ec.marshalNTime2timeᚐTime(ctx, field.Selections, res)
+	return ec.marshalOTime2ᚖtimeᚐTime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mailbox_lastConnectionCheck(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7414,9 +7411,6 @@ func (ec *executionContext) _Mailbox(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "lastConnectionCheck":
 			out.Values[i] = ec._Mailbox_lastConnectionCheck(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		case "connectionErrorMessage":
 			out.Values[i] = ec._Mailbox_connectionErrorMessage(ctx, field, obj)
 		default:

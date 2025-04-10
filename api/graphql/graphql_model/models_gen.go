@@ -111,7 +111,7 @@ type Mailbox struct {
 	OutboundEnabled        bool                  `json:"outboundEnabled"`
 	ReplyToAddress         *string               `json:"replyToAddress,omitempty"`
 	ConnectionStatus       enum.ConnectionStatus `json:"connectionStatus"`
-	LastConnectionCheck    time.Time             `json:"lastConnectionCheck"`
+	LastConnectionCheck    *time.Time            `json:"lastConnectionCheck,omitempty"`
 	ConnectionErrorMessage *string               `json:"connectionErrorMessage,omitempty"`
 }
 

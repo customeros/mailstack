@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"github.com/customeros/mailstack/internal/telemetry"
 	"log"
 
 	"github.com/customeros/mailstack/internal/models"
@@ -13,7 +14,9 @@ import (
 // InitMailboxes initializes all mailbox connections from configuration
 func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 	log.Println("Initializing mailbox connections...")
-	ctx := context.Background()
+
+	spans, ctx := telemetry.StartSpan(context.Background(), "InitMailboxes")
+	defer spans.Finish()
 
 	// get mailboxes from database
 	mailboxes, err := r.MailboxRepository.GetMailboxes(ctx)
@@ -21,12 +24,13 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		return err
 	}
 
-	// Add each mailbox from configuration
+	// Add mailboxes to IMAP service
 	for _, mailbox := range mailboxes {
 		if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
 			continue
 		}
-		if err := s.IMAPService.AddMailbox(ctx, mailbox); err != nil {
+		if err = s.IMAPService.AddMailbox(ctx, mailbox); err != nil {
+			spans.TraceError(err)
 			return fmt.Errorf("failed to add mailbox %s: %w", mailbox.ID, err)
 		}
 	}

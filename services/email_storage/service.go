@@ -145,6 +145,13 @@ func (s *EmailStorageService) processMessage(ctx context.Context, msg *nats.Msg)
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.processMessage")
 	defer spans.Finish()
 
+	if msg == nil {
+		spans.TraceError(errors.New("nil nats message"))
+		return
+	}
+	spans.TagString("nats.subject", msg.Subject)
+	spans.TagString("nats.reply", msg.Reply)
+
 	message := &pb.EmailReceivedIMAP{}
 	err := proto.Unmarshal(msg.Data, message)
 	if err != nil || message == nil {

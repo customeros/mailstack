@@ -110,6 +110,7 @@ func (s *IMAPService) getUIDsToSync(ctx context.Context, c *client.Client, mailb
 		uidsToProcess = uidsToProcess[:maxToProcess]
 	}
 
+	spans.LogKV("uidsToProcess.count", len(uidsToProcess))
 	return syncState, uidsToProcess, nil
 }
 

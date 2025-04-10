@@ -24,8 +24,9 @@ import (
 )
 
 type EventLoggerService struct {
-	natsConn     *nats_internal.NATSConnections
-	repositories *repository.Repositories
+	natsConn      *nats_internal.NATSConnections
+	repositories  *repository.Repositories
+	subscriptions []*nats.Subscription
 }
 
 func NewEventLoggerService(
@@ -33,15 +34,16 @@ func NewEventLoggerService(
 	repos *repository.Repositories,
 ) interfaces.EmailProcessor {
 	return &EventLoggerService{
-		natsConn:     natsConn,
-		repositories: repos,
+		natsConn:      natsConn,
+		repositories:  repos,
+		subscriptions: make([]*nats.Subscription, 0),
 	}
 }
 
 var SUBSCRIBED_SUBJECT = "emails.>"
 
 func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.EmailEvent {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "eventLoggerService.NewEmailEventRecord")
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.NewEmailEventRecord")
 	defer spans.Finish()
 
 	// validate context
@@ -74,16 +76,28 @@ func (s *EventLoggerService) NewEmailEventRecord(ctx context.Context) *models.Em
 
 // Start begins listening for raw email events and processing them
 func (s *EventLoggerService) Start(ctx context.Context) error {
-	// Subscribe to all standard request/reply messages
-	_, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
-		spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.setupNonPersistedSubscriptions")
-		defer spans.Finish()
+	spans, ctx := telemetry.StartSpan(ctx, "EventLoggerService.Start")
+	defer spans.Finish()
 
+	// Subscribe to all standard request/reply messages
+	sub, err := s.natsConn.Conn.Subscribe(SUBSCRIBED_SUBJECT, func(msg *nats.Msg) {
 		s.processMessage(ctx, msg)
 	})
 	if err != nil {
+		spans.TraceError(err)
 		return fmt.Errorf("failed to create standard subscription: %w", err)
 	}
+
+	// Keep track of subscription for cleanup
+	s.subscriptions = append(s.subscriptions, sub)
+
+	// Listen for context cancellation to clean up
+	go func() {
+		<-ctx.Done()
+		for _, sub := range s.subscriptions {
+			sub.Unsubscribe()
+		}
+	}()
 
 	log.Println("Email Logger Service started standard NATS subscriptions")
 	return nil
@@ -92,8 +106,15 @@ func (s *EventLoggerService) Start(ctx context.Context) error {
 // processMessage processes a single email message
 func (s *EventLoggerService) processMessage(ctx context.Context, msg *nats.Msg) {
 	ctx = utils.WithCustomContextFromNats(ctx, msg)
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processMessage")
+	spans, ctx := telemetry.StartListenerSpan(ctx, "EventLoggerService.processMessage")
 	defer spans.Finish()
+
+	if msg == nil {
+		spans.TraceError(errors.New("nil nats message"))
+		return
+	}
+	spans.TagString("nats.subject", msg.Subject)
+	spans.TagString("nats.reply", msg.Reply)
 
 	// Extract the subject to determine message type
 	subject := msg.Subject
