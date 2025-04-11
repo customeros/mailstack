@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"github.com/customeros/mailstack/internal/enum"
 	"log"
 
 	"github.com/customeros/mailstack/internal/telemetry"
@@ -25,14 +26,22 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		return err
 	}
 
-	skippedMailboxes := make(map[string][]string)
+	skippedMailboxesByStatus := make(map[string][]string)
+	skippedMailboxesByProvider := make(map[string][]string)
 	// Add mailboxes to IMAP service
 	for _, mailbox := range mailboxes {
-		if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
-			if _, exists := skippedMailboxes[mailbox.Tenant]; !exists {
-				skippedMailboxes[mailbox.Tenant] = make([]string, 0)
+		if mailbox.Provider != enum.EmailMailstack {
+			if _, exists := skippedMailboxesByProvider[mailbox.Tenant]; !exists {
+				skippedMailboxesByProvider[mailbox.Tenant] = make([]string, 0)
 			}
-			skippedMailboxes[mailbox.Tenant] = append(skippedMailboxes[mailbox.Tenant], mailbox.EmailAddress)
+			skippedMailboxesByProvider[mailbox.Tenant] = append(skippedMailboxesByProvider[mailbox.Tenant], mailbox.EmailAddress)
+			continue
+		}
+		if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+			if _, exists := skippedMailboxesByStatus[mailbox.Tenant]; !exists {
+				skippedMailboxesByStatus[mailbox.Tenant] = make([]string, 0)
+			}
+			skippedMailboxesByStatus[mailbox.Tenant] = append(skippedMailboxesByStatus[mailbox.Tenant], mailbox.EmailAddress)
 			continue
 		}
 		if err = s.IMAPService.AddMailbox(ctx, mailbox); err != nil {
@@ -41,7 +50,8 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		}
 	}
 
-	spans.LogObjectAsJson("skipped_mailboxes", skippedMailboxes)
+	spans.LogObjectAsJson("skipped_mailboxes_by_status", skippedMailboxesByStatus)
+	spans.LogObjectAsJson("skipped_mailboxes_by_provider", skippedMailboxesByProvider)
 	log.Printf("Successfully initialized %d mailboxes", len(mailboxes))
 	return nil
 }

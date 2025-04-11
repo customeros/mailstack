@@ -138,6 +138,14 @@ func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) e
 		err := errors.New("mailbox is nil")
 		spans.TraceError(err)
 		return err
+	} else if mailbox.Provider != enum.EmailMailstack {
+		err := fmt.Errorf("unsupported mailbox provider: %s", mailbox.Provider)
+		spans.TraceError(err)
+		return err
+	} else if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+		err := fmt.Errorf("mailbox is not provisioned: %s", mailbox.ProvisionStatus)
+		spans.TraceError(err)
+		return err
 	}
 
 	s.clientsMutex.Lock()
