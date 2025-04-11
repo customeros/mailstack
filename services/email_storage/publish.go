@@ -18,8 +18,8 @@ import (
 )
 
 // PublishStoredEmail publishes the stored email to the next processing stage
-func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *pb.EmailStored) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.publishStoredEmail")
+func (s *emailStorageService) publishStoredEmail(ctx context.Context, email *pb.EmailStored) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.publishStoredEmail")
 	defer spans.Finish()
 
 	data, err := proto.Marshal(email)
@@ -45,7 +45,7 @@ func (s *EmailStorageService) publishStoredEmail(ctx context.Context, email *pb.
 }
 
 // publishError publishes an error event
-func (s *EmailStorageService) publishError(ctx context.Context, msg *nats.Msg, err error) {
+func (s *emailStorageService) publishError(ctx context.Context, msg *nats.Msg, err error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.publishError")
 	defer spans.Finish()
 

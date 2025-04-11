@@ -28,7 +28,7 @@ import (
 
 const REQUEST_TIMEOUT = 60 * time.Second
 
-func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailStored) error {
+func (s *emailContentService) processEmail(ctx context.Context, event *pb.EmailStored) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmail")
 	defer spans.Finish()
 
@@ -114,7 +114,7 @@ func (s *EmailContentService) processEmail(ctx context.Context, event *pb.EmailS
 	}
 }
 
-func (s *EmailContentService) processEmailContent(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) error {
+func (s *emailContentService) processEmailContent(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processEmailContent")
 	defer spans.Finish()
 
@@ -225,7 +225,7 @@ func (s *EmailContentService) processEmailContent(ctx context.Context, headers *
 	return errs
 }
 
-func (s *EmailContentService) getEmailClassification(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.EmailClassificationRequest, *pb.EmailClassificationResponse, error) {
+func (s *emailContentService) getEmailClassification(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.EmailClassificationRequest, *pb.EmailClassificationResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_headers")
 	defer spans.Finish()
 
@@ -314,7 +314,7 @@ func parseEmailAddresses(header string, envelope *enmime.Envelope) ([]*pb.EmailA
 	return parsed, nil
 }
 
-func (s *EmailContentService) processBody(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope) (*pb.AnalyzeEmailResponse, error) {
+func (s *emailContentService) processBody(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope) (*pb.AnalyzeEmailResponse, error) {
 	bodySpan, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.processBody")
 	defer bodySpan.Finish()
 
@@ -332,7 +332,7 @@ func (s *EmailContentService) processBody(ctx context.Context, headers *pb.Email
 	return s.sendEmailAnalysisRequest(ctx, bodyRequest)
 }
 
-func (s *EmailContentService) processAttachments(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.ProcessAttachmentResponse, error) {
+func (s *emailContentService) processAttachments(ctx context.Context, emailID, mailboxID string, envelope *enmime.Envelope) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
@@ -362,7 +362,7 @@ func (s *EmailContentService) processAttachments(ctx context.Context, emailID, m
 	return s.sendEmailAttchmentRequest(ctx, attachmentRequest)
 }
 
-func (s *EmailContentService) attachToThread(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*pb.AttachToThreadResponse, error) {
+func (s *emailContentService) attachToThread(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*pb.AttachToThreadResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "process_attachments")
 	defer spans.Finish()
 
@@ -424,7 +424,7 @@ func getAllParticipants(headers *pb.EmailClassificationRequest) []string {
 }
 
 // Generic method to send requests to services
-func (s *EmailContentService) sendClassificationRequest(ctx context.Context, request *pb.EmailClassificationRequest) (*pb.EmailClassificationResponse, error) {
+func (s *emailContentService) sendClassificationRequest(ctx context.Context, request *pb.EmailClassificationRequest) (*pb.EmailClassificationResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendClassificationRequest")
 	defer spans.Finish()
 
@@ -459,7 +459,7 @@ func (s *EmailContentService) sendClassificationRequest(ctx context.Context, req
 	return response, nil
 }
 
-func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, request *pb.AnalyzeEmailRequest) (*pb.AnalyzeEmailResponse, error) {
+func (s *emailContentService) sendEmailAnalysisRequest(ctx context.Context, request *pb.AnalyzeEmailRequest) (*pb.AnalyzeEmailResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendEmailAnalysisRequest")
 	defer spans.Finish()
 
@@ -494,7 +494,7 @@ func (s *EmailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 	return response, nil
 }
 
-func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, request *pb.ProcessAttachmentRequest) (*pb.ProcessAttachmentResponse, error) {
+func (s *emailContentService) sendEmailAttchmentRequest(ctx context.Context, request *pb.ProcessAttachmentRequest) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendEmailAttachmentRequest")
 	defer spans.Finish()
 
@@ -529,7 +529,7 @@ func (s *EmailContentService) sendEmailAttchmentRequest(ctx context.Context, req
 	return response, nil
 }
 
-func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, request *pb.AttachToThreadRequest) (*pb.AttachToThreadResponse, error) {
+func (s *emailContentService) sendAttachToThreadRequest(ctx context.Context, request *pb.AttachToThreadRequest) (*pb.AttachToThreadResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendAttachToThreadRequest")
 	defer spans.Finish()
 
@@ -565,7 +565,7 @@ func (s *EmailContentService) sendAttachToThreadRequest(ctx context.Context, req
 }
 
 // Helper to build attachment list
-func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope *enmime.Envelope, emailID string) ([]*pb.AttachmentMetadata, error) {
+func (s *emailContentService) buildAttachmentList(ctx context.Context, envelope *enmime.Envelope, emailID string) ([]*pb.AttachmentMetadata, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.buildAttachmentList")
 	defer spans.Finish()
 
@@ -596,16 +596,19 @@ func (s *EmailContentService) buildAttachmentList(ctx context.Context, envelope 
 	return attachments, nil
 }
 
-func (s *EmailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*pb.AttachmentMetadata, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.cacheAttachment")
+func (s *emailContentService) cacheAttachment(ctx context.Context, emailID string, attachment *enmime.Part, isInline bool) (*pb.AttachmentMetadata, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailContentService.cacheAttachment")
 	defer spans.Finish()
+	spans.TagEntity(emailID)
+	spans.LogKV("isInline", isInline)
 
 	bucketName := enum.NATSBucketEmailAttachment.String()
 
 	// Try to get the object store first
 	objStore, err := s.natsConn.JS.ObjectStore(bucketName)
 	if err != nil {
-		spans.TraceError(fmt.Errorf("Error accessing object store %s: %v", bucketName, err))
+		s.log.Warnf("Error accessing object store %s: %v", bucketName, err)
+		s.log.Infof("Creating object store %s", bucketName)
 
 		// Try to create the object store explicitly
 		objStore, err = s.natsConn.JS.CreateObjectStore(&nats.ObjectStoreConfig{

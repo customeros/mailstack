@@ -101,28 +101,30 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (
 		repos,
 	)
 
-	// If running in Kubernetes, use leader election
-	if k8sClient != nil {
-		podName := os.Getenv("POD_NAME")
-		if podName == "" {
-			log.Fatal("POD_NAME environment variable not set")
-		}
-		namespace := os.Getenv("POD_NAMESPACE")
-		if namespace == "" {
-			log.Fatal("POD_NAMESPACE environment variable not set")
-		}
-
-		go func() {
-			if err := cronManager.Start(podName, namespace); err != nil {
-				log.Fatalf("Failed to start cron manager: %v", err)
+	if !cfg.AppConfig.CronDisable {
+		// If running in Kubernetes, use leader election
+		if k8sClient != nil {
+			podName := os.Getenv("POD_NAME")
+			if podName == "" {
+				log.Fatal("POD_NAME environment variable not set")
 			}
-		}()
-	} else {
-		// Local development - start cron manager directly
-		log.Println("Running in local mode - starting cron manager without leader election")
-		go func() {
-			cronManager.StartCron()
-		}()
+			namespace := os.Getenv("POD_NAMESPACE")
+			if namespace == "" {
+				log.Fatal("POD_NAMESPACE environment variable not set")
+			}
+
+			go func() {
+				if err := cronManager.Start(podName, namespace); err != nil {
+					log.Fatalf("Failed to start cron manager: %v", err)
+				}
+			}()
+		} else {
+			// Local development - start cron manager directly
+			log.Println("Running in local mode - starting cron manager without leader election")
+			go func() {
+				cronManager.StartCron()
+			}()
+		}
 	}
 
 	return &Server{

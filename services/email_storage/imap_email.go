@@ -16,8 +16,8 @@ import (
 )
 
 // HandleRawEmail processes a single raw email message
-func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event *pb.EmailReceivedIMAP) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.handleRawEmail")
+func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.EmailReceivedIMAP) error {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.handleIMAPEmail")
 	defer spans.Finish()
 	spans.LogObjectAsJson("emailEvent", event)
 
@@ -77,8 +77,8 @@ func (s *EmailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 	return nil
 }
 
-func (s *EmailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "emailStorageService.SaveIMAPMessageAsEML")
+func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.SaveIMAPMessageAsEML")
 	defer spans.Finish()
 
 	tenant := utils.GetTenantFromContext(ctx)
