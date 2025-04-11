@@ -611,222 +611,6 @@ func (s *IMAPService) processFolder(ctx context.Context, imapClient *client.Clie
 		}
 	}
 
-	// Use simple polling instead of IDLE for easier debugging
-	log.Printf("[%s][%s] Starting polling after sync", mailboxID, folderName)
-	return s.simplePolling(ctx, imapClient, mailboxID, folderName)
-}
-
-// simplePolling periodically checks for new messages
-func (s *IMAPService) simplePolling(ctx context.Context, c *client.Client, mailboxID, folderName string) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.simplePolling")
-	defer spans.Finish()
-	spans.TagString("mailbox_id", mailboxID)
-	spans.TagString("folder", folderName)
-
-	log.Printf("[%s][%s] Starting simple polling", mailboxID, folderName)
-
-	// Use a shorter polling interval to keep the connection alive
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	var lastCount uint32
-	firstRun := true
-	lastActivity := time.Now()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-
-		case <-ticker.C:
-			// Check if connection has been idle for too long
-			if time.Since(lastActivity) > 4*time.Minute {
-				// Perform a NOOP to keep the connection alive
-				_, noopCancel := context.WithTimeout(ctx, 10*time.Second)
-				c.Timeout = 10 * time.Second
-
-				log.Printf("[%s][%s] Connection idle for %v, performing NOOP",
-					mailboxID, folderName, time.Since(lastActivity))
-
-				err := c.Noop()
-				c.Timeout = 0
-				noopCancel()
-
-				if err != nil {
-					log.Printf("[%s][%s] NOOP failed, connection likely broken: %v",
-						mailboxID, folderName, err)
-					err = fmt.Errorf("connection health check failed: %w", err)
-					spans.TraceError(err)
-					return err
-				}
-
-				// NOOP succeeded, update activity time
-				lastActivity = time.Now()
-				continue
-			}
-
-			// Select the folder to get current status
-			_, selectCancel := context.WithTimeout(ctx, 30*time.Second)
-			c.Timeout = 30 * time.Second
-
-			mbox, err := c.Select(folderName, false)
-			c.Timeout = 0
-			selectCancel()
-
-			// Update activity timestamp on any successful operation
-			lastActivity = time.Now()
-
-			if err != nil {
-				log.Printf("[%s][%s] Error selecting folder during poll: %v",
-					mailboxID, folderName, err)
-
-				// If we see a connection closed error, break out of polling loop
-				if err.Error() == "imap: connection closed" ||
-					strings.Contains(err.Error(), "i/o timeout") ||
-					strings.Contains(err.Error(), "connection reset") {
-					spans.LogKV("connectionStatus", "lost")
-					return nil
-				}
-
-				continue
-			}
-
-			// Check for new messages (skip first run to establish baseline)
-			if !firstRun && mbox.Messages > lastCount {
-				newCount := mbox.Messages - lastCount
-				log.Printf("[%s][%s] Poll detected %d new message(s)",
-					mailboxID, folderName, newCount)
-
-				// Fetch new messages with timeout context
-				fetchCtx, fetchCancel := context.WithTimeout(ctx, 2*time.Minute)
-
-				err := s.fetchNewMessages(fetchCtx, c, mailboxID, folderName,
-					lastCount+1, mbox.Messages)
-
-				fetchCancel()
-
-				if err != nil {
-					log.Printf("[%s][%s] Error fetching new messages: %v",
-						mailboxID, folderName, err)
-
-					// Check if this is a connection error
-					if strings.Contains(err.Error(), "connection closed") ||
-						strings.Contains(err.Error(), "i/o timeout") ||
-						strings.Contains(err.Error(), "connection reset") {
-						err = fmt.Errorf("connection lost during fetch: %w", err)
-						spans.TraceError(err)
-						return err
-					}
-				}
-
-				// Update activity timestamp
-				lastActivity = time.Now()
-			}
-
-			lastCount = mbox.Messages
-			firstRun = false
-		}
-	}
-}
-
-// fetchNewMessages fetches messages by sequence number
-func (s *IMAPService) fetchNewMessages(
-	ctx context.Context,
-	c *client.Client,
-	mailboxID, folderName string,
-	from, to uint32,
-) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.fetchNewMesssages")
-	defer spans.Finish()
-	spans.TagString("mailbox_id", mailboxID)
-	spans.TagString("folder", folderName)
-
-	if from > to {
-		return nil
-	}
-
-	log.Printf("[%s][%s] Fetching messages %d to %d", mailboxID, folderName, from, to)
-
-	// Create sequence set
-	seqSet := new(imap.SeqSet)
-	seqSet.AddRange(from, to)
-
-	// Fetch items
-	items := []imap.FetchItem{
-		imap.FetchEnvelope,
-		imap.FetchFlags,
-		imap.FetchBodyStructure,
-		"BODY.PEEK[]",
-		imap.FetchUid,
-	}
-
-	// Create message channel
-	messages := make(chan *imap.Message, 10)
-	done := make(chan error, 1)
-
-	// Set timeout
-	c.Timeout = 60 * time.Second
-
-	// Start fetch
-	go func() {
-		done <- c.Fetch(seqSet, items, messages)
-	}()
-
-	// Process messages
-	var highestUID uint32
-	messageCount := 0
-
-	for msg := range messages {
-		messageCount++
-
-		if msg.Uid > highestUID {
-			highestUID = msg.Uid
-		}
-
-		// Process the message
-		event := &pb.EmailReceivedIMAP{
-			MailboxId:   mailboxID,
-			Folder:      folderName,
-			ImapSeqNum:  msg.SeqNum,
-			ImapUid:     msg.Uid,
-			InitialSync: false,
-		}
-		err := s.publishNewEmailEvent(ctx, event)
-		if err != nil {
-			spans.TraceError(err)
-			return err
-		}
-	}
-
-	// Reset timeout
-	c.Timeout = 0
-
-	// Check for fetch errors
-	err := <-done
-	if err != nil {
-		err = fmt.Errorf("error fetching messages: %w", err)
-		spans.TraceError(err)
-		return err
-	}
-
-	log.Printf("[%s][%s] Processed %d messages", mailboxID, folderName, messageCount)
-
-	// Update last synced UID
-	if highestUID == 0 {
-		return nil
-	}
-
-	err = s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
-		MailboxID:  mailboxID,
-		FolderName: folderName,
-		LastUID:    highestUID,
-		LastSync:   utils.Now(),
-	})
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
 	return nil
 }
 
@@ -872,12 +656,12 @@ func (s *IMAPService) syncNewMessagesSince(
 	// Create search criteria for UIDs greater than lastUID
 	criteria := imap.NewSearchCriteria()
 	uidRange := new(imap.SeqSet)
-	uidRange.AddRange(lastUID+1, 0) // From lastUID+1 to infinity
+	uidRange.AddRange(lastUID+1, 0)
 	criteria.Uid = uidRange
 
 	// Set timeout
 	imapClient.Timeout = 30 * time.Second
-	uids, err := imapClient.UidSearch(criteria)
+	imapUids, err := imapClient.UidSearch(criteria)
 	imapClient.Timeout = 0
 
 	if err != nil {
@@ -886,16 +670,30 @@ func (s *IMAPService) syncNewMessagesSince(
 		return err
 	}
 
-	if len(uids) == 0 {
+	spans.LogKV("original_uids_count", len(imapUids))
+
+	// Filter out any UIDs that are less than or equal to our last processed UID
+	filteredUIDs := make([]uint32, 0, len(imapUids))
+	for _, uid := range imapUids {
+		if uid > lastUID {
+			filteredUIDs = append(filteredUIDs, uid)
+		} else {
+			log.Printf("[%s][%s] Skipping already processed UID %d (lastUID: %d)", mailboxID, folderName, uid, lastUID)
+		}
+	}
+
+	spans.LogKV("filtered_uids_count", len(filteredUIDs))
+
+	if len(filteredUIDs) == 0 {
 		log.Printf("[%s][%s] No new messages since UID %d", mailboxID, folderName, lastUID)
 		return nil
 	}
 
-	log.Printf("[%s][%s] Found %d new messages since UID %d", mailboxID, folderName, len(uids), lastUID)
+	log.Printf("[%s][%s] Found %d new messages since UID %d", mailboxID, folderName, len(filteredUIDs), lastUID)
 
 	// Create sequence set
 	seqSet := new(imap.SeqSet)
-	for _, uid := range uids {
+	for _, uid := range filteredUIDs {
 		seqSet.AddNum(uid)
 	}
 

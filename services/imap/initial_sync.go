@@ -26,6 +26,8 @@ func (s *IMAPService) performInitialSync(
 ) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.performInitialSync")
 	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.TagString("folder", folderName)
 
 	// Get all UIDs that need to be synced
 	syncState, uidsToProcess, err := s.getUIDsToSync(ctx, c, mailboxID, folderName)
@@ -33,15 +35,18 @@ func (s *IMAPService) performInitialSync(
 		spans.TraceError(err)
 		return err
 	}
-	if syncState == nil {
-		err := errors.New("no sync state")
-		spans.TraceError(err)
-		return err
-	}
+
+	spans.LogKV("uidsToProcess.count", len(uidsToProcess))
 
 	if len(uidsToProcess) == 0 {
 		log.Printf("[%s][%s] No messages to sync", mailboxID, folderName)
 		return nil
+	}
+
+	if syncState == nil {
+		err := errors.New("no sync state")
+		spans.TraceError(err)
+		return err
 	}
 
 	totalMessagesToProcess := len(uidsToProcess)
