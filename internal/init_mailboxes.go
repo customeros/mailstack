@@ -3,8 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
-	"github.com/customeros/mailstack/internal/telemetry"
 	"log"
+
+	"github.com/customeros/mailstack/internal/telemetry"
 
 	"github.com/customeros/mailstack/internal/models"
 	"github.com/customeros/mailstack/internal/repository"
@@ -24,9 +25,14 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		return err
 	}
 
+	skippedMailboxes := make(map[string][]string)
 	// Add mailboxes to IMAP service
 	for _, mailbox := range mailboxes {
 		if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+			if _, exists := skippedMailboxes[mailbox.Tenant]; !exists {
+				skippedMailboxes[mailbox.Tenant] = make([]string, 0)
+			}
+			skippedMailboxes[mailbox.Tenant] = append(skippedMailboxes[mailbox.Tenant], mailbox.EmailAddress)
 			continue
 		}
 		if err = s.IMAPService.AddMailbox(ctx, mailbox); err != nil {
@@ -35,6 +41,7 @@ func InitMailboxes(s *services.Services, r *repository.Repositories) error {
 		}
 	}
 
+	spans.LogObjectAsJson("skipped_mailboxes", skippedMailboxes)
 	log.Printf("Successfully initialized %d mailboxes", len(mailboxes))
 	return nil
 }
