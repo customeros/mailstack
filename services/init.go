@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/customeros/mailstack/services/google"
+
 	"go.uber.org/multierr"
 
 	"github.com/customeros/mailstack/interfaces"
@@ -39,6 +41,7 @@ type Services struct {
 	EmailStorageService        interfaces.EmailProcessor
 	EmailThreadingService      interfaces.EmailProcessor
 	EventLoggerService         interfaces.EmailProcessor
+	GoogleService              interfaces.GoogleService
 	IMAPService                interfaces.IMAPService
 	MailboxService             interfaces.MailboxService
 	NamecheapService           interfaces.NamecheapService
@@ -57,11 +60,17 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		false,
 	)
 
+	googleImpl := google.NewGoogleService(
+		repos,
+		cfg.GoogleOAuthConfig.ClientID,
+		cfg.GoogleOAuthConfig.ClientSecret,
+		cfg.GoogleOAuthConfig.EncryptionKey,
+	)
 	namecheapImpl := namecheap.NewNamecheapService(cfg.NamecheapConfig, repos)
 	cloudflareImpl := cloudflare.NewCloudflareService(log, cfg.CloudflareConfig, repos)
 	opensrsImpl := opensrs.NewOpenSRSService(log, cfg.OpenSrsConfig, repos)
 	mailboxOldImpl := mailboxold.NewMailboxServiceOld(log, repos, opensrsImpl)
-	imapImpl := imap.NewIMAPService(natsConn, repos)
+	imapImpl := imap.NewIMAPService(natsConn, repos, googleImpl)
 
 	services := Services{
 		CloudflareService: cloudflareImpl,
@@ -77,6 +86,7 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		EmailStorageService:        email_storage.NewEmailStorageService(natsConn, repos, imapImpl, emlStorage),
 		EmailThreadingService:      email_thread.NewEmailThreadingService(natsConn, repos),
 		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos),
+		GoogleService:              googleImpl,
 		IMAPService:                imapImpl,
 		MailboxService:             mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
 		NamecheapService:           namecheapImpl,

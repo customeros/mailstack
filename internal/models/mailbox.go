@@ -28,6 +28,13 @@ const (
 	MAILBOX_INBOX = "INBOX"
 	MAILBOX_SENT  = "Sent"
 	MAILBOX_SPAM  = "Spam"
+
+	MAILBOX_GOOGLE_IMAP_SERVER   = "imap.gmail.com"
+	MAILBOX_GOOGLE_IMAP_PORT     = 993
+	MAILBOX_GOOGLE_IMAP_SECURITY = enum.EmailSecurityTLS
+	MAILBOX_GOOGLE_INBOX         = "INBOX"
+	MAILBOX_GOOGLE_SENT          = "[Gmail]/Sent Mail"
+	MAILBOX_GOOGLE_SPAM          = "[Gmail]/Spam"
 )
 
 // Mailbox represents an email account configuration with provider-specific settings

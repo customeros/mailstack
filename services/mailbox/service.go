@@ -136,7 +136,8 @@ func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error 
 	}
 
 	// determine if we should sync
-	if mailbox.Provider == enum.EmailMailstack && mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned {
+	if mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned &&
+		(mailbox.Provider == enum.EmailMailstack || mailbox.Provider == enum.EmailGoogleWorkspace) {
 		return s.imapService.AddMailbox(ctx, mailbox)
 	}
 
@@ -160,14 +161,27 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 	var imapServer, smtpServer string
 	var imapSecurity, smtpSecurity enum.EmailSecurity
 
-	// For now, we only support mailstack provider
-	syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
-	imapPort = models.MAILBOX_IMAP_PORT
-	smtpPort = models.MAILBOX_SMTP_PORT
-	imapServer = models.MAILBOX_IMAP_SERVER
-	smtpServer = models.MAILBOX_SMTP_SERVER
-	imapSecurity = models.MAILBOX_IMAP_SECURITY
-	smtpSecurity = models.MAILBOX_SMTP_SECURITY
+	// Configure based on provider
+	switch provider {
+	case enum.EmailGoogleWorkspace:
+		syncFolders = []string{models.MAILBOX_GOOGLE_INBOX, models.MAILBOX_GOOGLE_SENT, models.MAILBOX_GOOGLE_SPAM}
+		imapServer = models.MAILBOX_GOOGLE_IMAP_SERVER
+		imapPort = models.MAILBOX_GOOGLE_IMAP_PORT
+		imapSecurity = models.MAILBOX_GOOGLE_IMAP_SECURITY
+		// Gmail uses OAuth2, so no password needed
+	case enum.EmailMailstack, enum.EmailGeneric:
+		syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
+		imapPort = models.MAILBOX_IMAP_PORT
+		smtpPort = models.MAILBOX_SMTP_PORT
+		imapServer = models.MAILBOX_IMAP_SERVER
+		smtpServer = models.MAILBOX_SMTP_SERVER
+		imapSecurity = models.MAILBOX_IMAP_SECURITY
+		smtpSecurity = models.MAILBOX_SMTP_SECURITY
+	default:
+		err := fmt.Errorf("unsupported provider: %s", provider)
+		spans.TraceError(err)
+		return nil, err
+	}
 
 	mailbox := models.Mailbox{
 		ID:              utils.GenerateNanoIDWithPrefix("mbox", 16),
@@ -190,7 +204,28 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 		RampUpCurrent:   3,
 	}
 
-	if provider == enum.EmailMailstack || provider == enum.EmailGeneric {
+	// Set provider-specific fields
+	switch provider {
+	case enum.EmailGoogleWorkspace:
+		if oauth == nil {
+			err := errors.New("OAuth data is required for Gmail")
+			spans.TraceError(err)
+			return nil, err
+		}
+		mailbox.ImapServer = imapServer
+		mailbox.ImapPort = imapPort
+		mailbox.ImapUsername = strings.ToLower(emailAddress)
+		mailbox.ImapSecurity = imapSecurity
+
+		mailbox.OAuthAccessToken = oauth.OAuthAccessToken
+		mailbox.OAuthRefreshToken = oauth.OAuthRefreshToken
+		mailbox.OAuthTokenExpiry = oauth.OAuthTokenExpiry
+		mailbox.OAuthScope = oauth.OAuthScope
+		mailbox.OAuthTokenId = oauth.OAuthTokenId
+		// Mark as provisioned since Gmail doesn't need provisioning
+		mailbox.ProvisionStatus = models.MailboxStatusProvisioned
+
+	case enum.EmailMailstack, enum.EmailGeneric:
 		mailbox.ImapServer = imapServer
 		mailbox.ImapPort = imapPort
 		mailbox.ImapUsername = strings.ToLower(emailAddress)
@@ -202,13 +237,6 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 		mailbox.SmtpUsername = strings.ToLower(emailAddress)
 		mailbox.SmtpPassword = request.Password
 		mailbox.SmtpSecurity = smtpSecurity
-	}
-	if provider == enum.EmailGoogleWorkspace {
-		mailbox.OAuthAccessToken = oauth.OAuthAccessToken
-		mailbox.OAuthRefreshToken = oauth.OAuthRefreshToken
-		mailbox.OAuthTokenId = oauth.OAuthTokenId
-		mailbox.OAuthScope = oauth.OAuthScope
-		mailbox.OAuthTokenExpiry = oauth.OAuthTokenExpiry
 	}
 
 	return &mailbox, nil

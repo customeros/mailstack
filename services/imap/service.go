@@ -37,21 +37,24 @@ type IMAPService struct {
 	cancel         context.CancelFunc
 	statuses       map[string]interfaces.MailboxStatus
 	statusMutex    sync.RWMutex
+	googleService  interfaces.GoogleService
 }
 
-func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories) interfaces.IMAPService {
+func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories, googleSvc interfaces.GoogleService) interfaces.IMAPService {
 	return &IMAPService{
 		natsConn:       nats,
 		repositories:   repos,
 		clients:        make(map[string]*client.Client),
 		mailboxConfigs: make(map[string]*models.Mailbox),
 		statuses:       make(map[string]interfaces.MailboxStatus),
+		googleService:  googleSvc,
 	}
 }
 
 const (
 	INITIAL_SYNC_BATCH_SIZE = 20
 	INITIAL_SYNC_MAX_TOTAL  = 50000
+	SYNC_EMAILS_BATCH_SIZE  = 10
 )
 
 // Start initializes the service and connects to mailboxes
@@ -138,7 +141,7 @@ func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) e
 		err := errors.New("mailbox is nil")
 		spans.TraceError(err)
 		return err
-	} else if mailbox.Provider != enum.EmailMailstack {
+	} else if mailbox.Provider != enum.EmailMailstack && mailbox.Provider != enum.EmailGoogleWorkspace {
 		err := fmt.Errorf("unsupported mailbox provider: %s", mailbox.Provider)
 		spans.TraceError(err)
 		return err
@@ -488,8 +491,33 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 
 	log.Printf("[%s] Server capabilities: %v", config.ID, caps)
 
-	// Login
-	err = c.Login(config.ImapUsername, config.ImapPassword)
+	// Handle authentication based on provider
+	switch config.Provider {
+	case enum.EmailGoogleWorkspace:
+		// For Gmail, refresh token if needed before getting access token
+		err = s.googleService.RefreshTokenIfNeeded(ctx, config)
+		if err != nil {
+			spans.TraceError(err)
+			return nil, fmt.Errorf("failed to refresh token: %w", err)
+		}
+
+		// Get the access token
+		accessToken, err := s.googleService.GetDecryptedAccessToken(ctx, config)
+		if err != nil {
+			spans.TraceError(err)
+			return nil, fmt.Errorf("failed to get access token: %w", err)
+		}
+
+		// Use XOAUTH2 authentication
+		err = c.Authenticate(&XOAuth2Auth{
+			Username: config.ImapUsername,
+			Token:    accessToken,
+		})
+	default:
+		// Default to password authentication
+		err = c.Login(config.ImapUsername, config.ImapPassword)
+	}
+
 	if err != nil {
 		c.Logout()
 		err := fmt.Errorf("login error: %w", err)
@@ -502,6 +530,22 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 
 	log.Printf("[%s] Successfully connected to %s", config.ID, serverAddr)
 	return c, nil
+}
+
+// XOAuth2Auth implements XOAUTH2 authentication for Gmail
+type XOAuth2Auth struct {
+	Username string
+	Token    string
+}
+
+func (a *XOAuth2Auth) Start() (string, []byte, error) {
+	// Format: base64("user=" + username + "^Aauth=Bearer " + token + "^A^A")
+	auth := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", a.Username, a.Token)
+	return "XOAUTH2", []byte(auth), nil
+}
+
+func (a *XOAuth2Auth) Next(challenge []byte) ([]byte, error) {
+	return nil, fmt.Errorf("unexpected server challenge")
 }
 
 // syncFolders processes all folders and returns information about the sync process
@@ -681,7 +725,7 @@ func (s *IMAPService) syncNewMessagesSince(
 
 	collectedUIDs := make([]uint32, 0)
 	startUID := lastUID + 1
-	size := 1000
+	size := SYNC_EMAILS_BATCH_SIZE
 
 	for startUID < mboxUIDNext {
 		stopUID := startUID + uint32(size) - 1
