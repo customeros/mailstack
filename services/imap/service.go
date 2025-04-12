@@ -138,6 +138,14 @@ func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) e
 		err := errors.New("mailbox is nil")
 		spans.TraceError(err)
 		return err
+	} else if mailbox.Provider != enum.EmailMailstack {
+		err := fmt.Errorf("unsupported mailbox provider: %s", mailbox.Provider)
+		spans.TraceError(err)
+		return err
+	} else if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+		err := fmt.Errorf("mailbox is not provisioned: %s", mailbox.ProvisionStatus)
+		spans.TraceError(err)
+		return err
 	}
 
 	s.clientsMutex.Lock()
@@ -591,7 +599,24 @@ func (s *IMAPService) processFolder(ctx context.Context, imapClient *client.Clie
 		return err
 	}
 
-	if syncState == nil || syncState.LastUID == 0 {
+	// create a new sync state if it doesn't exist
+	if syncState == nil {
+		syncState = &models.MailboxSyncState{
+			MailboxID:  mailboxID,
+			FolderName: folderName,
+			LastUID:    0,
+		}
+		err = s.repositories.MailboxSyncRepository.SaveSyncState(ctx, syncState)
+		if err != nil {
+			spans.TraceError(err)
+			return err
+		}
+	}
+
+	// Initial sync (no previous sync state or LastUID is 0)
+	// TODO initial sync is not invoked (TODO: to be checked why performInitialSync is needed)
+	// if syncState == nil || syncState.LastUID == 0 {
+	if syncState == nil {
 		// Initial sync (no previous sync state or LastUID is 0)
 		log.Printf("[%s][%s] Performing initial sync", mailboxID, folderName)
 		err = s.performInitialSync(ctx, imapClient, mailboxID, folderName)
@@ -603,7 +628,7 @@ func (s *IMAPService) processFolder(ctx context.Context, imapClient *client.Clie
 	} else {
 		// We have a previous sync state, sync new messages
 		log.Printf("[%s][%s] Resuming sync from UID %d", mailboxID, folderName, syncState.LastUID)
-		err = s.syncNewMessagesSince(ctx, imapClient, mailboxID, folderName, syncState.LastUID)
+		err = s.syncNewMessagesSince(ctx, imapClient, mailboxID, folderName, syncState.LastUID, mbox.UidNext)
 		if err != nil {
 			err = fmt.Errorf("error syncing new messages: %w", err)
 			spans.TraceError(err)
@@ -646,35 +671,53 @@ func (s *IMAPService) syncNewMessagesSince(
 	imapClient *client.Client,
 	mailboxID, folderName string,
 	lastUID uint32,
+	mboxUIDNext uint32,
 ) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.syncNewMessagesSince")
 	defer spans.Finish()
-	spans.TagString("mailbox_id", mailboxID)
+	spans.TagEntity(mailboxID)
 	spans.TagString("folder", folderName)
-	spans.LogKV("last_uid", lastUID)
+	spans.LogKV("last_uid", lastUID, "mbox_uid_next", mboxUIDNext)
 
-	// Create search criteria for UIDs greater than lastUID
-	criteria := imap.NewSearchCriteria()
-	uidRange := new(imap.SeqSet)
-	uidRange.AddRange(lastUID+1, 0)
-	criteria.Uid = uidRange
+	collectedUIDs := make([]uint32, 0)
+	startUID := lastUID + 1
+	size := 1000
 
-	// Set timeout
-	imapClient.Timeout = 30 * time.Second
-	imapUids, err := imapClient.UidSearch(criteria)
-	imapClient.Timeout = 0
+	for startUID < mboxUIDNext {
+		stopUID := startUID + uint32(size) - 1
+		if stopUID > mboxUIDNext {
+			stopUID = 0
+		}
 
-	if err != nil {
-		err = fmt.Errorf("error searching for new messages: %w", err)
-		spans.TraceError(err)
-		return err
+		// Create search criteria for UIDs greater than lastUID
+		criteria := imap.NewSearchCriteria()
+		uidRange := new(imap.SeqSet)
+		uidRange.AddRange(startUID, stopUID)
+		criteria.Uid = uidRange
+
+		// Set timeout
+		imapClient.Timeout = 30 * time.Second
+		imapUids, err := imapClient.UidSearch(criteria)
+		if err != nil {
+			err = fmt.Errorf("error searching for new messages: %w", err)
+			spans.TraceError(err)
+			return err
+		}
+		imapClient.Timeout = 0
+
+		collectedUIDs = append(collectedUIDs, imapUids...)
+
+		if stopUID == 0 || len(collectedUIDs) >= size {
+			break
+		}
+		startUID = stopUID + 1
 	}
 
-	spans.LogKV("original_uids_count", len(imapUids))
+	spans.LogKV("original_uids_count", len(collectedUIDs))
 
 	// Filter out any UIDs that are less than or equal to our last processed UID
-	filteredUIDs := make([]uint32, 0, len(imapUids))
-	for _, uid := range imapUids {
+	filteredUIDs := make([]uint32, 0, len(collectedUIDs))
+	for _, uid := range collectedUIDs {
 		if uid > lastUID {
 			filteredUIDs = append(filteredUIDs, uid)
 		} else {
@@ -737,7 +780,7 @@ func (s *IMAPService) syncNewMessagesSince(
 			ImapUid:     msg.Uid,
 			InitialSync: false,
 		}
-		err = s.publishNewEmailEvent(ctx, event)
+		err := s.publishNewEmailEvent(ctx, event)
 		if err != nil {
 			spans.TraceError(err)
 			return err
@@ -748,7 +791,7 @@ func (s *IMAPService) syncNewMessagesSince(
 	imapClient.Timeout = 0
 
 	// Check for fetch errors
-	err = <-done
+	err := <-done
 	if err != nil {
 		err = fmt.Errorf("error fetching messages: %w", err)
 		spans.TraceError(err)
