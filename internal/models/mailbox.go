@@ -2,6 +2,11 @@
 package models
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"github.com/pkg/errors"
 	"time"
 
 	"github.com/lib/pq"
@@ -59,7 +64,8 @@ type Mailbox struct {
 	OAuthRefreshToken string     `gorm:"column:oauth_refresh_token;type:varchar(1000)" json:"oauthRefreshToken"`
 	OAuthAccessToken  string     `gorm:"column:oauth_access_token;type:varchar(1000)" json:"oauthAccessToken"`
 	OAuthTokenExpiry  *time.Time `gorm:"column:oauth_token_expiry;type:timestamp" json:"oauthTokenExpiry"`
-	OAuthScope        string     `gorm:"column:oauth_scope;type:varchar(500)" json:"oauthScope"`
+	OAuthScope        string     `gorm:"column:oauth_scope;type:varchar(2000)" json:"oauthScope"`
+	OAuthTokenId      string     `gorm:"column:oauth_token_id;type:varchar(2000)" json:"oauthTokenId"`
 
 	// Email sending configuration
 	ReplyToAddress string `gorm:"column:reply_to_address;type:varchar(255)" json:"replyToAddress"`
@@ -113,3 +119,65 @@ const (
 	MailboxStatusPendingProvisioning MailboxProvisionStatus = "PENDING_PROVISIONING"
 	MailboxStatusProvisioned         MailboxProvisionStatus = "PROVISIONED"
 )
+
+// Encrypt a token using AES-GCM
+func EncryptToken(key string, token string) (string, error) {
+	decodedKey, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(decodedKey)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, []byte(token), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// Decrypt a token using AES-GCM
+func DecryptToken(key string, encryptedToken string) (string, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encryptedToken)
+	if err != nil {
+		return "", err
+	}
+
+	decodedKey, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(decodedKey)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return "", errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}

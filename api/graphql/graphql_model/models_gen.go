@@ -116,16 +116,21 @@ type Mailbox struct {
 }
 
 type MailboxInput struct {
-	ID              *string            `json:"id,omitempty"`
-	Provider        enum.EmailProvider `json:"provider"`
-	EmailAddress    string             `json:"emailAddress"`
-	SenderID        *string            `json:"senderId,omitempty"`
-	InboundEnabled  *bool              `json:"inboundEnabled,omitempty"`
-	OutboundEnabled *bool              `json:"outboundEnabled,omitempty"`
-	ImapConfig      *ImapConfigInput   `json:"imapConfig,omitempty"`
-	SMTPConfig      *SMTPConfigInput   `json:"smtpConfig,omitempty"`
-	ReplyToAddress  *string            `json:"replyToAddress,omitempty"`
-	SyncFolders     []*string          `json:"syncFolders,omitempty"`
+	ID                *string            `json:"id,omitempty"`
+	Provider          enum.EmailProvider `json:"provider"`
+	EmailAddress      string             `json:"emailAddress"`
+	SenderID          *string            `json:"senderId,omitempty"`
+	InboundEnabled    *bool              `json:"inboundEnabled,omitempty"`
+	OutboundEnabled   *bool              `json:"outboundEnabled,omitempty"`
+	ImapConfig        *ImapConfigInput   `json:"imapConfig,omitempty"`
+	SMTPConfig        *SMTPConfigInput   `json:"smtpConfig,omitempty"`
+	ReplyToAddress    *string            `json:"replyToAddress,omitempty"`
+	SyncFolders       []*string          `json:"syncFolders,omitempty"`
+	OauthRefreshToken *string            `json:"oauthRefreshToken,omitempty"`
+	OauthAccessToken  *string            `json:"oauthAccessToken,omitempty"`
+	OauthTokenExpiry  *time.Time         `json:"oauthTokenExpiry,omitempty"`
+	OauthScope        *string            `json:"oauthScope,omitempty"`
+	OauthTokenID      *string            `json:"oauthTokenId,omitempty"`
 }
 
 type Mutation struct {

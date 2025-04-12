@@ -24,6 +24,7 @@ type Config struct {
 	NamecheapConfig         *NamecheapConfig
 	CloudflareConfig        *CloudflareConfig
 	OpenSrsConfig           *OpenSRSConfig
+	GoogleOAuthConfig       *GoogleOAuthConfig
 }
 
 func InitConfig() (*Config, error) {
@@ -41,6 +42,7 @@ func InitConfig() (*Config, error) {
 		NamecheapConfig:         &NamecheapConfig{},
 		CloudflareConfig:        &CloudflareConfig{},
 		OpenSrsConfig:           &OpenSRSConfig{},
+		GoogleOAuthConfig:       &GoogleOAuthConfig{},
 	}
 
 	err := godotenv.Load()

@@ -1,6 +1,7 @@
 package mappers
 
 import (
+	"github.com/customeros/mailstack/internal/utils"
 	"time"
 
 	"github.com/customeros/mailsherpa/mailvalidate"
@@ -100,6 +101,15 @@ func MapGraphMailboxInputToGorm(input *graphql_model.MailboxInput) *models.Mailb
 			}
 		}
 		gormMailbox.SyncFolders = syncFolders
+	}
+
+	// Map oauth
+	if input.Provider == enum.EmailGoogleWorkspace || input.Provider == enum.EmailOutlook {
+		gormMailbox.OAuthRefreshToken = utils.StringFromPointer(input.OauthRefreshToken)
+		gormMailbox.OAuthAccessToken = utils.StringFromPointer(input.OauthAccessToken)
+		gormMailbox.OAuthTokenExpiry = input.OauthTokenExpiry
+		gormMailbox.OAuthScope = utils.StringFromPointer(input.OauthScope)
+		gormMailbox.OAuthTokenId = utils.StringFromPointer(input.OauthTokenID)
 	}
 
 	return gormMailbox

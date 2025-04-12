@@ -1,3 +1,8 @@
+extend type Mutation {
+  addMailbox(input: MailboxInput!): Mailbox!
+  updateMailbox(id: String!, input: MailboxInput!): Mailbox!
+}
+
 enum MailboxProvider {
   google_workspace
   outlook
@@ -28,6 +33,12 @@ input MailboxInput {
   smtpConfig: SmtpConfigInput
   replyToAddress: String
   syncFolders: [String]
+
+  oauthRefreshToken:  String
+  oauthAccessToken:   String
+  oauthTokenExpiry:   Time
+  oauthScope:         String
+  oauthTokenId:       String
 }
 
 input ImapConfigInput {
@@ -74,9 +85,4 @@ type SmtpConfig {
   smtpUsername: String
   smtpPassword: String
   smtpSecurity: EmailSecurity
-}
-
-extend type Mutation {
-  addMailbox(input: MailboxInput!): Mailbox!
-  updateMailbox(id: String!, input: MailboxInput!): Mailbox!
 }

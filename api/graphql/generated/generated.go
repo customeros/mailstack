@@ -904,7 +904,12 @@ extend type Mutation {
   sendEmail(input: EmailInput!): EmailResult!
 }
 `, BuiltIn: false},
-	{Name: "../schemas/mailboxes.graphqls", Input: `enum MailboxProvider {
+	{Name: "../schemas/mailboxes.graphqls", Input: `extend type Mutation {
+  addMailbox(input: MailboxInput!): Mailbox!
+  updateMailbox(id: String!, input: MailboxInput!): Mailbox!
+}
+
+enum MailboxProvider {
   google_workspace
   outlook
   mailstack
@@ -934,6 +939,12 @@ input MailboxInput {
   smtpConfig: SmtpConfigInput
   replyToAddress: String
   syncFolders: [String]
+
+  oauthRefreshToken:  String
+  oauthAccessToken:   String
+  oauthTokenExpiry:   Time
+  oauthScope:         String
+  oauthTokenId:       String
 }
 
 input ImapConfigInput {
@@ -980,13 +991,7 @@ type SmtpConfig {
   smtpUsername: String
   smtpPassword: String
   smtpSecurity: EmailSecurity
-}
-
-extend type Mutation {
-  addMailbox(input: MailboxInput!): Mailbox!
-  updateMailbox(id: String!, input: MailboxInput!): Mailbox!
-}
-`, BuiltIn: false},
+}`, BuiltIn: false},
 	{Name: "../schemas/threads.graphqls", Input: `type EmailThread {
   id: String!
   userId: String!
@@ -6801,7 +6806,7 @@ func (ec *executionContext) unmarshalInputMailboxInput(ctx context.Context, obj 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"id", "provider", "emailAddress", "senderId", "inboundEnabled", "outboundEnabled", "imapConfig", "smtpConfig", "replyToAddress", "syncFolders"}
+	fieldsInOrder := [...]string{"id", "provider", "emailAddress", "senderId", "inboundEnabled", "outboundEnabled", "imapConfig", "smtpConfig", "replyToAddress", "syncFolders", "oauthRefreshToken", "oauthAccessToken", "oauthTokenExpiry", "oauthScope", "oauthTokenId"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -6878,6 +6883,41 @@ func (ec *executionContext) unmarshalInputMailboxInput(ctx context.Context, obj 
 				return it, err
 			}
 			it.SyncFolders = data
+		case "oauthRefreshToken":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oauthRefreshToken"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OauthRefreshToken = data
+		case "oauthAccessToken":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oauthAccessToken"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OauthAccessToken = data
+		case "oauthTokenExpiry":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oauthTokenExpiry"))
+			data, err := ec.unmarshalOTime2ᚖtimeᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OauthTokenExpiry = data
+		case "oauthScope":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oauthScope"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OauthScope = data
+		case "oauthTokenId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oauthTokenId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OauthTokenID = data
 		}
 	}
 
