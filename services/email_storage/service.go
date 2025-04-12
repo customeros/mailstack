@@ -131,7 +131,7 @@ func (s *emailStorageService) processBatch(ctx context.Context, sub *nats.Subscr
 
 // handleFetchError handles errors that occur during message fetching
 func (s *emailStorageService) handleFetchError(err error) {
-	if err == nats.ErrTimeout {
+	if errors.Is(err, nats.ErrTimeout) {
 		// No messages available, this is normal
 		return
 	}
@@ -155,14 +155,14 @@ func (s *emailStorageService) processMessage(ctx context.Context, msg *nats.Msg)
 	message := &pb.EmailReceivedIMAP{}
 	err := proto.Unmarshal(msg.Data, message)
 	if err != nil || message == nil {
-		err := errors.New("Failed to parse message")
+		err := errors.New("failed to parse message")
 		spans.TraceError(err)
 		s.handleProcessingError(ctx, msg, err)
 		return
 	}
 
 	// Process the email
-	s.handleIMAPEmail(ctx, message)
+	err = s.handleIMAPEmail(ctx, message)
 	if err != nil {
 		if !strings.Contains(err.Error(), "skipping") {
 			spans.TraceError(err)

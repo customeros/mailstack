@@ -19,18 +19,19 @@ import (
 func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.EmailReceivedIMAP) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.handleIMAPEmail")
 	defer spans.Finish()
-	spans.LogObjectAsJson("emailEvent", event)
+	spans.LogObjectAsJson("receivedIMAPEmailEvent", event)
 
-	email := s.NewEmailLog()
+	emailLog := s.NewEmailLog()
 
-	email.EmailHash = utils.GenerateIMAPHash(event.MailboxId, event.Folder, event.ImapUid)
+	emailLog.EmailHash = utils.GenerateIMAPHash(event.MailboxId, event.Folder, event.ImapUid)
 
-	emailExists, err := s.repositories.EmailLogRepository.IsDuplicateByHash(ctx, email.EmailHash)
+	emailExists, err := s.repositories.EmailLogRepository.IsDuplicateByHash(ctx, emailLog.EmailHash)
 	if err != nil {
 		spans.TraceError(err)
 		return err
 	}
 	if emailExists {
+		spans.LogKV("duplicateEmail.hash", emailLog.EmailHash)
 		// TODO either publish a skip notification or FIX import so no dups
 		return nil
 	}
@@ -43,21 +44,21 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 	}
 
 	// save message as .eml
-	bucketKey, err := s.SaveIMAPMessageAsEML(ctx, msg, email.ID)
+	bucketKey, err := s.saveIMAPMessageAsEMLToBucket(ctx, msg, emailLog.ID)
 	if err != nil {
 		spans.TraceError(err)
 		return err
 	}
 
 	// build email record
-	email.MailboxID = event.MailboxId
-	email.EMLKey = bucketKey
-	email.MessageID = utils.NormalizeMessageID(msg.Envelope.MessageId)
-	email.Subject = msg.Envelope.Subject
-	email.CleanSubject = utils.NormalizeSubject(msg.Envelope.Subject)
+	emailLog.MailboxID = event.MailboxId
+	emailLog.EMLKey = bucketKey
+	emailLog.MessageID = utils.NormalizeMessageID(msg.Envelope.MessageId)
+	emailLog.Subject = msg.Envelope.Subject
+	emailLog.CleanSubject = utils.NormalizeSubject(msg.Envelope.Subject)
 
 	// log email
-	err = s.repositories.EmailLogRepository.Create(ctx, email)
+	err = s.repositories.EmailLogRepository.Create(ctx, emailLog)
 	if err != nil {
 		spans.TraceError(err)
 		return err
@@ -65,8 +66,8 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 
 	// Publish to next stage
 	err = s.publishStoredEmail(ctx, &pb.EmailStored{
-		EmailId:   email.ID,
-		EmlKey:    email.EMLKey,
+		EmailId:   emailLog.ID,
+		EmlKey:    emailLog.EMLKey,
 		MailboxId: event.MailboxId,
 	})
 	if err != nil {
@@ -77,9 +78,10 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 	return nil
 }
 
-func (s *emailStorageService) SaveIMAPMessageAsEML(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.SaveIMAPMessageAsEML")
+func (s *emailStorageService) saveIMAPMessageAsEMLToBucket(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.saveIMAPMessageAsEMLToBucket")
 	defer spans.Finish()
+	spans.TagEntity(emailID)
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {

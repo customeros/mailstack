@@ -21,7 +21,7 @@ import (
 // performInitialSync orchestrates the initial sync of messages with resumption support
 func (s *IMAPService) performInitialSync(
 	ctx context.Context,
-	c *client.Client,
+	imapClient *client.Client,
 	mailboxID, folderName string,
 ) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.performInitialSync")
@@ -30,7 +30,7 @@ func (s *IMAPService) performInitialSync(
 	spans.TagString("folder", folderName)
 
 	// Get all UIDs that need to be synced
-	syncState, uidsToProcess, err := s.getUIDsToSync(ctx, c, mailboxID, folderName)
+	syncState, uidsToProcess, err := s.getUIDsToSync(ctx, imapClient, mailboxID, folderName)
 	if err != nil {
 		spans.TraceError(err)
 		return err
@@ -53,7 +53,7 @@ func (s *IMAPService) performInitialSync(
 	log.Printf("[%s][%s] Starting initial sync of %d messages", mailboxID, folderName, totalMessagesToProcess)
 
 	// Process in batches
-	return s.processBatches(ctx, c, *syncState, uidsToProcess, totalMessagesToProcess)
+	return s.processBatches(ctx, imapClient, *syncState, uidsToProcess, totalMessagesToProcess)
 }
 
 // getUIDsToSync returns a slice of UIDs that need to be synced

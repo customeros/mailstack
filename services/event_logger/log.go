@@ -39,7 +39,7 @@ func (s *EventLoggerService) processErrorMessage(ctx context.Context, msg *nats.
 }
 
 func (s *EventLoggerService) processSkipInboundProcessing(ctx context.Context, msg *nats.Msg) {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processReceivedIMAPMessage")
+	spans, ctx := telemetry.StartServiceSpan(ctx, "EventLoggerService.processSkipInboundProcessing")
 	defer spans.Finish()
 
 	message := &pb.SkipInboundProcessing{}
