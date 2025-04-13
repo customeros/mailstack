@@ -2,6 +2,7 @@ package google
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,6 +46,12 @@ func (s *googleService) RefreshTokenIfNeeded(ctx context.Context, mailbox *model
 	defer spans.Finish()
 	spans.TagEntity(mailbox.ID)
 
+	if mailbox.OAuthRevokedAt != nil {
+		err := errors.New("mailbox is revoked")
+		spans.TraceError(err)
+		return err
+	}
+
 	// Check if token needs refresh (expires in less than 5 minutes)
 	if mailbox.OAuthTokenExpiry != nil && mailbox.OAuthTokenExpiry.After(time.Now().Add(5*time.Minute)) {
 		return nil // Token is still valid
@@ -78,6 +85,11 @@ func (s *googleService) RefreshToken(ctx context.Context, mailbox *models.Mailbo
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		spans.TraceError(err)
+		err = s.repositories.MailboxRepository.MarkForManualRefresh(ctx, mailbox.ID, true)
+		if err != nil {
+			spans.TraceError(err)
+			return fmt.Errorf("failed to mark mailbox for manual refresh: %w", err)
+		}
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
 
@@ -104,6 +116,13 @@ func (s *googleService) RefreshToken(ctx context.Context, mailbox *models.Mailbo
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to update mailbox with new token: %w", err)
+	}
+
+	if mailbox.OAuthNeedsManualRefresh {
+		err = s.repositories.MailboxRepository.MarkForManualRefresh(ctx, mailbox.ID, false)
+		if err != nil {
+			spans.TraceError(err)
+		}
 	}
 
 	return nil

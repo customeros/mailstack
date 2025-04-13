@@ -25,4 +25,5 @@ type MailboxRepository interface {
 	GetForRampUp(ctx context.Context) ([]*models.Mailbox, error)
 	UpdateRampUpFields(ctx context.Context, mailbox *models.Mailbox) error
 	UpdateOauthToken(ctx context.Context, mailboxID, accessToken, refreshToken string, tokenExpiry *time.Time) error
+	MarkForManualRefresh(ctx context.Context, mailboxID string, needsManualRefresh bool) error
 }
