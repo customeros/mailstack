@@ -85,7 +85,7 @@ func (s *googleService) RefreshToken(ctx context.Context, mailbox *models.Mailbo
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		spans.TraceError(err)
-		err = s.repositories.MailboxRepository.MarkForManualRefresh(ctx, mailbox.ID)
+		err = s.repositories.MailboxRepository.MarkForManualRefresh(ctx, mailbox.ID, true)
 		if err != nil {
 			spans.TraceError(err)
 			return fmt.Errorf("failed to mark mailbox for manual refresh: %w", err)
