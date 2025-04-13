@@ -88,12 +88,19 @@ func (s *googleService) RefreshToken(ctx context.Context, mailbox *models.Mailbo
 		return fmt.Errorf("failed to encrypt access token: %w", err)
 	}
 
-	// Update mailbox with new token
+	encryptedRefreshToken, err := models.EncryptToken(s.encryptKey, newToken.RefreshToken)
+	if err != nil {
+		spans.TraceError(err)
+		return fmt.Errorf("failed to encrypt refresh token: %w", err)
+	}
+
+	// update mailbox with new token
 	mailbox.OAuthAccessToken = encryptedAccessToken
+	mailbox.OAuthRefreshToken = encryptedRefreshToken
 	mailbox.OAuthTokenExpiry = &newToken.Expiry
 
 	// Save to database
-	_, err = s.repositories.MailboxRepository.SaveMailbox(ctx, *mailbox)
+	err = s.repositories.MailboxRepository.UpdateOauthToken(ctx, mailbox.ID, encryptedAccessToken, encryptedRefreshToken, &newToken.Expiry)
 	if err != nil {
 		spans.TraceError(err)
 		return fmt.Errorf("failed to update mailbox with new token: %w", err)

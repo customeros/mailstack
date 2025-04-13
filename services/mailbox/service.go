@@ -124,7 +124,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.addToIMAP")
 	defer spans.Finish()
-
+	spans.TagEntity(mailboxID)
 	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
 	if err != nil {
 		spans.TraceError(err)
@@ -136,8 +136,7 @@ func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error 
 	}
 
 	// determine if we should sync
-	if mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned &&
-		(mailbox.Provider == enum.EmailMailstack || mailbox.Provider == enum.EmailGoogleWorkspace) {
+	if s.imapService.AcceptMailbox(ctx, mailbox) {
 		return s.imapService.AddMailbox(ctx, mailbox)
 	}
 

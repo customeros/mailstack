@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
@@ -23,4 +24,5 @@ type MailboxRepository interface {
 	ConfigureAttempt(ctx context.Context, id string) error
 	GetForRampUp(ctx context.Context) ([]*models.Mailbox, error)
 	UpdateRampUpFields(ctx context.Context, mailbox *models.Mailbox) error
+	UpdateOauthToken(ctx context.Context, mailboxID, accessToken, refreshToken string, tokenExpiry *time.Time) error
 }
