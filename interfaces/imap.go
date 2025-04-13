@@ -21,6 +21,8 @@ type IMAPService interface {
 	RemoveMailbox(ctx context.Context, mailboxID string) error
 	GetMessageByUID(ctx context.Context, mailboxID, folderName string, uid uint32) (*imap.Message, error)
 	Status() map[string]MailboxStatus
+	AcceptMailbox(ctx context.Context, mailbox *models.Mailbox) bool
+	ListFolders(ctx context.Context, mailboxID string) ([]string, error)
 }
 
 type MailboxStatus struct {

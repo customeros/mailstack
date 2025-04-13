@@ -323,3 +323,26 @@ func (r *mailboxRepository) GetForConfiguration(ctx context.Context, limit int) 
 	spans.LogKV("result.count", len(result))
 	return result, nil
 }
+
+func (r *mailboxRepository) UpdateOauthToken(ctx context.Context, mailboxID, accessToken, refreshToken string, tokenExpiry *time.Time) error {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.UpdateOauthToken")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+
+	err := r.db.WithContext(ctx).
+		Model(&models.Mailbox{}).
+		Where("id = ?", mailboxID).
+		Updates(map[string]interface{}{
+			"oauth_access_token":  accessToken,
+			"oauth_refresh_token": refreshToken,
+			"oauth_token_expiry":  tokenExpiry,
+			"updated_at":          utils.Now(),
+		}).Error
+
+	if err != nil {
+		spans.TraceError(err)
+		return err
+	}
+
+	return nil
+}

@@ -37,21 +37,24 @@ type IMAPService struct {
 	cancel         context.CancelFunc
 	statuses       map[string]interfaces.MailboxStatus
 	statusMutex    sync.RWMutex
+	googleService  interfaces.GoogleService
 }
 
-func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories) interfaces.IMAPService {
+func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories, googleSvc interfaces.GoogleService) interfaces.IMAPService {
 	return &IMAPService{
 		natsConn:       nats,
 		repositories:   repos,
 		clients:        make(map[string]*client.Client),
 		mailboxConfigs: make(map[string]*models.Mailbox),
 		statuses:       make(map[string]interfaces.MailboxStatus),
+		googleService:  googleSvc,
 	}
 }
 
 const (
 	INITIAL_SYNC_BATCH_SIZE = 20
 	INITIAL_SYNC_MAX_TOTAL  = 50000
+	SYNC_EMAILS_BATCH_SIZE  = 20
 )
 
 // Start initializes the service and connects to mailboxes
@@ -138,12 +141,8 @@ func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) e
 		err := errors.New("mailbox is nil")
 		spans.TraceError(err)
 		return err
-	} else if mailbox.Provider != enum.EmailMailstack {
-		err := fmt.Errorf("unsupported mailbox provider: %s", mailbox.Provider)
-		spans.TraceError(err)
-		return err
-	} else if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
-		err := fmt.Errorf("mailbox is not provisioned: %s", mailbox.ProvisionStatus)
+	} else if !s.AcceptMailbox(ctx, mailbox) {
+		err := fmt.Errorf("mailbox is not accepted for IMAP: %s", mailbox.ID)
 		spans.TraceError(err)
 		return err
 	}
@@ -154,12 +153,6 @@ func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) e
 	// Check for duplicate
 	if _, exists := s.mailboxConfigs[mailbox.ID]; exists {
 		err := fmt.Errorf("mailbox with ID %s already exists", mailbox.ID)
-		spans.TraceError(err)
-		return err
-	}
-
-	if len(mailbox.SyncFolders) == 0 {
-		err := errors.New("sync folders is empty")
 		spans.TraceError(err)
 		return err
 	}
@@ -451,6 +444,9 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	// Format server address
 	serverAddr := fmt.Sprintf("%s:%d", config.ImapServer, config.ImapPort)
 
+	log.Printf("[%s] Connecting to IMAP server %s (Provider: %s, Security: %s, Username: %s)",
+		config.ID, serverAddr, config.Provider, config.ImapSecurity, config.ImapUsername)
+
 	// Set up connection with timeout
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
@@ -458,16 +454,16 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	}
 
 	// Connect with or without TLS
-	var c *client.Client
+	var imapClient *client.Client
 	var err error
 
 	if config.ImapSecurity == enum.EmailSecurityTLS {
 		tlsConfig := &tls.Config{
 			ServerName: config.ImapServer,
 		}
-		c, err = client.DialWithDialerTLS(dialer, serverAddr, tlsConfig)
+		imapClient, err = client.DialWithDialerTLS(dialer, serverAddr, tlsConfig)
 	} else {
-		c, err = client.DialWithDialer(dialer, serverAddr)
+		imapClient, err = client.DialWithDialer(dialer, serverAddr)
 	}
 
 	if err != nil {
@@ -477,10 +473,10 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	}
 
 	// Check capabilities
-	c.Timeout = 30 * time.Second
-	caps, err := c.Capability()
+	imapClient.Timeout = 30 * time.Second
+	caps, err := imapClient.Capability()
 	if err != nil {
-		c.Logout()
+		imapClient.Logout()
 		err := fmt.Errorf("capability error: %w", err)
 		spans.TraceError(err)
 		return nil, err
@@ -488,20 +484,79 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 
 	log.Printf("[%s] Server capabilities: %v", config.ID, caps)
 
-	// Login
-	err = c.Login(config.ImapUsername, config.ImapPassword)
-	if err != nil {
-		c.Logout()
-		err := fmt.Errorf("login error: %w", err)
-		spans.TraceError(err)
-		return nil, err
+	// Handle authentication based on provider
+	switch config.Provider {
+	case enum.EmailGoogleWorkspace:
+		// For Gmail, refresh token if needed before getting access token
+		err = s.googleService.RefreshTokenIfNeeded(ctx, config)
+		if err != nil {
+			imapClient.Logout()
+			spans.TraceError(err)
+			log.Printf("[%s] Failed to refresh token: %v", config.ID, err)
+			return nil, fmt.Errorf("failed to refresh token: %w", err)
+		}
+
+		// Get the access token
+		accessToken, err := s.googleService.GetDecryptedAccessToken(ctx, config)
+		if err != nil {
+			imapClient.Logout()
+			spans.TraceError(err)
+			log.Printf("[%s] Failed to get access token: %v", config.ID, err)
+			return nil, fmt.Errorf("failed to get access token: %w", err)
+		}
+
+		log.Printf("[%s] Attempting Gmail OAuth authentication", config.ID)
+
+		// Use XOAUTH2 authentication
+		err = imapClient.Authenticate(&XOAuth2Auth{
+			Username: config.ImapUsername,
+			Token:    accessToken,
+		})
+		if err != nil {
+			imapClient.Logout()
+			spans.TraceError(err)
+			log.Printf("[%s] Failed to authenticate with Gmail: %v", config.ID, err)
+			return nil, fmt.Errorf("failed to authenticate with Gmail: %w", err)
+		}
+
+	default:
+		// Default to password authentication
+		log.Printf("[%s] Attempting password authentication", config.ID)
+		err = imapClient.Login(config.ImapUsername, config.ImapPassword)
 	}
 
+	if err != nil {
+		imapClient.Logout()
+		spans.TraceError(err)
+		log.Printf("[%s] Authentication failed: %v", config.ID, err)
+		return nil, fmt.Errorf("login error: %w", err)
+	}
+
+	log.Printf("[%s] Successfully authenticated", config.ID)
+
 	// Reset timeout
-	c.Timeout = 0
+	imapClient.Timeout = 0
 
 	log.Printf("[%s] Successfully connected to %s", config.ID, serverAddr)
-	return c, nil
+	return imapClient, nil
+}
+
+// XOAuth2Auth implements XOAUTH2 authentication for Gmail
+type XOAuth2Auth struct {
+	Username string
+	Token    string
+}
+
+func (a *XOAuth2Auth) Start() (string, []byte, error) {
+	// Format: base64("user=" + username + "^Aauth=Bearer " + token + "^A^A")
+	auth := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", a.Username, a.Token)
+	return "XOAUTH2", []byte(auth), nil
+}
+
+func (a *XOAuth2Auth) Next(challenge []byte) ([]byte, error) {
+	// Gmail may send an empty challenge or error message
+	// We should respond with an empty slice to continue the auth process
+	return []byte{}, nil
 }
 
 // syncFolders processes all folders and returns information about the sync process
@@ -511,9 +566,21 @@ func (s *IMAPService) syncFolders(
 	mailboxID string,
 	folders []string,
 ) (processedFolders map[string]bool, connectivityError error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.syncFolders")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.LogObjectAsJson("folders", folders)
+
 	processedFolders = make(map[string]bool)
 
 	log.Printf("[%s] Starting sync for %d folders: %v", mailboxID, len(folders), folders)
+
+	// known folders
+	mailboxServerFolders, err := s.ListFolders(ctx, mailboxID)
+	if err != nil {
+		spans.TraceError(err)
+	}
+	spans.LogObjectAsJson("mailbox_server_folders", mailboxServerFolders)
 
 	for _, folder := range folders {
 		log.Printf("[%s] About to process folder: %s", mailboxID, folder)
@@ -681,10 +748,13 @@ func (s *IMAPService) syncNewMessagesSince(
 
 	collectedUIDs := make([]uint32, 0)
 	startUID := lastUID + 1
-	size := 1000
+	size := SYNC_EMAILS_BATCH_SIZE
 
 	for startUID < mboxUIDNext {
 		stopUID := startUID + uint32(size) - 1
+		if stopUID <= startUID {
+			stopUID = startUID + 1
+		}
 		if stopUID > mboxUIDNext {
 			stopUID = 0
 		}
@@ -830,4 +900,69 @@ func isConnectionError(err error) bool {
 		strings.Contains(errorMsg, "i/o timeout") ||
 		strings.Contains(errorMsg, "EOF") ||
 		strings.Contains(errorMsg, "connection reset")
+}
+
+func (s *IMAPService) AcceptMailbox(ctx context.Context, mailbox *models.Mailbox) bool {
+	spans, _ := telemetry.StartServiceSpan(ctx, "IMAPService.AcceptMailbox")
+	defer spans.Finish()
+	spans.TagEntity(mailbox.ID)
+
+	if !mailbox.InboundEnabled {
+		spans.LogKV("result.accepted", false)
+		spans.LogKV("reason", "inbound_disabled")
+		return false
+	}
+
+	if mailbox.ProvisionStatus != models.MailboxStatusProvisioned {
+		spans.LogKV("result.accepted", false)
+		spans.LogKV("reason", "provision_status_not_provisioned")
+		return false
+	}
+
+	if mailbox.Provider != enum.EmailMailstack && mailbox.Provider != enum.EmailGoogleWorkspace {
+		spans.LogKV("result.accepted", false)
+		spans.LogKV("reason", "unsupported_provider")
+		return false
+	}
+
+	spans.LogKV("result.accepted", true)
+	return true
+}
+
+// ListFolders returns a list of all available folders in the mailbox
+func (s *IMAPService) ListFolders(ctx context.Context, mailboxID string) ([]string, error) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.ListFolders")
+	defer spans.Finish()
+	spans.TagString("mailbox_id", mailboxID)
+
+	// Get connected client
+	imapClient, err := s.getConnectedClient(ctx, mailboxID)
+	if err != nil {
+		spans.TraceError(err)
+		return nil, fmt.Errorf("failed to get IMAP client: %w", err)
+	}
+
+	// List all mailboxes
+	mailboxes := make(chan *imap.MailboxInfo, 10)
+	done := make(chan error, 1)
+
+	imapClient.Timeout = 30 * time.Second
+	go func() {
+		done <- imapClient.List("", "*", mailboxes)
+	}()
+
+	var folders []string
+	for m := range mailboxes {
+		folders = append(folders, m.Name)
+		log.Printf("[%s] Found folder: %s (Attributes: %v)", mailboxID, m.Name, m.Attributes)
+	}
+
+	if err := <-done; err != nil {
+		spans.TraceError(err)
+		return nil, fmt.Errorf("error listing folders: %w", err)
+	}
+	imapClient.Timeout = 0
+
+	log.Printf("[%s] Found %d folders", mailboxID, len(folders))
+	return folders, nil
 }

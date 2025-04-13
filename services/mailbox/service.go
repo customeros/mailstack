@@ -60,12 +60,20 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 		SenderID:       mailbox.SenderID,
 	}
 
+	oauthData := interfaces.OauthMailboxRequest{
+		OAuthAccessToken:  mailbox.OAuthAccessToken,
+		OAuthRefreshToken: mailbox.OAuthRefreshToken,
+		OAuthTokenId:      mailbox.OAuthTokenId,
+		OAuthScope:        mailbox.OAuthScope,
+		OAuthTokenExpiry:  mailbox.OAuthTokenExpiry,
+	}
+
 	// Prepare mailbox using common method
-	provider := enum.EmailMailstack
+	provider := mailbox.Provider
 	if provider == "" {
 		provider = enum.EmailGeneric
 	}
-	preparedMailbox, err := s.prepareMailboxForSave(ctx, provider, strings.ToLower(mailbox.EmailAddress), request)
+	preparedMailbox, err := s.prepareMailboxForSave(ctx, provider, strings.ToLower(mailbox.EmailAddress), request, &oauthData)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +124,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.addToIMAP")
 	defer spans.Finish()
-
+	spans.TagEntity(mailboxID)
 	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
 	if err != nil {
 		spans.TraceError(err)
@@ -128,14 +136,14 @@ func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error 
 	}
 
 	// determine if we should sync
-	if mailbox.Provider == enum.EmailMailstack && mailbox.InboundEnabled && mailbox.ProvisionStatus == models.MailboxStatusProvisioned {
+	if s.imapService.AcceptMailbox(ctx, mailbox) {
 		return s.imapService.AddMailbox(ctx, mailbox)
 	}
 
 	return nil
 }
 
-func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest) (*models.Mailbox, error) {
+func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest, oauth *interfaces.OauthMailboxRequest) (*models.Mailbox, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.prepareMailboxForSave")
 	defer spans.Finish()
 
@@ -152,14 +160,27 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 	var imapServer, smtpServer string
 	var imapSecurity, smtpSecurity enum.EmailSecurity
 
-	// For now, we only support mailstack provider
-	syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
-	imapPort = models.MAILBOX_IMAP_PORT
-	smtpPort = models.MAILBOX_SMTP_PORT
-	imapServer = models.MAILBOX_IMAP_SERVER
-	smtpServer = models.MAILBOX_SMTP_SERVER
-	imapSecurity = models.MAILBOX_IMAP_SECURITY
-	smtpSecurity = models.MAILBOX_SMTP_SECURITY
+	// Configure based on provider
+	switch provider {
+	case enum.EmailGoogleWorkspace:
+		syncFolders = []string{models.MAILBOX_GOOGLE_INBOX, models.MAILBOX_GOOGLE_SENT, models.MAILBOX_GOOGLE_SPAM}
+		imapServer = models.MAILBOX_GOOGLE_IMAP_SERVER
+		imapPort = models.MAILBOX_GOOGLE_IMAP_PORT
+		imapSecurity = models.MAILBOX_GOOGLE_IMAP_SECURITY
+		// Gmail uses OAuth2, so no password needed
+	case enum.EmailMailstack, enum.EmailGeneric:
+		syncFolders = []string{models.MAILBOX_INBOX, models.MAILBOX_SENT, models.MAILBOX_SPAM}
+		imapPort = models.MAILBOX_IMAP_PORT
+		smtpPort = models.MAILBOX_SMTP_PORT
+		imapServer = models.MAILBOX_IMAP_SERVER
+		smtpServer = models.MAILBOX_SMTP_SERVER
+		imapSecurity = models.MAILBOX_IMAP_SECURITY
+		smtpSecurity = models.MAILBOX_SMTP_SECURITY
+	default:
+		err := fmt.Errorf("unsupported provider: %s", provider)
+		spans.TraceError(err)
+		return nil, err
+	}
 
 	mailbox := models.Mailbox{
 		ID:              utils.GenerateNanoIDWithPrefix("mbox", 16),
@@ -174,24 +195,47 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 		OutboundEnabled: true,
 		SenderID:        request.SenderID,
 
-		ImapServer:   imapServer,
-		ImapPort:     imapPort,
-		ImapUsername: strings.ToLower(emailAddress),
-		ImapPassword: request.Password,
-		ImapSecurity: imapSecurity,
-
-		SmtpServer:   smtpServer,
-		SmtpPort:     smtpPort,
-		SmtpUsername: strings.ToLower(emailAddress),
-		SmtpPassword: request.Password,
-		SmtpSecurity: smtpSecurity,
-
 		ForwardingTo:    strings.Join(request.ForwardingTo, ","),
 		WebmailEnabled:  request.WebmailEnabled,
 		ProvisionStatus: models.MailboxStatusPendingProvisioning,
 		RampUpRate:      3,
 		RampUpMax:       40,
 		RampUpCurrent:   3,
+	}
+
+	// Set provider-specific fields
+	switch provider {
+	case enum.EmailGoogleWorkspace:
+		if oauth == nil {
+			err := errors.New("OAuth data is required for Gmail")
+			spans.TraceError(err)
+			return nil, err
+		}
+		mailbox.ImapServer = imapServer
+		mailbox.ImapPort = imapPort
+		mailbox.ImapUsername = strings.ToLower(emailAddress)
+		mailbox.ImapSecurity = imapSecurity
+
+		mailbox.OAuthAccessToken = oauth.OAuthAccessToken
+		mailbox.OAuthRefreshToken = oauth.OAuthRefreshToken
+		mailbox.OAuthTokenExpiry = oauth.OAuthTokenExpiry
+		mailbox.OAuthScope = oauth.OAuthScope
+		mailbox.OAuthTokenId = oauth.OAuthTokenId
+		// Mark as provisioned since Gmail doesn't need provisioning
+		mailbox.ProvisionStatus = models.MailboxStatusProvisioned
+
+	case enum.EmailMailstack, enum.EmailGeneric:
+		mailbox.ImapServer = imapServer
+		mailbox.ImapPort = imapPort
+		mailbox.ImapUsername = strings.ToLower(emailAddress)
+		mailbox.ImapPassword = request.Password
+		mailbox.ImapSecurity = imapSecurity
+
+		mailbox.SmtpServer = smtpServer
+		mailbox.SmtpPort = smtpPort
+		mailbox.SmtpUsername = strings.ToLower(emailAddress)
+		mailbox.SmtpPassword = request.Password
+		mailbox.SmtpSecurity = smtpSecurity
 	}
 
 	return &mailbox, nil
@@ -402,7 +446,7 @@ func (s *mailboxService) CreateMailbox(ctx context.Context, request interfaces.C
 	}
 
 	// Prepare mailbox using common method
-	mailbox, err := s.prepareMailboxForSave(ctx, enum.EmailMailstack, mailboxEmailAddress, request)
+	mailbox, err := s.prepareMailboxForSave(ctx, enum.EmailMailstack, mailboxEmailAddress, request, nil)
 	if err != nil {
 		spans.TraceError(errors.Wrap(err, "Error preparing mailbox"))
 		return err

@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/customeros/mailstack/internal/enum"
 	"github.com/customeros/mailstack/internal/models"
@@ -25,4 +26,12 @@ type CreateMailboxRequest struct {
 	ForwardingTo          []string
 	IgnoreDomainOwnership bool
 	SenderID              string
+}
+
+type OauthMailboxRequest struct {
+	OAuthRefreshToken string
+	OAuthAccessToken  string
+	OAuthTokenExpiry  *time.Time
+	OAuthScope        string
+	OAuthTokenId      string
 }
