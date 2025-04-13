@@ -6,8 +6,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
-	"github.com/pkg/errors"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -66,13 +67,15 @@ type Mailbox struct {
 	SmtpSecurity enum.EmailSecurity `gorm:"column:smtp_security;type:varchar(50)" json:"smtpSecurity"`
 
 	// OAuth specific fields (for Google, Microsoft, etc.)
-	OAuthClientID     string     `gorm:"column:oauth_client_id;type:varchar(255)" json:"oauthClientId"`
-	OAuthClientSecret string     `gorm:"column:oauth_client_secret;type:varchar(255)" json:"oauthClientSecret"`
-	OAuthRefreshToken string     `gorm:"column:oauth_refresh_token;type:varchar(1000)" json:"oauthRefreshToken"`
-	OAuthAccessToken  string     `gorm:"column:oauth_access_token;type:varchar(1000)" json:"oauthAccessToken"`
-	OAuthTokenExpiry  *time.Time `gorm:"column:oauth_token_expiry;type:timestamp" json:"oauthTokenExpiry"`
-	OAuthScope        string     `gorm:"column:oauth_scope;type:varchar(2000)" json:"oauthScope"`
-	OAuthTokenId      string     `gorm:"column:oauth_token_id;type:varchar(2000)" json:"oauthTokenId"`
+	OAuthClientID           string     `gorm:"column:oauth_client_id;type:varchar(255)" json:"oauthClientId"`
+	OAuthClientSecret       string     `gorm:"column:oauth_client_secret;type:varchar(255)" json:"oauthClientSecret"`
+	OAuthRefreshToken       string     `gorm:"column:oauth_refresh_token;type:varchar(1000)" json:"oauthRefreshToken"`
+	OAuthAccessToken        string     `gorm:"column:oauth_access_token;type:varchar(1000)" json:"oauthAccessToken"`
+	OAuthTokenExpiry        *time.Time `gorm:"column:oauth_token_expiry;type:timestamp" json:"oauthTokenExpiry"`
+	OAuthScope              string     `gorm:"column:oauth_scope;type:varchar(2000)" json:"oauthScope"`
+	OAuthTokenId            string     `gorm:"column:oauth_token_id;type:varchar(2000)" json:"oauthTokenId"`
+	OAuthNeedsManualRefresh bool       `gorm:"column:oauth_needs_manual_refresh;default:false;"`
+	OAuthRevokedAt          *time.Time `gorm:"column:oauth_revoked_at;type:timestamp" json:"oauthRevokedAt"`
 
 	// Email sending configuration
 	ReplyToAddress string `gorm:"column:reply_to_address;type:varchar(255)" json:"replyToAddress"`

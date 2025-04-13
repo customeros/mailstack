@@ -346,3 +346,22 @@ func (r *mailboxRepository) UpdateOauthToken(ctx context.Context, mailboxID, acc
 
 	return nil
 }
+
+func (r *mailboxRepository) MarkForManualRefresh(ctx context.Context, mailboxID string, needsManualRefresh bool) error {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.MarkForManualRefresh")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.LogKV("needsManualRefresh", needsManualRefresh)
+
+	err := r.db.WithContext(ctx).
+		Model(&models.Mailbox{}).
+		Where("id = ?", mailboxID).
+		Update("oauth_needs_manual_refresh", needsManualRefresh).Error
+
+	if err != nil {
+		spans.TraceError(err)
+		return err
+	}
+
+	return nil
+}
