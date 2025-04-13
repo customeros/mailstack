@@ -301,7 +301,7 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, config *models.Mailbox) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.runSingleMailbox", telemetry.WithNewRoot())
 	defer spans.Finish()
-	spans.TagString("mailbox_id", mailboxID)
+	spans.TagEntity(mailboxID)
 	spans.LogObjectAsJson("mailbox", config)
 
 	s.wg.Add(1)
