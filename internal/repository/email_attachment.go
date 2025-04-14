@@ -93,9 +93,11 @@ func (r *emailAttachmentRepository) CheckFileExists(ctx context.Context, content
 }
 
 // Store saves attachment data to the configured storage service
-func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, emailID string, data []byte) (string, error) {
+func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *models.EmailAttachment, emailID, mailboxID string, data []byte) (string, error) {
 	spans, ctx := telemetry.StartPostgresSpan(ctx, "emailAttachmentRepository.Store")
 	defer spans.Finish()
+	spans.TagEntity(emailID)
+	spans.LogKV("mailboxID", mailboxID)
 
 	if attachment == nil {
 		err := errors.New("nil attachment")
@@ -139,8 +141,11 @@ func (r *emailAttachmentRepository) Store(ctx context.Context, attachment *model
 	if fileExt != "other" && fileExt != "audio" && fileExt != "video" {
 		filename = filename + "." + fileExt
 	}
+	if mailboxID == "" {
+		mailboxID = "default"
+	}
 
-	attachment.StorageKey = fmt.Sprintf("%s/%s", fileExt, filename)
+	attachment.StorageKey = fmt.Sprintf("%s/%s/%s", mailboxID, fileExt, filename)
 
 	// Store the file in the storage service
 	if err := r.storage.Upload(ctx, attachment.StorageKey, data, attachment.ContentType); err != nil {

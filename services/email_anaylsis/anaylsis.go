@@ -20,10 +20,14 @@ func (s *EmailAnalysisService) processRequestForStructuredBody(ctx context.Conte
 
 	// TODO migrate from HTTP call to NATS request/response
 
+	toEmailAddress := ""
+	if len(message.To) > 0 {
+		toEmailAddress = message.To[0].Email
+	}
 	req := dto.AskAIForEmailRequest{
 		EmailFrom:        message.From.Name,
 		FromEmailAddress: message.From.Email,
-		ToEmailAddress:   message.To[0].Email,
+		ToEmailAddress:   toEmailAddress,
 		EmailBodyText:    message.EmailBodyText,
 		EmailBodyHTML:    message.EmailBodyHtml,
 	}

@@ -405,17 +405,18 @@ func (r *mailboxRepository) AcquireMailboxLock(ctx context.Context, mailboxID, p
 			processing_run_count = 0
 		WHERE id = ? 
 		AND (
-			processing_pod_id IS NULL 
-			OR processing_heartbeat_at < ?
+			processing_pod_id IS NULL OR processing_pod_id = ? OR
+			processing_heartbeat_at IS NULL OR processing_heartbeat_at < ?
 		)
 		RETURNING id
-	`, podID, now, now, mailboxID, now.Add(-staleTimeout))
+	`, podID, now, now, mailboxID, "", now.Add(-staleTimeout))
 
 	if result.Error != nil {
 		spans.TraceError(result.Error)
 		return false, result.Error
 	}
 
+	spans.LogKV("result.lockAcquired", result.RowsAffected > 0)
 	return result.RowsAffected > 0, nil
 }
 
