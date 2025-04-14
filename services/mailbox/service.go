@@ -22,14 +22,12 @@ const TEST_MAILBOX_DOMAIN = "testcustomeros.com"
 
 type mailboxService struct {
 	repositories   *repository.Repositories
-	imapService    interfaces.IMAPService
 	openSrsService interfaces.OpenSrsService
 }
 
-func NewMailboxService(repos *repository.Repositories, imap interfaces.IMAPService, openSrs interfaces.OpenSrsService) interfaces.MailboxService {
+func NewMailboxService(repos *repository.Repositories, openSrs interfaces.OpenSrsService) interfaces.MailboxService {
 	return &mailboxService{
 		repositories:   repos,
-		imapService:    imap,
 		openSrsService: openSrs,
 	}
 }
@@ -112,35 +110,7 @@ func (s *mailboxService) EnrollMailbox(ctx context.Context, mailbox *models.Mail
 
 	preparedMailbox.ID = mailboxID
 
-	err = s.addToIMAP(ctx, mailboxID)
-	if err != nil {
-		spans.TraceError(err)
-		return preparedMailbox, err
-	}
-
 	return preparedMailbox, nil
-}
-
-func (s *mailboxService) addToIMAP(ctx context.Context, mailboxID string) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "mailboxService.addToIMAP")
-	defer spans.Finish()
-	spans.TagEntity(mailboxID)
-	mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
-	if mailbox == nil {
-		return errors.New("mailbox not found")
-	}
-
-	// determine if we should sync
-	if s.imapService.AcceptMailbox(ctx, mailbox) {
-		return s.imapService.AddMailbox(ctx, mailbox)
-	}
-
-	return nil
 }
 
 func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enum.EmailProvider, emailAddress string, request interfaces.CreateMailboxRequest, oauth *interfaces.OauthMailboxRequest) (*models.Mailbox, error) {
@@ -414,12 +384,6 @@ func (s *mailboxService) ConfigureMailbox(ctx context.Context, mailboxID string)
 	if err != nil {
 		spans.TraceError(errors.Wrap(err, "failed to update mailbox status"))
 		return errors.Wrap(err, "failed to update mailbox status")
-	}
-
-	err = s.addToIMAP(ctx, mailboxID)
-	if err != nil {
-		spans.TraceError(err)
-		return nil
 	}
 
 	return nil

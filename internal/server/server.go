@@ -20,7 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/customeros/mailstack/api"
-	"github.com/customeros/mailstack/internal"
 	"github.com/customeros/mailstack/internal/config"
 	"github.com/customeros/mailstack/internal/cron"
 	"github.com/customeros/mailstack/internal/logger"
@@ -146,11 +145,6 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (
 func (s *Server) Initialize(ctx context.Context) error {
 	// Register webhook handler
 	log.Println("Registering event handler...")
-
-	// Setup mailboxes
-	if err := internal.InitMailboxes(s.services, s.repositories); err != nil {
-		return err
-	}
 
 	// Setup API routes
 	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config)
