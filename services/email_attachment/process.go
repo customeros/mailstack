@@ -29,7 +29,7 @@ func (s *EmailAttachmentService) processAttachments(ctx context.Context, request
 
 	var errs error
 	for _, attachment := range request.Attachments {
-		fileID, err := s.processAttachment(ctx, attachment, request.EmailId)
+		fileID, err := s.processAttachment(ctx, attachment, request.EmailId, request.MailboxId)
 		if err != nil {
 			spans.TraceError(err)
 			errs = multierr.Append(errs, err)
@@ -43,9 +43,11 @@ func (s *EmailAttachmentService) processAttachments(ctx context.Context, request
 	return response
 }
 
-func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachment *pb.AttachmentMetadata, emailID string) (string, error) {
+func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachment *pb.AttachmentMetadata, emailID, mailboxID string) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailAttachmentService.processAttachment")
 	defer spans.Finish()
+	spans.TagEntity(emailID)
+	spans.LogKV("mailboxID", mailboxID)
 
 	if attachment == nil {
 		return "", nil
@@ -71,7 +73,7 @@ func (s *EmailAttachmentService) processAttachment(ctx context.Context, attachme
 		IsInline:    attachment.IsInline,
 	}
 
-	fileID, err := s.repositories.EmailAttachmentRepository.Store(ctx, attachmentRecord, emailID, content)
+	fileID, err := s.repositories.EmailAttachmentRepository.Store(ctx, attachmentRecord, emailID, mailboxID, content)
 	if err != nil {
 		spans.TraceError(err)
 		return "", err

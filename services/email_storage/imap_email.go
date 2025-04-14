@@ -44,7 +44,7 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 	}
 
 	// save message as .eml
-	bucketKey, err := s.saveIMAPMessageAsEMLToBucket(ctx, msg, emailLog.ID)
+	bucketKey, err := s.saveIMAPMessageAsEMLToBucket(ctx, msg, emailLog.ID, event.MailboxId)
 	if err != nil {
 		spans.TraceError(err)
 		return err
@@ -78,10 +78,11 @@ func (s *emailStorageService) handleIMAPEmail(ctx context.Context, event *pb.Ema
 	return nil
 }
 
-func (s *emailStorageService) saveIMAPMessageAsEMLToBucket(ctx context.Context, msg *imap.Message, emailID string) (string, error) {
+func (s *emailStorageService) saveIMAPMessageAsEMLToBucket(ctx context.Context, msg *imap.Message, emailID, mailboxId string) (string, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "EmailStorageService.saveIMAPMessageAsEMLToBucket")
 	defer spans.Finish()
 	spans.TagEntity(emailID)
+	spans.LogKV("mailboxId", mailboxId)
 
 	tenant := utils.GetTenantFromContext(ctx)
 	if tenant == "" {
@@ -102,7 +103,7 @@ func (s *emailStorageService) saveIMAPMessageAsEMLToBucket(ctx context.Context, 
 	year := msgTime.Format("2006")
 	month := msgTime.Format("01")
 
-	outputPath := fmt.Sprintf("%s/%s/%s/%s.eml", tenant, year, month, emailID)
+	outputPath := fmt.Sprintf("%s/%s/%s/%s/%s.eml", tenant, mailboxId, year, month, emailID)
 
 	// Get the body reader for the RFC822 format
 	r := msg.GetBody(&imap.BodySectionName{})
@@ -128,6 +129,8 @@ func (s *emailStorageService) saveIMAPMessageAsEMLToBucket(ctx context.Context, 
 		spans.TraceError(err)
 		return "", err
 	}
+
+	spans.LogKV("result.outputPath", outputPath)
 
 	return outputPath, nil
 }

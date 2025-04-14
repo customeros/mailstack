@@ -359,7 +359,7 @@ func (s *emailContentService) processAttachments(ctx context.Context, emailID, m
 		Attachments:    attachments,
 	}
 
-	return s.sendEmailAttchmentRequest(ctx, attachmentRequest)
+	return s.sendEmailAttachmentRequest(ctx, attachmentRequest)
 }
 
 func (s *emailContentService) attachToThread(ctx context.Context, headers *pb.EmailClassificationRequest, envelope *enmime.Envelope, mailboxID string) (*pb.AttachToThreadResponse, error) {
@@ -494,7 +494,7 @@ func (s *emailContentService) sendEmailAnalysisRequest(ctx context.Context, requ
 	return response, nil
 }
 
-func (s *emailContentService) sendEmailAttchmentRequest(ctx context.Context, request *pb.ProcessAttachmentRequest) (*pb.ProcessAttachmentResponse, error) {
+func (s *emailContentService) sendEmailAttachmentRequest(ctx context.Context, request *pb.ProcessAttachmentRequest) (*pb.ProcessAttachmentResponse, error) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "emailContentService.sendEmailAttachmentRequest")
 	defer spans.Finish()
 

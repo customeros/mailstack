@@ -189,14 +189,14 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 	config, configExists := s.mailboxConfigs[mailboxID]
 	s.clientsMutex.RUnlock()
 
-	utils.SetTenantInContext(ctx, config.Tenant)
-	utils.SetUserIdInContext(ctx, config.UserID)
-
 	if !configExists {
 		err := fmt.Errorf("no configuration found for mailbox %s", mailboxID)
 		spans.TraceError(err)
 		return nil, err
 	}
+
+	utils.SetTenantInContext(ctx, config.Tenant)
+	utils.SetUserIdInContext(ctx, config.UserID)
 
 	// If we have an existing client, check if it's still connected
 	if exists {
@@ -489,15 +489,6 @@ func (s *IMAPService) connectToIMAPServer(ctx context.Context, config *models.Ma
 	// Handle authentication based on provider
 	switch config.Provider {
 	case enum.EmailGoogleWorkspace:
-		// For Gmail, refresh token if needed before getting access token
-		err = s.googleService.RefreshTokenIfNeeded(ctx, config)
-		if err != nil {
-			imapClient.Logout()
-			spans.TraceError(err)
-			log.Printf("[%s] Failed to refresh token: %v", config.ID, err)
-			return nil, fmt.Errorf("failed to refresh token: %w", err)
-		}
-
 		// Get the access token
 		accessToken, err := s.googleService.GetDecryptedAccessToken(ctx, config)
 		if err != nil {

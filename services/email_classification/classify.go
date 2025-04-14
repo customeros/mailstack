@@ -278,9 +278,9 @@ func isBounceNotification(headers *pb.EmailClassificationRequest) (bool, string)
 		return true, "CONTENT-DESCRIPTION: DELIVERY REPORT header present"
 	case hasBounceKeywords(headers.ReturnPath):
 		return true, "RETURN-PATH contains bounce keywords"
-	case hasBounceKeywords(headers.From.Name):
+	case headers.From != nil && hasBounceKeywords(headers.From.Name):
 		return true, "FROM contains bounce keywords"
-	case hasBounceKeywords(headers.From.Email):
+	case headers.From != nil && hasBounceKeywords(headers.From.Email):
 		return true, "FROM contains bounce keywords"
 	case isBounceSubject(headers.Subject):
 		return true, "SUBJECT contains bounce keywords"
