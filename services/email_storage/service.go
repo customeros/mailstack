@@ -154,7 +154,7 @@ func (s *emailStorageService) processMessage(ctx context.Context, msg *nats.Msg)
 
 	message := &pb.EmailReceivedIMAP{}
 	err := proto.Unmarshal(msg.Data, message)
-	if err != nil || message == nil {
+	if err != nil {
 		err := errors.New("failed to parse message")
 		spans.TraceError(err)
 		s.handleProcessingError(ctx, msg, err)
