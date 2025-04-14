@@ -194,6 +194,9 @@ func (s *mailboxService) prepareMailboxForSave(ctx context.Context, provider enu
 		// Mark as provisioned since Gmail doesn't need provisioning
 		mailbox.ProvisionStatus = models.MailboxStatusProvisioned
 
+		// TODO: temporal solution to not automatically start sync
+		mailbox.InboundEnabled = false
+
 	case enum.EmailMailstack, enum.EmailGeneric:
 		mailbox.ImapServer = imapServer
 		mailbox.ImapPort = imapPort
