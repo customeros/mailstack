@@ -112,6 +112,8 @@ func (s *IMAPService) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the service
 func (s *IMAPService) Stop() error {
+	spans, _ := telemetry.StartServiceSpan(context.Background(), "IMAPService.Stop")
+	defer spans.Finish()
 	log.Println("Stopping IMAP service...")
 
 	// Cancel main context to signal all operations to stop
@@ -133,7 +135,19 @@ func (s *IMAPService) Stop() error {
 		log.Println("Timeout waiting for IMAP operations to complete")
 	}
 
-	// Disconnect all clients
+	// Create a context with timeout for cleanup operations
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Release locks and disconnect clients for all mailboxes
+	for mailboxID, mailbox := range s.mailboxConfigs {
+		log.Printf("Cleaning up mailbox: %s (%s)", mailboxID, mailbox.EmailAddress)
+
+		// Use the service's releaseMailbox method which handles both lock release and client cleanup
+		s.releaseMailbox(cleanupCtx, mailboxID)
+	}
+
+	// logout any left connections
 	s.clientsMutex.Lock()
 	for id, c := range s.clients {
 		log.Printf("Disconnecting client: %s", id)
