@@ -38,6 +38,7 @@ type IMAPService struct {
 	statuses       map[string]interfaces.MailboxStatus
 	statusMutex    sync.RWMutex
 	googleService  interfaces.GoogleService
+	podID          string
 }
 
 func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repositories, googleSvc interfaces.GoogleService) interfaces.IMAPService {
@@ -52,35 +53,67 @@ func NewIMAPService(nats *nats_internal.NATSConnections, repos *repository.Repos
 }
 
 const (
-	INITIAL_SYNC_BATCH_SIZE = 20
-	INITIAL_SYNC_MAX_TOTAL  = 50000
-	SYNC_EMAILS_BATCH_SIZE  = 20
+	SYNC_EMAILS_BATCH_SIZE_PER_ITERATION = 20
+	SYNC_EMAILS_ITERATIONS_PER_ACQUIRE   = 500
 )
 
 // Start initializes the service and connects to mailboxes
 func (s *IMAPService) Start(ctx context.Context) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.Start", telemetry.WithNewRoot())
-	defer spans.Finish()
-
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	spans.LogKV("mailbox_count", len(s.mailboxConfigs))
 
-	// Start each mailbox sequentially for easier debugging
-	for id, config := range s.mailboxConfigs {
-		// Create a mailbox-specific context with tenant information
-		// but don't create a span here since we're passing to a goroutine
-		mailboxCtx := utils.SetTenantInContext(ctx, config.Tenant)
-		mailboxCtx = utils.SetUserIdInContext(mailboxCtx, config.UserID)
+	// Generate unique pod ID
+	s.podID = utils.GenerateNanoIDWithPrefix("pod", 16)
+	log.Printf("Starting IMAP service with pod ID: %s", s.podID)
 
-		log.Printf("Starting mailbox: %s (%s)", id, config.ImapUsername)
-		go s.runSingleMailbox(mailboxCtx, id, config)
-	}
+	// Start the mailbox processing loop
+	go func() {
+		for {
+			// Look for mailboxes to process
+			mailboxes, err := s.repositories.MailboxRepository.GetMailboxesForSync(ctx, 2*time.Minute)
+			if err != nil {
+				log.Printf("Error finding available mailboxes: %v", err)
+				continue
+			}
+
+			for _, mailbox := range mailboxes {
+				if !s.AcceptMailboxForSync(ctx, mailbox) {
+					continue
+				}
+
+				// Try to acquire lock
+				acquired, err := s.repositories.MailboxRepository.AcquireMailboxLock(ctx, mailbox.ID, s.podID, 5*time.Minute)
+				if err != nil {
+					log.Printf("Error acquiring lock for mailbox %s: %v", mailbox.ID, err)
+					continue
+				}
+
+				if acquired {
+					s.mailboxConfigs[mailbox.ID] = mailbox
+
+					// Create mailbox-specific context with tenant information
+					mailboxCtx := utils.SetTenantInContext(s.ctx, mailbox.Tenant)
+					mailboxCtx = utils.SetUserIdInContext(mailboxCtx, mailbox.UserID)
+
+					log.Printf("Starting mailbox: %s (%s)", mailbox.ID, mailbox.ImapUsername)
+					go s.runSingleMailbox(mailboxCtx, mailbox.ID, mailbox)
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+			select {
+			case <-time.After(30 * time.Second):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	return nil
 }
 
 // Stop gracefully shuts down the service
 func (s *IMAPService) Stop() error {
+	spans, _ := telemetry.StartServiceSpan(context.Background(), "IMAPService.Stop")
+	defer spans.Finish()
 	log.Println("Stopping IMAP service...")
 
 	// Cancel main context to signal all operations to stop
@@ -102,7 +135,19 @@ func (s *IMAPService) Stop() error {
 		log.Println("Timeout waiting for IMAP operations to complete")
 	}
 
-	// Disconnect all clients
+	// Create a context with timeout for cleanup operations
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Release locks and disconnect clients for all mailboxes
+	for mailboxID, mailbox := range s.mailboxConfigs {
+		log.Printf("Cleaning up mailbox: %s (%s)", mailboxID, mailbox.EmailAddress)
+
+		// Use the service's releaseMailbox method which handles both lock release and client cleanup
+		s.releaseMailbox(cleanupCtx, mailboxID)
+	}
+
+	// logout any left connections
 	s.clientsMutex.Lock()
 	for id, c := range s.clients {
 		log.Printf("Disconnecting client: %s", id)
@@ -129,99 +174,6 @@ func (s *IMAPService) Status() map[string]interfaces.MailboxStatus {
 	}
 
 	return result
-}
-
-// AddMailbox adds a new mailbox configuration
-func (s *IMAPService) AddMailbox(ctx context.Context, mailbox *models.Mailbox) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.AddMailbox")
-	defer spans.Finish()
-	spans.LogObjectAsJson("mailbox", mailbox)
-
-	if mailbox == nil {
-		err := errors.New("mailbox is nil")
-		spans.TraceError(err)
-		return err
-	} else if !s.AcceptMailbox(ctx, mailbox) {
-		err := fmt.Errorf("mailbox is not accepted for IMAP: %s", mailbox.ID)
-		spans.TraceError(err)
-		return err
-	}
-
-	s.clientsMutex.Lock()
-	defer s.clientsMutex.Unlock()
-
-	// Check for duplicate
-	if _, exists := s.mailboxConfigs[mailbox.ID]; exists {
-		err := fmt.Errorf("mailbox with ID %s already exists", mailbox.ID)
-		spans.TraceError(err)
-		return err
-	}
-
-	// Add initial entry into mailbox sync table for new folders only
-	for _, folder := range mailbox.SyncFolders {
-		// Check if sync state already exists
-		existingState, err := s.repositories.MailboxSyncRepository.GetSyncState(ctx, mailbox.ID, folder)
-		if err != nil {
-			spans.TraceError(err)
-			return err
-		}
-
-		// Only create new sync state if it doesn't exist
-		if existingState == nil {
-			err := s.repositories.MailboxSyncRepository.SaveSyncState(ctx, &models.MailboxSyncState{
-				MailboxID:  mailbox.ID,
-				FolderName: folder,
-				LastUID:    0,
-			})
-			if err != nil {
-				spans.TraceError(err)
-				return err
-			}
-		}
-	}
-
-	// Store configuration
-	s.mailboxConfigs[mailbox.ID] = mailbox
-
-	// Start monitoring if service is running
-	if s.ctx != nil {
-		log.Printf("Starting mailbox: %s (%s)", mailbox.ID, mailbox.ImapUsername)
-		mailboxCtx := utils.SetTenantInContext(context.Background(), mailbox.Tenant)
-		mailboxCtx = utils.SetUserIdInContext(mailboxCtx, mailbox.UserID)
-		go s.runSingleMailbox(mailboxCtx, mailbox.ID, mailbox)
-	}
-
-	return nil
-}
-
-// RemoveMailbox removes a mailbox configuration
-func (s *IMAPService) RemoveMailbox(ctx context.Context, mailboxID string) error {
-	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.RemoveMailbox")
-	defer spans.Finish()
-
-	s.clientsMutex.Lock()
-	defer s.clientsMutex.Unlock()
-
-	// Disconnect if connected
-	if client, exists := s.clients[mailboxID]; exists {
-		client.Logout()
-		delete(s.clients, mailboxID)
-	}
-
-	// Remove configuration
-	delete(s.mailboxConfigs, mailboxID)
-	err := s.repositories.MailboxSyncRepository.DeleteMailboxSyncStates(ctx, mailboxID)
-	if err != nil {
-		spans.TraceError(err)
-		return err
-	}
-
-	// Remove status
-	s.statusMutex.Lock()
-	delete(s.statuses, mailboxID)
-	s.statusMutex.Unlock()
-
-	return nil
 }
 
 // getConnectedClient returns an established IMAP client for the given mailbox
@@ -297,7 +249,34 @@ func (s *IMAPService) getConnectedClient(ctx context.Context, mailboxID string) 
 	return client, nil
 }
 
-// runSingleMailbox handles a single mailbox with reconnection
+// releaseMailbox releases the lock for a mailbox
+func (s *IMAPService) releaseMailbox(ctx context.Context, mailboxID string) {
+	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.releaseMailbox")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+
+	s.clientsMutex.Lock()
+	defer s.clientsMutex.Unlock()
+
+	err := s.repositories.MailboxRepository.ReleaseMailboxLock(ctx, mailboxID, s.podID)
+	if err != nil {
+		spans.TraceError(err)
+		log.Printf("[%s] Failed to release lock: %v", mailboxID, err)
+		spans.TraceError(err)
+	} else {
+		log.Printf("[%s] Successfully released mailbox lock", mailboxID)
+	}
+
+	// Disconnect if connected
+	if client, exists := s.clients[mailboxID]; exists {
+		client.Logout()
+		delete(s.clients, mailboxID)
+	}
+
+	// Remove configuration
+	delete(s.mailboxConfigs, mailboxID)
+}
+
 func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, config *models.Mailbox) {
 	spans, ctx := telemetry.StartServiceSpan(ctx, "IMAPService.runSingleMailbox", telemetry.WithNewRoot())
 	defer spans.Finish()
@@ -313,7 +292,27 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 	maxBackoff := 2 * time.Minute
 	attempts := 0
 
-	for {
+	for iteration := 0; iteration < SYNC_EMAILS_ITERATIONS_PER_ACQUIRE; iteration++ {
+		// Get current mailbox state and validate pod ID
+		mailbox, err := s.repositories.MailboxRepository.GetMailbox(ctx, mailboxID)
+		if err != nil {
+			log.Printf("[%s] Failed to get mailbox: %v", mailboxID, err)
+			break
+		}
+
+		// Check if this pod still owns the lock
+		if mailbox.ProcessingPodID != s.podID {
+			log.Printf("[%s] Pod ID mismatch. Current: %s, Expected: %s", mailboxID, mailbox.ProcessingPodID, s.podID)
+			break
+		}
+
+		// Update heartbeat and increment run count
+		err = s.repositories.MailboxRepository.UpdateMailboxHeartbeat(ctx, mailboxID, s.podID)
+		if err != nil {
+			log.Printf("[%s] Failed to update heartbeat: %v", mailboxID, err)
+			break
+		}
+
 		if err := s.processSingleMailboxIteration(ctx, mailboxID, config, &attempts, &backoff, maxBackoff); err != nil {
 			// If context is cancelled, we should exit
 			if errors.Is(err, context.Canceled) {
@@ -323,14 +322,17 @@ func (s *IMAPService) runSingleMailbox(ctx context.Context, mailboxID string, co
 			continue
 		}
 
-		// If we reach here, reconnect after a short delay
+		// If we reach here, wait before next iteration
 		select {
 		case <-time.After(30 * time.Second):
-			// Continue with reconnection
+			// Continue with next iteration
 		case <-ctx.Done():
 			return
 		}
 	}
+
+	// Release the lock after iterations complete
+	s.releaseMailbox(ctx, mailboxID)
 }
 
 // processSingleMailboxIteration handles a single iteration of mailbox processing
@@ -680,27 +682,13 @@ func (s *IMAPService) processFolder(ctx context.Context, imapClient *client.Clie
 		}
 	}
 
-	// Initial sync (no previous sync state or LastUID is 0)
-	// TODO initial sync is not invoked (TODO: to be checked why performInitialSync is needed)
-	// if syncState == nil || syncState.LastUID == 0 {
-	if syncState == nil {
-		// Initial sync (no previous sync state or LastUID is 0)
-		log.Printf("[%s][%s] Performing initial sync", mailboxID, folderName)
-		err = s.performInitialSync(ctx, imapClient, mailboxID, folderName)
-		if err != nil {
-			err = fmt.Errorf("error performing initial sync: %w", err)
-			spans.TraceError(err)
-			return err
-		}
-	} else {
-		// We have a previous sync state, sync new messages
-		log.Printf("[%s][%s] Resuming sync from UID %d", mailboxID, folderName, syncState.LastUID)
-		err = s.syncNewMessagesSince(ctx, imapClient, mailboxID, folderName, syncState.LastUID, mbox.UidNext)
-		if err != nil {
-			err = fmt.Errorf("error syncing new messages: %w", err)
-			spans.TraceError(err)
-			return err
-		}
+	// We have a previous sync state, sync new messages
+	log.Printf("[%s][%s] Resuming sync from UID %d", mailboxID, folderName, syncState.LastUID)
+	err = s.syncNewMessagesSince(ctx, imapClient, mailboxID, folderName, syncState.LastUID, mbox.UidNext)
+	if err != nil {
+		err = fmt.Errorf("error syncing new messages: %w", err)
+		spans.TraceError(err)
+		return err
 	}
 
 	return nil
@@ -748,7 +736,7 @@ func (s *IMAPService) syncNewMessagesSince(
 
 	collectedUIDs := make([]uint32, 0)
 	startUID := lastUID + 1
-	size := SYNC_EMAILS_BATCH_SIZE
+	size := SYNC_EMAILS_BATCH_SIZE_PER_ITERATION
 
 	for startUID < mboxUIDNext {
 		stopUID := startUID + uint32(size) - 1
@@ -902,8 +890,8 @@ func isConnectionError(err error) bool {
 		strings.Contains(errorMsg, "connection reset")
 }
 
-func (s *IMAPService) AcceptMailbox(ctx context.Context, mailbox *models.Mailbox) bool {
-	spans, _ := telemetry.StartServiceSpan(ctx, "IMAPService.AcceptMailbox")
+func (s *IMAPService) AcceptMailboxForSync(ctx context.Context, mailbox *models.Mailbox) bool {
+	spans, _ := telemetry.StartServiceSpan(ctx, "IMAPService.AcceptMailboxForSync")
 	defer spans.Finish()
 	spans.TagEntity(mailbox.ID)
 

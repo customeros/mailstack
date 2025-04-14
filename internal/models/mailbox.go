@@ -93,6 +93,12 @@ type Mailbox struct {
 	DailySendCount int        `gorm:"column:daily_send_count;default:0" json:"dailySendCount"`
 	QuotaResetAt   *time.Time `gorm:"column:quota_reset_at;type:timestamp" json:"quotaResetAt"`
 
+	// Distributed processing fields
+	ProcessingPodID       string     `gorm:"column:processing_pod_id;type:varchar(255)" json:"processingPodId"`
+	ProcessingStartedAt   *time.Time `gorm:"column:processing_started_at;type:timestamp" json:"processingStartedAt"`
+	ProcessingHeartbeatAt *time.Time `gorm:"column:processing_heartbeat_at;type:timestamp" json:"processingHeartbeatAt"`
+	ProcessingRunCount    int        `gorm:"column:processing_run_count;type:integer;default:0" json:"processingRunCount"`
+
 	// Standard timestamps
 	CreatedAt time.Time      `gorm:"column:created_at;type:timestamp;default:current_timestamp" json:"createdAt"`
 	UpdatedAt time.Time      `gorm:"column:updated_at;type:timestamp;default:current_timestamp" json:"updatedAt"`

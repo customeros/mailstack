@@ -88,7 +88,7 @@ func InitServices(natsConn *nats_internal.NATSConnections, log logger.Logger, re
 		EventLoggerService:         event_logger.NewEventLoggerService(natsConn, repos),
 		GoogleService:              googleImpl,
 		IMAPService:                imapImpl,
-		MailboxService:             mailbox.NewMailboxService(repos, imapImpl, opensrsImpl),
+		MailboxService:             mailbox.NewMailboxService(repos, opensrsImpl),
 		NamecheapService:           namecheapImpl,
 		OpenSrsService:             opensrsImpl,
 

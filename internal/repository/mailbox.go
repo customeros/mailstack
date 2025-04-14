@@ -365,3 +365,104 @@ func (r *mailboxRepository) MarkForManualRefresh(ctx context.Context, mailboxID 
 
 	return nil
 }
+
+func (r *mailboxRepository) GetMailboxesForSync(ctx context.Context, staleTimeout time.Duration) ([]*models.Mailbox, error) {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.GetMailboxesForSync")
+	defer spans.Finish()
+	spans.LogKV("staleTimeout", staleTimeout)
+
+	var result []*models.Mailbox
+	err := r.db.WithContext(ctx).
+		Where("provision_status = ? ", models.MailboxStatusProvisioned).
+		Where("inbound_enabled = ?", true).
+		Where("provider = ? OR provider = ?", enum.EmailMailstack, enum.EmailGoogleWorkspace).
+		Where("processing_pod_id = ? OR processing_heartbeat_at IS NULL OR processing_heartbeat_at < ?", "", utils.Now().Add(-staleTimeout)).
+		Order("RANDOM()").
+		Find(&result).
+		Error
+
+	if err != nil {
+		spans.TraceError(err)
+		return nil, err
+	}
+
+	spans.LogKV("result.count", len(result))
+	return result, nil
+}
+
+func (r *mailboxRepository) AcquireMailboxLock(ctx context.Context, mailboxID, podID string, staleTimeout time.Duration) (bool, error) {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.AcquireMailboxLock")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.LogKV("podID", podID)
+
+	now := utils.Now()
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE mailboxes 
+		SET processing_pod_id = ?,
+			processing_started_at = ?,
+			processing_heartbeat_at = ?,
+			processing_run_count = 0
+		WHERE id = ? 
+		AND (
+			processing_pod_id IS NULL 
+			OR processing_heartbeat_at < ?
+		)
+		RETURNING id
+	`, podID, now, now, mailboxID, now.Add(-staleTimeout))
+
+	if result.Error != nil {
+		spans.TraceError(result.Error)
+		return false, result.Error
+	}
+
+	return result.RowsAffected > 0, nil
+}
+
+func (r *mailboxRepository) UpdateMailboxHeartbeat(ctx context.Context, mailboxID, podID string) error {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.UpdateMailboxHeartbeat")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.LogKV("podID", podID)
+
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE mailboxes 
+		SET processing_heartbeat_at = ?,
+			processing_run_count = processing_run_count + 1
+		WHERE id = ? 
+		AND processing_pod_id = ?
+		RETURNING id
+	`, utils.Now(), mailboxID, podID)
+
+	if result.Error != nil {
+		spans.TraceError(result.Error)
+		return result.Error
+	}
+
+	return nil
+}
+
+func (r *mailboxRepository) ReleaseMailboxLock(ctx context.Context, mailboxID, podID string) error {
+	spans, ctx := telemetry.StartPostgresSpan(ctx, "mailboxRepository.ReleaseMailboxLock")
+	defer spans.Finish()
+	spans.TagEntity(mailboxID)
+	spans.LogKV("podID", podID)
+
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE mailboxes 
+		SET processing_pod_id = NULL,
+			processing_started_at = NULL,
+			processing_heartbeat_at = NULL,
+			processing_run_count = 0
+		WHERE id = ? 
+		AND processing_pod_id = ?
+		RETURNING id
+	`, mailboxID, podID)
+
+	if result.Error != nil {
+		spans.TraceError(result.Error)
+		return result.Error
+	}
+
+	return nil
+}
