@@ -3,19 +3,19 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
-	"github.com/customeros/mailstack/internal/utils"
-	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/opentracing/opentracing-go/log"
 	"io"
 	"net/http"
 	"runtime"
 
+	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/opentracing/opentracing-go/log"
 	"github.com/uber/jaeger-client-go/config"
 	"github.com/uber/jaeger-client-go/log/zap"
 
 	"github.com/customeros/mailstack/internal/logger"
+	"github.com/customeros/mailstack/internal/utils"
 )
 
 type JaegerConfig struct {
@@ -69,6 +69,7 @@ func StartHttpServerTracerSpanWithHeader(ctx context.Context, operationName stri
 	serverSpan := opentracing.GlobalTracer().StartSpan(operationName, ext.RPCServerOption(spanCtx))
 	return opentracing.ContextWithSpan(ctx, serverSpan), serverSpan
 }
+
 func SetDefaultSpanTags(ctx context.Context, span opentracing.Span) {
 	tenant := utils.GetTenantFromContext(ctx)
 	loggedInUserId := utils.GetUserIdFromContext(ctx)
