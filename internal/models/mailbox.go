@@ -27,7 +27,7 @@ const (
 	MAILBOX_SMTP_SECURITY = enum.EmailSecurityTLS
 
 	MAILBOX_INBOX = "INBOX"
-	MAILBOX_SENT  = "Sent"
+	MAILBOX_SENT  = "Sent Items"
 	MAILBOX_SPAM  = "Spam"
 
 	MAILBOX_GOOGLE_IMAP_SERVER   = "imap.gmail.com"
