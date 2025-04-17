@@ -644,7 +644,30 @@ func (s *IMAPService) processFolder(ctx context.Context, imapClient *client.Clie
 	mbox, err := imapClient.Select(folderName, false)
 	imapClient.Timeout = 0
 	if err != nil {
-		err = fmt.Errorf("error selecting folder: %w", err)
+		// List available folders when selection fails
+		mailboxInfos := make(chan *imap.MailboxInfo, 10)
+		done := make(chan error, 1)
+		imapClient.Timeout = 30 * time.Second
+
+		go func() {
+			done <- imapClient.List("", "*", mailboxInfos)
+		}()
+
+		var availableFolders []string
+		for m := range mailboxInfos {
+			availableFolders = append(availableFolders, m.Name)
+		}
+		imapClient.Timeout = 0
+
+		if listErr := <-done; listErr != nil {
+			spans.TraceError(listErr)
+			log.Printf("[%s] Error listing folders: %v", mailboxID, listErr)
+		} else {
+			log.Printf("[%s] Available folders: %v", mailboxID, availableFolders)
+		}
+		spans.LogObjectAsJson("available_folders", availableFolders)
+
+		err = fmt.Errorf("error selecting folder %s: %w", folderName, err)
 		spans.TraceError(err)
 		return err
 	}
