@@ -33,7 +33,7 @@ func (r *mailboxRepository) GetAllWithFilters(ctx context.Context, provider enum
 
 	// Add optional filters
 	if provider != "" {
-		query = query.Where("provider = ?", provider)
+		query = query.Where("LOWER(provider) = ?", provider.String())
 	}
 	if domain != "" {
 		query = query.Where("mailbox_domain = ?", domain)
@@ -214,7 +214,7 @@ func (r *mailboxRepository) GetForRampUp(ctx context.Context) ([]*models.Mailbox
 
 	var result []*models.Mailbox
 	err := r.db.WithContext(ctx).
-		Where("provider = ?", enum.EmailMailstack).
+		Where("LOWER(provider) = ?", enum.EmailMailstack.String()).
 		Where("provision_status = ?", models.MailboxStatusProvisioned).
 		Where("ramp_up_current < ramp_up_max and (last_ramp_up_at is null or last_ramp_up_at < ?)", utils.StartOfDayInUTC(utils.Now())).
 		Find(&result).
@@ -305,7 +305,7 @@ func (r *mailboxRepository) GetForConfiguration(ctx context.Context, limit int) 
 
 	var result []*models.Mailbox
 	err := r.db.WithContext(ctx).
-		Where("provider = ?", enum.EmailMailstack).
+		Where("LOWER(provider) = ?", enum.EmailMailstack.String()).
 		Where("provision_status = ? AND ("+
 			"(configure_attempt_at IS NULL AND created_at < ?) OR "+
 			"(configure_attempt_at < ?)"+
@@ -375,7 +375,7 @@ func (r *mailboxRepository) GetMailboxesForSync(ctx context.Context, staleTimeou
 	err := r.db.WithContext(ctx).
 		Where("provision_status = ? ", models.MailboxStatusProvisioned).
 		Where("inbound_enabled = ?", true).
-		Where("provider = ? OR provider = ?", enum.EmailMailstack, enum.EmailGoogleWorkspace).
+		Where("LOWER(provider) = ? OR LOWER(provider) = ?", enum.EmailMailstack.String(), enum.EmailGoogleWorkspace.String()).
 		Where("processing_pod_id = ? OR processing_heartbeat_at IS NULL OR processing_heartbeat_at < ?", "", utils.Now().Add(-staleTimeout)).
 		Order("RANDOM()").
 		Find(&result).
