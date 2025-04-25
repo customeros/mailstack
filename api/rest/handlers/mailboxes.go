@@ -283,7 +283,7 @@ func (h *MailboxHandler) GetMailboxByEmail() gin.HandlerFunc {
 		username := parts[0]
 		domain := parts[1]
 
-		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, domain+"@"+username)
+		mailbox, err := h.services.MailboxService.GetMailboxByEmailAddress(ctx, username+"@"+domain)
 		if err != nil {
 			spans.TraceError(errors.Wrap(err, "Error retrieving mailbox"))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
