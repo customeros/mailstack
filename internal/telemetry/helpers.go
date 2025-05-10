@@ -99,6 +99,7 @@ func StartSpan(ctx context.Context, operationName string, opts ...SpanOptions) (
 	} else {
 		otelCtx, otelSpan = tracer.Start(ctx, operationName)
 	}
+	otelSpan.SetAttributes(attribute.String("name", operationName))
 
 	otelSpan.SetAttributes(
 		attribute.String("service.name", "mailstack"),
