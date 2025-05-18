@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"context"
-
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -12,24 +10,15 @@ import (
 )
 
 // TracingMiddleware creates a new span for each request and adds common tags
-func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
+func TracingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get existing custom context if any
 		existingCtx := c.Request.Context()
-
-		// Start Jaeger span using existing utility with parent context
-		jaegerCtx, jaegerSpan := telemetry.StartHttpServerTracerSpanWithHeader(
-			existingCtx,
-			c.Request.Method+" "+c.FullPath(),
-			c.Request.Header,
-		)
-		defer jaegerSpan.Finish()
 
 		// Start OpenTelemetry span
 		tracer := otel.Tracer("github.com/customeros/mailstack")
-		otelCtx, otelSpan := tracer.Start(jaegerCtx, c.Request.Method+" "+c.FullPath(),
+		otelCtx, otelSpan := tracer.Start(existingCtx, c.Request.Method+" "+c.FullPath(),
 			trace.WithAttributes(
-				telemetry.GetDefaultServiceSpanAttributes(jaegerCtx)...,
+				telemetry.GetDefaultServiceSpanAttributes(existingCtx)...,
 			),
 		)
 
@@ -39,15 +28,13 @@ func TracingMiddleware(parentCtx context.Context) gin.HandlerFunc {
 
 		// Create Spans struct for telemetry operations
 		spans := &telemetry.Spans{
-			Jaeger: jaegerSpan,
-			OTel:   otelSpan,
+			OTel: otelSpan,
 		}
 		// Tag as REST component for both spans
 		telemetry.TagComponentREST(spans)
 
 		// Set default span tags (tenant, user-id, user-email)
-		telemetry.SetDefaultSpanTags(jaegerCtx, jaegerSpan)
-		telemetry.SetDefaultServiceSpanAttributes(jaegerCtx, otelSpan)
+		telemetry.SetDefaultServiceSpanAttributes(otelCtx, otelSpan)
 
 		// Add entity ID if present in URL params
 		if id := c.Param("id"); id != "" {

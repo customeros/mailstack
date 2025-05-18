@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -27,12 +24,14 @@ import (
 	"github.com/customeros/mailstack/internal/repository"
 	"github.com/customeros/mailstack/internal/telemetry"
 	"github.com/customeros/mailstack/services"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type Server struct {
 	config       *config.Config
 	logger       logger.Logger
-	tracerCloser io.Closer
 	httpServer   *http.Server
 	cronMgr      *cron.CronManager
 	router       *gin.Engine
@@ -46,15 +45,8 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (
 	appLogger := logger.NewAppLogger(cfg.Logger)
 	appLogger.InitLogger()
 
-	// Initialize Jaeger tracing
-	tracer, closer, err := telemetry.NewJaegerTracer(cfg.Tracing, appLogger)
-	if err != nil {
-		log.Fatalf("Could not initialize jaeger tracer: %s", err.Error())
-	}
-	opentracing.SetGlobalTracer(tracer)
-
 	// Initialize OpenTelemetry
-	err = telemetry.InitOpenTelemetry(context.Background(), cfg.OpenTelemetry)
+	err := telemetry.InitOpenTelemetry(context.Background(), cfg.OpenTelemetry)
 	if err != nil {
 		log.Printf("Warning: Could not initialize OpenTelemetry: %s", err.Error())
 	}
@@ -133,7 +125,6 @@ func NewServer(cfg *config.Config, mailstackDB *gorm.DB, warehouseDB *gorm.DB) (
 		cronMgr:      cronManager,
 		services:     svcs,
 		repositories: repos,
-		tracerCloser: closer,
 		httpServer: &http.Server{
 			Addr:    ":" + cfg.AppConfig.APIPort,
 			Handler: router,
@@ -147,28 +138,28 @@ func (s *Server) Initialize(ctx context.Context) error {
 	log.Println("Registering event handler...")
 
 	// Setup API routes
-	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config)
+	api.RegisterRoutes(ctx, s.router, s.services, s.repositories, s.config, s.logger)
 
 	return nil
 }
 
-func (s *Server) recoverWithJaeger(name string) {
+func (s *Server) recoverWithTelemetry(name string) {
 	if r := recover(); r != nil {
 		// Create a new span for the panic
-		span := opentracing.GlobalTracer().StartSpan(
-			fmt.Sprintf("panic.%s", name),
-		)
-		defer span.Finish()
+		tracer := otel.Tracer("github.com/customeros/mailstack")
+		_, span := tracer.Start(context.Background(), fmt.Sprintf("panic.%s", name))
+		defer span.End()
 
 		// Mark span as failed
-		ext.Error.Set(span, true)
+		span.SetStatus(codes.Error, fmt.Sprintf("panic: %v", r))
+		span.RecordError(fmt.Errorf("panic: %v", r))
 
 		// Log panic details
-		span.LogKV(
-			"event", "panic",
-			"process", name,
-			"error", fmt.Sprintf("%v", r),
-			"stack", string(debug.Stack()),
+		span.SetAttributes(
+			attribute.String("event", "panic"),
+			attribute.String("process", name),
+			attribute.String("error", fmt.Sprintf("%v", r)),
+			attribute.String("stack", string(debug.Stack())),
 		)
 
 		log.Printf("❌ Panic in %s: %v\n%s", name, r, debug.Stack())
@@ -176,7 +167,7 @@ func (s *Server) recoverWithJaeger(name string) {
 }
 
 func (s *Server) wrapGoroutine(name string, fn func()) {
-	defer s.recoverWithJaeger(name)
+	defer s.recoverWithTelemetry(name)
 	fn()
 }
 
@@ -211,7 +202,7 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) waitForShutdown() error {
-	defer s.recoverWithJaeger("shutdown")
+	defer s.recoverWithTelemetry("shutdown")
 
 	// Set up signal handling for graceful shutdown
 	stop := make(chan os.Signal, 1)
@@ -224,14 +215,6 @@ func (s *Server) waitForShutdown() error {
 	// Create a context with timeout for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
-
-	// Shut down HTTP server
-	log.Println("Shutting down HTTP server...")
-	if s.tracerCloser != nil {
-		if err := s.tracerCloser.Close(); err != nil {
-			log.Printf("⚠️ Tracer close error: %v", err)
-		}
-	}
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("❌ HTTP server shutdown error: %v", err)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/telemetry"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -10,7 +11,6 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/customeros/mailstack/api/graphql/generated"
@@ -23,7 +23,7 @@ import (
 )
 
 // RegisterRoutes sets up all API endpoints
-func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, cfg *config.Config) {
+func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, repos *repository.Repositories, cfg *config.Config, log logger.Logger) {
 	if s == nil {
 		panic("Services cannot be nil")
 	}
@@ -32,8 +32,8 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	}
 
 	// Add recovery middlewares
-	r.Use(gin.Recovery())                                           // Gin's built-in recovery
-	r.Use(telemetry.RecoveryWithJaeger(opentracing.GlobalTracer())) // Our custom Jaeger recovery
+	r.Use(gin.Recovery()) // Gin's built-in recovery
+	r.Use(telemetry.RecoveryWithTelemetry(log))
 
 	// setup handlers
 	apiHandlers := handlers.InitHandlers(repos, cfg, s)
@@ -60,7 +60,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 	query.Use(middleware.TenantValidationMiddleware()) // Tenant header validation
 	query.Use(middleware.UserIdMiddleware())           // UserId header parsing
 	query.Use(middleware.CustomContextMiddleware())    // Add custom context
-	query.Use(middleware.TracingMiddleware(ctx))       // Add tracing with parent context
+	query.Use(middleware.TracingMiddleware())          // Add tracing with parent context
 	{
 		query.POST("", graphqlHandler) // query
 	}
@@ -73,7 +73,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		domains := api.Group("/domains")
 		domains.Use(middleware.TenantValidationMiddleware()) // Tenant validation for domains
 		domains.Use(middleware.CustomContextMiddleware())    // Add custom context
-		domains.Use(middleware.TracingMiddleware(ctx))       // Add tracing with parent context
+		domains.Use(middleware.TracingMiddleware())          // Add tracing with parent context
 		{
 			// Domain discovery and acquisition
 			domains.GET("/check-availability/:domain", apiHandlers.Domains.CheckAvailability())
@@ -97,7 +97,7 @@ func RegisterRoutes(ctx context.Context, r *gin.Engine, s *services.Services, re
 		mailboxes := api.Group("/mailboxes")
 		mailboxes.Use(middleware.TenantValidationMiddleware())
 		mailboxes.Use(middleware.CustomContextMiddleware()) // Add custom context
-		mailboxes.Use(middleware.TracingMiddleware(ctx))    // Add tracing with parent context
+		mailboxes.Use(middleware.TracingMiddleware())       // Add tracing with parent context
 		{
 			mailboxes.GET("", apiHandlers.Mailbox.GetMailboxes())
 			mailboxes.POST("", apiHandlers.Mailbox.RegisterNewMailbox())
