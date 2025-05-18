@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/customeros/mailstack/internal/logger"
 	"github.com/customeros/mailstack/internal/utils"
 	"github.com/opentracing/opentracing-go/log"
@@ -504,4 +506,52 @@ func SetDefaultServiceSpanAttributes(ctx context.Context, span trace.Span) {
 		return
 	}
 	span.SetAttributes(GetDefaultServiceSpanAttributes(ctx)...)
+}
+
+// RecoveryWithTelemetry creates a gin middleware that recovers from panics and logs them to both Jaeger and OpenTelemetry
+func RecoveryWithTelemetry(log logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				// Get the current span from context or create new one
+				tracer := otel.Tracer("github.com/customeros/mailstack")
+				ctx := c.Request.Context()
+
+				// Start a new span as a child of the current trace if it exists
+				_, span := tracer.Start(ctx, "panic-recovery")
+				defer span.End()
+
+				// Get detailed stack trace
+				stack := string(debug.Stack())
+
+				// Log to OpenTelemetry
+				span.RecordError(fmt.Errorf("panic: %v", r))
+				span.SetStatus(codes.Error, fmt.Sprintf("panic: %v", r))
+				span.SetAttributes(
+					attribute.String("event", "panic"),
+					attribute.String("error", fmt.Sprintf("%v", r)),
+					attribute.String("time", time.Now().Format(time.RFC3339)),
+					attribute.String("http.url", c.Request.URL.String()),
+					attribute.String("http.method", c.Request.Method),
+					attribute.Int("http.status_code", 500),
+				)
+				// Log stack trace as an event
+				span.AddEvent("panic.stack", trace.WithAttributes(
+					attribute.String("stack", stack),
+				))
+
+				// Log to application logger
+				log.Errorf("[Panic Recovery] Error: %v\nStack trace:\n%s\nPath: %s\nMethod: %s",
+					r,
+					stack,
+					c.Request.URL.Path,
+					c.Request.Method,
+				)
+
+				// Let the chain continue to allow other recovery handlers to process the panic
+				panic(r)
+			}
+		}()
+		c.Next()
+	}
 }

@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Server struct {
@@ -145,9 +146,14 @@ func (s *Server) Initialize(ctx context.Context) error {
 
 func (s *Server) recoverWithTelemetry(name string) {
 	if r := recover(); r != nil {
-		// Create a new span for the panic
+		// Get the current span from context or create new one
 		tracer := otel.Tracer("github.com/customeros/mailstack")
-		_, span := tracer.Start(context.Background(), fmt.Sprintf("panic.%s", name))
+
+		// Create a new span as a child of the current trace if it exists
+		// We use context.Background() here since this is a goroutine recovery
+		// and we want to ensure we capture the panic even if the context is lost
+		ctx := context.Background()
+		_, span := tracer.Start(ctx, fmt.Sprintf("panic.%s", name))
 		defer span.End()
 
 		// Mark span as failed
@@ -160,7 +166,13 @@ func (s *Server) recoverWithTelemetry(name string) {
 			attribute.String("process", name),
 			attribute.String("error", fmt.Sprintf("%v", r)),
 			attribute.String("stack", string(debug.Stack())),
+			attribute.String("time", time.Now().Format(time.RFC3339)),
 		)
+
+		// Log stack trace as an event
+		span.AddEvent("panic.stack", trace.WithAttributes(
+			attribute.String("stack", string(debug.Stack())),
+		))
 
 		log.Printf("❌ Panic in %s: %v\n%s", name, r, debug.Stack())
 	}
