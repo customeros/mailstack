@@ -27,7 +27,7 @@ jobs:
     outputs:
       version_bump: ${{ steps.commit_message.outputs.version_bump }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # Needed to fetch all tags
 
@@ -97,7 +97,7 @@ jobs:
     outputs:
       next_version: ${{ steps.generate_version.outputs.next_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # Needed to fetch all tags
 
@@ -162,7 +162,7 @@ jobs:
       digest: ${{ steps.digest.outputs.value }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Log in to registry
       - name: Log in to the Container registry
@@ -205,7 +205,7 @@ jobs:
       digest: ${{ steps.digest.outputs.value }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Log in to registry
       - name: Log in to the Container registry
@@ -246,7 +246,7 @@ jobs:
     runs-on: ubicloud-standard-2
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Log in to the Container registry
       - name: Log in to the Container registry

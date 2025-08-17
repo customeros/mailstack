@@ -58,7 +58,7 @@ jobs:
           fi
 
       - name: Checkout K8s manifests repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: customeros/cloud
           token: ${{ secrets.DEPLOY_TRIGGER_GITHUB_TOKEN }}
