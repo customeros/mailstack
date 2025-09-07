@@ -78,7 +78,7 @@ jobs:
 
       - name: Cancel workflow if no release is needed
         if: steps.commit_message.outputs.version_bump == 'skip'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
